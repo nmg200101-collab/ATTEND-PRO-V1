@@ -1,0 +1,62 @@
+name: Build ATTEND-PRO APKs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Extract ATTEND-PRO project
+        run: |
+          rm -rf buildsrc
+          mkdir buildsrc
+          unzip -q ATTEND-PRO-V1-source-0.2.0.zip -d buildsrc
+
+      - name: Build Employee and Store APKs
+        run: |
+          gradle -p buildsrc \
+            :employee-app:assembleDebug \
+            :store-app:assembleDebug \
+            --stacktrace
+
+      - name: Upload Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-debug
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+
+      - name: Upload Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-debug
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
