@@ -36,11 +36,24 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Extract ATTEND-PRO project
+      - name: Select newest ATTEND-PRO source
+        id: source
+        run: |
+          SOURCE_ZIP=$(ls ATTEND-PRO-V1-source-*.zip | sort -V | tail -n 1)
+
+          if [ -z "$SOURCE_ZIP" ]; then
+            echo "No ATTEND-PRO source ZIP found"
+            exit 1
+          fi
+
+          echo "Building from: $SOURCE_ZIP"
+          echo "zip=$SOURCE_ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Extract newest ATTEND-PRO project
         run: |
           rm -rf buildsrc
           mkdir buildsrc
-          unzip -q ATTEND-PRO-V1-source-0.2.0.zip -d buildsrc
+          unzip -q "${{ steps.source.outputs.zip }}" -d buildsrc
 
       - name: Build Employee and Store APKs
         run: |
