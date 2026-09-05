@@ -1,0 +1,119 @@
+name: Diagnose ATTEND-PRO 1.9.38 vs 1.9.48
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-1938-vs-1948.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install build tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Extract known-good 1.9.38
+        run: |
+          rm -rf old1938 new1948
+          mkdir old1938 new1948
+          unzip -q ATTEND-PRO-V1-source-1.9.38.zip -d old1938
+          echo '1.9.38 extracted'
+
+      - name: Reconstruct current 1.9.48
+        run: |
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d new1948
+          cat .source_patches/1.9.46/part-*.b64 > /tmp/p46.b64
+          base64 -d -i /tmp/p46.b64 | xz -dc > /tmp/p46.patch
+          patch -d new1948 -p1 --batch < /tmp/p46.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('new1948/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
+          t=p.read_text()
+          old='networkPresence = NetworkPresenceBroadcaster { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } }'
+          new='networkPresence = NetworkPresenceBroadcaster(onStatus = { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } })'
+          if old in t: p.write_text(t.replace(old,new,1))
+          PY
+          cat .source_patches/1.9.47/part-*.b64 > /tmp/p47.b64
+          base64 -d -i /tmp/p47.b64 | xz -dc > /tmp/p47.patch
+          patch -d new1948 -p1 --batch < /tmp/p47.patch
+          base64 -d -i .source_patches/1.9.48/patch.xz.b64 | xz -dc > /tmp/p48.patch
+          patch -d new1948 -p1 --batch < /tmp/p48.patch
+
+      - name: Compare connection architecture
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo '=== FILES 1.9.38 ==='
+            find old1938 -type f | sed 's#old1938/##' | grep -Ei 'pair|ble|presence|network|mainactivity|protocol' | sort
+            echo
+            echo '=== FILES 1.9.48 ==='
+            find new1948 -type f | sed 's#new1948/##' | grep -Ei 'pair|ble|presence|network|mainactivity|protocol' | sort
+            echo
+            echo '=== 1.9.38 BLE/LAN/PAIRING SYMBOLS ==='
+            grep -RniE 'startScan|startAdvertising|connectGatt|DatagramSocket|APPAIR|pairing|companion|presence|Bluetooth' old1938/employee-app/src/main old1938/store-app/src/main 2>/dev/null | head -n 1200 || true
+            echo
+            echo '=== 1.9.48 BLE/LAN/PAIRING SYMBOLS ==='
+            grep -RniE 'startScan|startAdvertising|connectGatt|DatagramSocket|APPAIR|pairing|companion|presence|Bluetooth' new1948/employee-app/src/main new1948/store-app/src/main 2>/dev/null | head -n 1600 || true
+          } > diagnosis.txt
+          (cd old1938 && zip -qr ../ATTEND-PRO-V1-source-1.9.38-extracted.zip .)
+
+      - name: Download the exact 1.9.48 field-test APKs and inspect certificate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/nmg200101-collab/ATTEND-PRO-V1/actions/artifacts/9977299672/zip -o /tmp/emp1948.zip
+          curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H 'Accept: application/vnd.github+json' \
+            https://api.github.com/repos/nmg200101-collab/ATTEND-PRO-V1/actions/artifacts/9977300056/zip -o /tmp/store1948.zip
+          unzip -q /tmp/emp1948.zip -d /tmp/emp1948
+          unzip -q /tmp/store1948.zip -d /tmp/store1948
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          EMP_OLD=$(find /tmp/emp1948 -name '*.apk' | head -n1)
+          STORE_OLD=$(find /tmp/store1948 -name '*.apk' | head -n1)
+          {
+            echo '=== EXACT 1.9.48 FIELD APK CERTIFICATES ==='
+            "$APKSIGNER" verify --print-certs "$EMP_OLD"
+            "$APKSIGNER" verify --print-certs "$STORE_OLD"
+          } > signing.txt
+
+      - name: Build current 1.9.48 again and compare debug certificate stability
+        run: |
+          gradle -p new1948 :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          {
+            echo
+            echo '=== NEW-RUN DEBUG CERTIFICATES ==='
+            "$APKSIGNER" verify --print-certs new1948/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+            "$APKSIGNER" verify --print-certs new1948/store-app/build/outputs/apk/debug/store-app-debug.apk
+          } >> signing.txt
+          cat signing.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.38-extracted-source
+          path: ATTEND-PRO-V1-source-1.9.38-extracted.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1938-vs-1948-diagnosis
+          path: |
+            diagnosis.txt
+            signing.txt
