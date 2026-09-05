@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO 1.9.46
+name: Build ATTEND-PRO 1.9.47
 
 on:
   workflow_dispatch:
@@ -69,6 +69,19 @@ jobs:
           PY
           grep -q 'NetworkPresenceBroadcaster(onStatus =' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
 
+      - name: Reconstruct and verify 1.9.47 patch
+        run: |
+          cat .source_patches/1.9.47/part-*.b64 > /tmp/attend-pro-1.9.47.patch.xz.b64
+          base64 -d -i /tmp/attend-pro-1.9.47.patch.xz.b64 > /tmp/attend-pro-1.9.47.patch.xz
+          xz -dc /tmp/attend-pro-1.9.47.patch.xz > /tmp/attend-pro-1.9.47.patch
+          echo "44fe18841eaed479191c04ce52e06acbdd003b5af542a3ee2012e4c6d5519598  /tmp/attend-pro-1.9.47.patch" | sha256sum -c -
+
+      - name: Apply 1.9.47 pairing and connection fix
+        run: |
+          patch -d buildsrc -p1 --batch < /tmp/attend-pro-1.9.47.patch
+          grep -q 'versionName = "1.9.47"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.47"' buildsrc/store-app/build.gradle.kts
+
       - name: Run connection protocol unit tests
         run: |
           gradle -p buildsrc :core:testDebugUnitTest --stacktrace
@@ -82,22 +95,22 @@ jobs:
 
       - name: Package patched source
         run: |
-          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.46.zip .)
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.47.zip .)
 
       - name: Upload Employee APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Employee-1.9.46-debug
+          name: ATTEND-PRO-Employee-1.9.47-debug
           path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
 
       - name: Upload Store APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Store-1.9.46-debug
+          name: ATTEND-PRO-Store-1.9.47-debug
           path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
 
       - name: Upload patched source
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V1-source-1.9.46
-          path: ATTEND-PRO-V1-source-1.9.46.zip
+          name: ATTEND-PRO-V1-source-1.9.47
+          path: ATTEND-PRO-V1-source-1.9.47.zip
