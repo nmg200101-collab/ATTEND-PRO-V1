@@ -1,0 +1,128 @@
+out.LayoutParams(UiKit.dp(this@MainActivity,76),UiKit.dp(this@MainActivity,76)) })
+         header.addView(UiKit.title(this,p,"ATTEND PRO",27f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+-        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.46").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
++        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.48").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+         header.addView(UiKit.subtitle(this,p,"اختياري — جهاز المحل هو النظام الأساسي").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(215,255,255,255)) })
+         root.addView(header)
+ 
+@@ -213,7 +213,7 @@
+             gravity = Gravity.CENTER
+             setTextColor(android.graphics.Color.WHITE)
+         })
+-        header.addView(UiKit.subtitle(this, p, "تطبيق الموظف • الإصدار 1.9.46").apply {
++        header.addView(UiKit.subtitle(this, p, "تطبيق الموظف • الإصدار 1.9.48").apply {
+             gravity = Gravity.CENTER
+             setTextColor(android.graphics.Color.argb(225, 255, 255, 255))
+         })
+@@ -431,6 +431,10 @@
+     private fun handlePairingInput(raw:String){
+         if (com.attendpro.core.AttendanceQrProtocol.isAttendanceQr(raw)) { handleAttendanceQr1928(raw); return }
+         val value=raw.trim()
++        PairingProtocol.decodeQrPairingEnvelope(value)?.let { envelope ->
++            beginAtomicQrPairing(envelope)
++            return
++        }
+         if(value.startsWith("AP3P:") || value.startsWith("AP4P:")){acceptProvision(value, localChannel = "QR/ملف محلي");return}
+         val code=value.removePrefix("APPAIR:").replace(Regex("[^A-Za-z0-9]"),"").uppercase()
+         if(code.length!=8){status.text="رمز الاقتران غير صحيح؛ يجب أن يكون 8 خانات";return}
+@@ -456,25 +460,46 @@
+         }.start()
+     }
+ 
+-    private fun acceptProvision(text:String,serverValidated:Boolean=false, localChannel:String="محلي") {
+-        val p = PairingProtocol.decodeEmployeeProvision(text)
+-        if (p == null) { status.text = "هذا ليس رمز موظف ATTEND PRO صالحًا"; return }
+-        if (!serverValidated && p.expiresAt <= System.currentTimeMillis()) { status.text = "انتهت صلاحية ملف الربط. اطلب رمزًا جديدًا من جهاز المحل"; return }
+-        if (!SecretCodec.isValid(p.pairingSecret)) { status.text = "بيانات الربط غير صالحة"; return }
++    private fun beginAtomicQrPairing(envelope: PairingProtocol.QrPairingEnvelope) {
++        val provision = PairingProtocol.decodeEmployeeProvision(envelope.provisionText)
++        if (provision == null || !SecretCodec.isValid(provision.pairingSecret)) {
++            status.text = "QR الربط غير صالح؛ أنشئ رمزًا جديدًا من جهاز المحل"
++            return
++        }
++        if (provision.expiresAt <= System.currentTimeMillis()) {
++            status.text = "انتهت صلاحية QR الربط؛ أنشئ رمزًا جديدًا من جهاز المحل"
++            return
++        }
+ 
+-        // Local-first: the provision shown/transmitted by the store is enough to establish trusted local pairing.
+-        pendingPairingCode = ""
+-        if (::pairingDiscovery.isInitialized) pairingDiscovery.stop()
+-        identity.applyProvision(p)
+-        identity.localPairingConfirmedAt = System.currentTimeMillis()
+-        identity.localPairingChannel = if (serverValidated) "الخادم" else localChannel
++        // Stage the identity durably first so a camera/activity transition can never lose the QR.
++        // The pairing is not labelled confirmed until Store ACK arrives over Bluetooth/LAN.
++        identity.applyProvision(provision)
+         identity.autoPresence = true
+-        EmployeeLateAlertScheduler.sync(this, identity)
++        identity.localPairingConfirmedAt = 0L
++        identity.localPairingChannel = "QR • بانتظار ACK"
+         refreshProfile()
+-        ensureGeoPermissionIfNeeded()
+-        if (identity.autoPresence) startPresence() else startBackgroundPresence()
+-        status.text = "✓ تم الربط محليًا عبر ${identity.localPairingChannel} — الهاتف جاهز دون إنترنت، والخادم للمزامنة فقط"
++        pendingPairingCode = envelope.code
++        status.text = "✓ تم التعرف على QR — جارٍ تأكيد الربط مع جهاز المحل وعدم قطع الجلسة…"
+ 
++        pairingDiscovery.startPrepared(envelope.code, envelope.provisionText)
++
++        // If the local ACK is blocked by an OEM radio policy, keep the QR provision and start
++        // persistent presence after a short grace period instead of throwing the pairing away.
++        Handler(Looper.getMainLooper()).postDelayed({
++            if (pendingPairingCode == envelope.code && identity.isConfigured) {
++                pendingPairingCode = ""
++                pairingDiscovery.stop()
++                identity.localPairingConfirmedAt = System.currentTimeMillis()
++                identity.localPairingChannel = "QR محفوظ • انتظار ACK دائم"
++                EmployeeLateAlertScheduler.sync(this, identity)
++                startPresence()
++                registerProvisionWithServer(provision)
++                status.text = "✓ تم حفظ الربط بالـQR — جارٍ فتح اتصال دائم مع جهاز المحل تلقائيًا"
++            }
++        }, 8_000L)
++    }
++
++    private fun registerProvisionWithServer(p: PairingProtocol.EmployeeProvision) {
+         Thread {
+             var result: Result<CentralServerClient.EmployeeLinkResult>? = null
+             for (attempt in 0 until 4) {
+@@ -486,16 +511,40 @@
+             runOnUiThread {
+                 result?.onSuccess { link ->
+                     if (link.linked) {
+-                        identity.serverLinked = true; identity.linkedAt = link.linkedAt
+-                        status.text = "✓ الهاتف مرتبط بالمحل والخادم"
++                        identity.serverLinked = true
++                        identity.linkedAt = link.linkedAt
++                        if (::status.isInitialized) status.text = "✓ الهاتف مرتبط بالمحل والخادم"
+                     }
+                 }?.onFailure {
+                     identity.serverLinked = false
+-                    status.text = "✓ الربط المحلي يعمل بدون إنترنت — ستُستكمل مزامنة الخادم لاحقًا"
++                    if (::status.isInitialized && identity.localPairingConfirmedAt > 0L)
++                        status.text = "✓ الربط المحلي ثابت — ستُستكمل مزامنة الخادم لاحقًا"
+                 }
+             }
+         }.start()
+     }
++
++    private fun acceptProvision(text:String,serverValidated:Boolean=false, localChannel:String="محلي") {
++        val p = PairingProtocol.decodeEmployeeProvision(text)
++        if (p == null) { status.text = "هذا ليس رمز موظف ATTEND PRO صالحًا"; return }
++        if (!serverValidated && p.expiresAt <= System.currentTimeMillis()) { status.text = "انتهت صلاحية ملف الربط. اطلب رمزًا جديدًا من جهاز المحل"; return }
++        if (!SecretCodec.isValid(p.pairingSecret)) { status.text = "بيانات الربط غير صالحة"; return }
++
++        pendingPairingCode = ""
++        if (::pairingDiscovery.isInitialized) pairingDiscovery.stop()
++        identity.applyProvision(p)
++        identity.localPairingConfirmedAt = System.currentTimeMillis()
++        identity.localPairingChannel = if (serverValidated) "الخادم" else localChannel
++        identity.autoPresence = true
++        EmployeeLateAlertScheduler.sync(this, identity)
++        refreshProfile()
++        ensureGeoPermissionIfNeeded()
++        if (identity.autoPresence) startPresence() else startBackgroundPresence()
++        status.text = "✓ تم الربط محليًا عبر ${identity.localPairingChannel} — الهاتف جاهز دون إنترنت، والخادم للمزامنة فقط"
++        registerProvisionWithServer(p)
++    }
