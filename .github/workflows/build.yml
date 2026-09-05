@@ -86,7 +86,7 @@ jobs:
         run: |
           base64 -d -i .source_patches/1.9.48/patch.xz.b64 > /tmp/attend-pro-1.9.48.patch.xz
           xz -dc /tmp/attend-pro-1.9.48.patch.xz > /tmp/attend-pro-1.9.48.patch
-          echo "a4e0a8c9021b5b259e02617945f8862d061dff1d7449f234728e4bc87589d344  /tmp/attend-pro-1.9.48.patch" | sha256sum -c -
+          echo "6e09dd6446f9b5692f0a625a6bc916752dc36de8357f32d7df8e37d94317ed31  /tmp/attend-pro-1.9.48.patch" | sha256sum -c -
 
       - name: Apply 1.9.48 atomic pairing fix
         run: |
