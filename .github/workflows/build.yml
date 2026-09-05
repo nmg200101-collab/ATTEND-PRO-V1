@@ -47,7 +47,7 @@ jobs:
           cat .source_patches/1.9.46/part-*.b64 > /tmp/attend-pro-1.9.46.patch.xz.b64
           base64 -d /tmp/attend-pro-1.9.46.patch.xz.b64 > /tmp/attend-pro-1.9.46.patch.xz
           xz -dc /tmp/attend-pro-1.9.46.patch.xz > /tmp/attend-pro-1.9.46.patch
-          echo "7b337d67fb44dfd32dc0540b6c4edf317d363f4a05aa9e43c9738fb487d17ed0  /tmp/attend-pro-1.9.46.patch" | sha256sum -c -
+          echo "993a2d000ed5c98af2d0dbfb03a8081f468dfec0830e05d71db5ecfde9127193  /tmp/attend-pro-1.9.46.patch" | sha256sum -c -
 
       - name: Apply 1.9.46 connection fix
         run: |
