@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO 1.9.48
+name: Build ATTEND-PRO 1.9.49
 
 on:
   workflow_dispatch:
@@ -94,6 +94,21 @@ jobs:
           grep -q 'versionName = "1.9.48"' buildsrc/employee-app/build.gradle.kts
           grep -q 'versionName = "1.9.48"' buildsrc/store-app/build.gradle.kts
 
+      - name: Reconstruct and verify 1.9.49 field recovery patch
+        run: |
+          base64 -d -i .source_patches/1.9.49/patch.xz.b64 > /tmp/attend-pro-1.9.49.patch.xz
+          xz -dc /tmp/attend-pro-1.9.49.patch.xz > /tmp/attend-pro-1.9.49.patch
+          echo "d56fe1b394ec4bfb11236848de8444b8e52aad22df1edaa880b04b3bc2fa186c  /tmp/attend-pro-1.9.49.patch" | sha256sum -c -
+
+      - name: Apply 1.9.49 field-proven connection recovery
+        run: |
+          patch -d buildsrc -p1 --batch < /tmp/attend-pro-1.9.49.patch
+          grep -q 'versionName = "1.9.49"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.49"' buildsrc/store-app/build.gradle.kts
+          grep -q 'setConnectable(false)' buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
+          grep -q 'isAuthenticatedPresenceConnected' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          ! grep -A8 -B2 'requestPermissions' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt | grep -q 'BLUETOOTH_ADVERTISE'
+
       - name: Run connection and pairing unit tests
         run: |
           gradle -p buildsrc :core:testDebugUnitTest --stacktrace
@@ -105,24 +120,37 @@ jobs:
             :store-app:assembleDebug \
             --stacktrace
 
+      - name: Inspect build certificate
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --print-certs buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk > signing-1.9.49.txt
+          "$APKSIGNER" verify --print-certs buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk >> signing-1.9.49.txt
+          cat signing-1.9.49.txt
+
       - name: Package patched source
         run: |
-          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.48.zip .)
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.49.zip .)
 
       - name: Upload Employee APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Employee-1.9.48-debug
+          name: ATTEND-PRO-Employee-1.9.49-debug
           path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
 
       - name: Upload Store APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Store-1.9.48-debug
+          name: ATTEND-PRO-Store-1.9.49-debug
           path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
 
       - name: Upload patched source
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V1-source-1.9.48
-          path: ATTEND-PRO-V1-source-1.9.48.zip
+          name: ATTEND-PRO-V1-source-1.9.49
+          path: ATTEND-PRO-V1-source-1.9.49.zip
+
+      - name: Upload signing report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.49-signing-report
+          path: signing-1.9.49.txt
