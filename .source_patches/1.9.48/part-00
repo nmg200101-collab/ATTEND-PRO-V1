@@ -1,0 +1,116 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' '--exclude=*.apk' attendpro_1947_base/BUILD_NOTES.md attendpro_1947_src/BUILD_NOTES.md
+--- attendpro_1947_base/BUILD_NOTES.md	2026-09-05 19:16:13.000000000 +0000
++++ attendpro_1947_src/BUILD_NOTES.md	2026-09-05 21:20:56.334869739 +0000
+@@ -143,3 +143,12 @@
+ - No UI redesign; only connection truth/diagnostics hardening.
+ - Employee GATT now keeps PING as a pending session only; CONFIG/CHALLENGE are accepted only after ACK-confirm, preventing pre-confirm application traffic.
+ - Added source-level JUnit coverage for BLE ACK-confirm and ServerDiagnostics recovery/history semantics.
++
++
++## 1.9.48 ATOMIC PAIRING FINALIZATION
++- Fixed the field failure where a pairing GATT/LAN session completed and then disconnected while the Store's persistent scanner remained paused until the dialog was manually closed.
++- Pairing completion now immediately stops the temporary pairing beacon and resumes persistent BLE/LAN discovery.
++- Store marks companion-linked only from verified pairing ACK, persistent BLE ACK, persistent LAN ACK, or server link ACK.
++- Added AP5Q QR envelope binding the QR to the active 8-character Store pairing session. QR now performs a return ACK through Bluetooth/LAN instead of only copying the provision to the employee phone.
++- Added Store polling for actual server employee-link status while the pairing ticket is open.
++- Legacy AP3P/AP4P remains supported.
+diff -ruN '--exclude=.gradle' '--exclude=build' '--exclude=*.apk' attendpro_1947_base/core/src/main/java/com/attendpro/core/PairingProtocol.kt attendpro_1947_src/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+--- attendpro_1947_base/core/src/main/java/com/attendpro/core/PairingProtocol.kt	2026-09-05 10:08:28.000000000 +0000
++++ attendpro_1947_src/core/src/main/java/com/attendpro/core/PairingProtocol.kt	2026-09-05 21:20:40.702809496 +0000
+@@ -10,6 +10,7 @@
+ import java.util.zip.Inflater
+ 
+ object PairingProtocol {
++    private const val PREFIX_QR_PAIRING_V5 = "AP5Q:"
+     private const val PREFIX_PROVISION_V4 = "AP4P:"
+     private const val PREFIX_PROVISION_V3 = "AP3P:"
+     private const val PREFIX_STORE_V2 = "AP2S:"
+@@ -37,6 +38,8 @@
+         val expiresAt: Long
+     )
+ 
++    data class QrPairingEnvelope(val code: String, val provisionText: String)
++
+     data class EmployeeProvision(
+         val storeId: String,
+         val storeName: String,
+@@ -98,6 +101,30 @@
+      */
+     fun encodeEmployeeProvisionCompact(p: EmployeeProvision): String = compactProvision(encodeEmployeeProvision(p))
+ 
++    /**
++     * V5 QR envelope binds the visible QR to the currently-open Store pairing session.
++     * The provision still carries the employee secret, while the 8-char code lets the
++     * Employee app send an authenticated ACK back to the Store before pairing UI transitions.
++     */
++    fun encodeQrPairingEnvelope(code: String, provision: EmployeeProvision): String {
++        val normalized = code.replace(Regex("[^A-Za-z0-9]"), "").uppercase().take(8)
++        require(normalized.length == 8) { "Pairing code must contain 8 alphanumeric characters" }
++        return PREFIX_QR_PAIRING_V5 + normalized + ":" + encodeEmployeeProvisionCompact(provision)
++    }
++
++    fun decodeQrPairingEnvelope(text: String): QrPairingEnvelope? = runCatching {
++        val clean = text.trim()
++        if (!clean.startsWith(PREFIX_QR_PAIRING_V5)) return@runCatching null
++        val rest = clean.removePrefix(PREFIX_QR_PAIRING_V5)
++        val split = rest.indexOf(':')
++        if (split != 8) return@runCatching null
++        val code = rest.substring(0, split).uppercase()
++        if (!code.matches(Regex("[A-Z0-9]{8}"))) return@runCatching null
++        val provision = rest.substring(split + 1)
++        if (decodeEmployeeProvision(provision) == null) return@runCatching null
++        QrPairingEnvelope(code, provision)
++    }.getOrNull()
++
+     fun compactProvision(encodedProvision: String): String {
+         val clean = encodedProvision.trim()
+         if (!clean.startsWith(PREFIX_PROVISION_V3)) return clean
+diff -ruN '--exclude=.gradle' '--exclude=build' '--exclude=*.apk' attendpro_1947_base/core/src/test/java/com/attendpro/core/PairingProtocolQrV5Test.kt attendpro_1947_src/core/src/test/java/com/attendpro/core/PairingProtocolQrV5Test.kt
+--- attendpro_1947_base/core/src/test/java/com/attendpro/core/PairingProtocolQrV5Test.kt	1970-01-01 00:00:00.000000000 +0000
++++ attendpro_1947_src/core/src/test/java/com/attendpro/core/PairingProtocolQrV5Test.kt	2026-09-05 21:20:40.705752728 +0000
+@@ -0,0 +1,25 @@
++package com.attendpro.core
++
++import org.junit.Assert.*
++import org.junit.Test
++
++class PairingProtocolQrV5Test {
++    private fun provision() = PairingProtocol.EmployeeProvision(
++        storeId = "STORE-1", storeName = "Test Store", employeeId = "EMP-7", displayName = "Employee",
++        branchId = "MAIN", phone = "", jobTitle = "", pairingSecret = SecretCodec.encode(SecretCodec.generate()),
++        pinHash = "", expiresAt = System.currentTimeMillis() + 60_000L
++    )
++
++    @Test fun qrEnvelopeRoundTripsAndBindsCode() {
++        val text = PairingProtocol.encodeQrPairingEnvelope("A1B2C3D4", provision())
++        val decoded = PairingProtocol.decodeQrPairingEnvelope(text)
++        assertNotNull(decoded)
++        assertEquals("A1B2C3D4", decoded!!.code)
++        assertNotNull(PairingProtocol.decodeEmployeeProvision(decoded.provisionText))
++    }
++
++    @Test fun qrEnvelopeRejectsMalformedCodeAndProvision() {
++        assertNull(PairingProtocol.decodeQrPairingEnvelope("AP5Q:BAD:AP4P:x"))
++        assertNull(PairingProtocol.decodeQrPairingEnvelope("AP5Q:A1B2C3D4:not-a-provision"))
++    }
++}
+diff -ruN '--exclude=.gradle' '--exclude=build' '--exclude=*.apk' attendpro_1947_base/employee-app/build.gradle.kts attendpro_1947_src/employee-app/build.gradle.kts
+--- attendpro_1947_base/employee-app/build.gradle.kts	2026-09-05 19:16:13.000000000 +0000
++++ attendpro_1947_src/employee-app/build.gradle.kts	2026-09-05 21:20:40.705619696 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.attendpro.employee"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 54
+-        versionName = "1.9.47"
++        versionCode = 55
++        versionName = "1.9.48"
+     }
+ 
+     compileOptions {
+diff -ruN '--exclude=.gradle' '--exclude=build' '--exclude=*.apk' attendpro_1947_base/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt attendpro_1947_src/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+--- attendpro_1947_base/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt	2026-09-05 19:16:13.000000000 +0000
++++ attendpro_1947_src/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt	2026-09-05 21:20:40.705496140 +0000
+@@ -97,7 +97,7 @@
+         val header = UiKit.heroCard(this,p).apply { gravity = Gravity.CENTER_HORIZONTAL }
+         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_attend_pro); layoutParams = LinearLay
