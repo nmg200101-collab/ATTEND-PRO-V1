@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO APKs
+name: Build ATTEND-PRO 1.9.46
 
 on:
   workflow_dispatch:
@@ -36,24 +36,28 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Select newest ATTEND-PRO source
-        id: source
-        run: |
-          SOURCE_ZIP=$(ls ATTEND-PRO-V1-source-*.zip | sort -V | tail -n 1)
-
-          if [ -z "$SOURCE_ZIP" ]; then
-            echo "No ATTEND-PRO source ZIP found"
-            exit 1
-          fi
-
-          echo "Building from: $SOURCE_ZIP"
-          echo "zip=$SOURCE_ZIP" >> "$GITHUB_OUTPUT"
-
-      - name: Extract newest ATTEND-PRO project
+      - name: Extract 1.9.44 baseline
         run: |
           rm -rf buildsrc
           mkdir buildsrc
-          unzip -q "${{ steps.source.outputs.zip }}" -d buildsrc
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d buildsrc
+
+      - name: Reconstruct and verify 1.9.46 patch
+        run: |
+          cat .source_patches/1.9.46/part-*.b64 > /tmp/attend-pro-1.9.46.patch.xz.b64
+          base64 -d /tmp/attend-pro-1.9.46.patch.xz.b64 > /tmp/attend-pro-1.9.46.patch.xz
+          xz -dc /tmp/attend-pro-1.9.46.patch.xz > /tmp/attend-pro-1.9.46.patch
+          echo "7b337d67fb44dfd32dc0540b6c4edf317d363f4a05aa9e43c9738fb487d17ed0  /tmp/attend-pro-1.9.46.patch" | sha256sum -c -
+
+      - name: Apply 1.9.46 connection fix
+        run: |
+          patch -d buildsrc -p1 --batch < /tmp/attend-pro-1.9.46.patch
+          grep -q 'versionName = "1.9.46"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.46"' buildsrc/store-app/build.gradle.kts
+
+      - name: Run connection protocol unit tests
+        run: |
+          gradle -p buildsrc :core:testDebugUnitTest --stacktrace
 
       - name: Build Employee and Store APKs
         run: |
@@ -62,14 +66,24 @@ jobs:
             :store-app:assembleDebug \
             --stacktrace
 
+      - name: Package patched source
+        run: |
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.46.zip .)
+
       - name: Upload Employee APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Employee-debug
+          name: ATTEND-PRO-Employee-1.9.46-debug
           path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
 
       - name: Upload Store APK
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-Store-debug
+          name: ATTEND-PRO-Store-1.9.46-debug
           path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.46
+          path: ATTEND-PRO-V1-source-1.9.46.zip
