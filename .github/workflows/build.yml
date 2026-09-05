@@ -55,6 +55,20 @@ jobs:
           grep -q 'versionName = "1.9.46"' buildsrc/employee-app/build.gradle.kts
           grep -q 'versionName = "1.9.46"' buildsrc/store-app/build.gradle.kts
 
+      - name: Apply Employee constructor compile fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt")
+          text = p.read_text()
+          old = 'networkPresence = NetworkPresenceBroadcaster { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } }'
+          new = 'networkPresence = NetworkPresenceBroadcaster(onStatus = { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } })'
+          if old not in text:
+              raise SystemExit("Expected NetworkPresenceBroadcaster constructor call not found")
+          p.write_text(text.replace(old, new, 1))
+          PY
+          grep -q 'NetworkPresenceBroadcaster(onStatus =' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+
       - name: Run connection protocol unit tests
         run: |
           gradle -p buildsrc :core:testDebugUnitTest --stacktrace
