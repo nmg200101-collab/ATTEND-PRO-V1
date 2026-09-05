@@ -1,0 +1,99 @@
+name: Build ATTEND-PRO 1.9.50
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Download verified 1.9.49 source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf previous-source buildsrc
+          mkdir -p previous-source buildsrc
+          gh run download 33995356953 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.49 -D previous-source
+          unzip -q previous-source/ATTEND-PRO-V1-source-1.9.49.zip -d buildsrc
+          grep -q 'versionName = "1.9.49"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.49"' buildsrc/store-app/build.gradle.kts
+
+      - name: Verify and apply 1.9.50 connection recovery
+        run: |
+          echo "2d934ff5c45053f35a5a1094184e82db6f7ecb7ef00f644816a5347991eae5ed  .source_patches/1.9.50/connection-recovery.patch" | sha256sum -c -
+          patch -d buildsrc -p1 --batch < .source_patches/1.9.50/connection-recovery.patch
+          grep -q 'versionName = "1.9.50"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.50"' buildsrc/store-app/build.gradle.kts
+          grep -q 'setConnectable(true)' buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
+          grep -q 'Server • Heartbeat' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'BleEmployeeScanner.REQUEST_SCAN' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+
+      - name: Run connection and pairing unit tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Build Employee and Store APKs
+        run: |
+          gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Inspect debug build certificates
+        run: |
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$APKSIGNER" verify --print-certs buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk > signing-1.9.50-debug.txt
+          "$APKSIGNER" verify --print-certs buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk >> signing-1.9.50-debug.txt
+          cat signing-1.9.50-debug.txt
+
+      - name: Package patched source
+        run: (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.50.zip .)
+
+      - name: Upload Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.50-debug
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+
+      - name: Upload Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.50-debug
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.50
+          path: ATTEND-PRO-V1-source-1.9.50.zip
+
+      - name: Upload debug signing report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.50-debug-signing-report
+          path: signing-1.9.50-debug.txt
