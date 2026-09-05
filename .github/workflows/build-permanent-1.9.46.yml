@@ -1,0 +1,130 @@
+name: Build ATTEND-PRO 1.9.46 Permanent Signed
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-signed:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Reconstruct ATTEND-PRO 1.9.46 source
+        run: |
+          set -euo pipefail
+          rm -rf buildsrc
+          mkdir buildsrc
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d buildsrc
+          cat .source_patches/1.9.46/part-*.b64 > /tmp/attend-pro-1.9.46.patch.xz.b64
+          base64 -d -i /tmp/attend-pro-1.9.46.patch.xz.b64 > /tmp/attend-pro-1.9.46.patch.xz
+          xz -dc /tmp/attend-pro-1.9.46.patch.xz > /tmp/attend-pro-1.9.46.patch
+          echo "993a2d000ed5c98af2d0dbfb03a8081f468dfec0830e05d71db5ecfde9127193  /tmp/attend-pro-1.9.46.patch" | sha256sum -c -
+          patch -d buildsrc -p1 --batch < /tmp/attend-pro-1.9.46.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt")
+          text = p.read_text()
+          old = 'networkPresence = NetworkPresenceBroadcaster { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } }'
+          new = 'networkPresence = NetworkPresenceBroadcaster(onStatus = { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } })'
+          if old not in text:
+              raise SystemExit("Expected Employee constructor call not found")
+          p.write_text(text.replace(old, new, 1))
+          PY
+          grep -q 'versionName = "1.9.46"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.46"' buildsrc/store-app/build.gradle.kts
+
+      - name: Run connection protocol tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Prepare permanent ATTEND-PRO signing key
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for V in ATTEND_PRO_KEYSTORE_B64 ATTEND_PRO_STORE_PASSWORD ATTEND_PRO_KEY_ALIAS ATTEND_PRO_KEY_PASSWORD; do
+            [ -n "${!V:-}" ] || { echo "Required permanent signing secret $V is missing"; exit 1; }
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/ATTEND-PRO-PERMANENT-RELEASE.jks"
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ATTEND_PRO_STORE_PASSWORD" -alias "$ATTEND_PRO_KEY_ALIAS" >/dev/null
+          echo "ATTEND_PRO_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Build Employee and Store with permanent signature
+        env:
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          gradle -p buildsrc \
+            :employee-app:assembleDebug \
+            :store-app:assembleDebug \
+            -Pandroid.injected.signing.store.file="$ATTEND_PRO_KEYSTORE_PATH" \
+            -Pandroid.injected.signing.store.password="$ATTEND_PRO_STORE_PASSWORD" \
+            -Pandroid.injected.signing.key.alias="$ATTEND_PRO_KEY_ALIAS" \
+            -Pandroid.injected.signing.key.password="$ATTEND_PRO_KEY_PASSWORD" \
+            --stacktrace
+
+      - name: Verify permanent certificate and prepare final APKs
+        run: |
+          set -euo pipefail
+          EXPECTED="6f8bcc08ae6c8d9654e7aa2c9a661fb6bdf21e31b720ab3add88aed0cd4f4d82"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          EMP="buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk"
+          STORE="buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk"
+          for APK in "$EMP" "$STORE"; do
+            ACTUAL=$($APKSIGNER verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1 | tr 'A-F' 'a-f')
+            echo "Certificate for $APK: $ACTUAL"
+            [ "$ACTUAL" = "$EXPECTED" ] || { echo "Permanent signing certificate mismatch"; exit 1; }
+          done
+          mkdir -p final
+          cp "$EMP" final/ATTEND-PRO-Employee-CONNECTION-FIX-FINAL.apk
+          cp "$STORE" final/ATTEND-PRO-Store-CONNECTION-FIX-FINAL.apk
+          sha256sum final/*.apk > final/SHA256SUMS.txt
+
+      - name: Upload final Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-CONNECTION-FIX-FINAL
+          path: final/ATTEND-PRO-Employee-CONNECTION-FIX-FINAL.apk
+
+      - name: Upload final Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-CONNECTION-FIX-FINAL
+          path: final/ATTEND-PRO-Store-CONNECTION-FIX-FINAL.apk
+
+      - name: Upload final checksums
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-FINAL-SHA256
+          path: final/SHA256SUMS.txt
