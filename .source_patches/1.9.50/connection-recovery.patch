@@ -1,0 +1,287 @@
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/BUILD_NOTES.md attend1950/BUILD_NOTES.md
+--- attend1949base/BUILD_NOTES.md	2026-09-05 23:43:01.879335477 +0000
++++ attend1950/BUILD_NOTES.md	2026-09-05 23:43:52.570521493 +0000
+@@ -154,10 +154,11 @@
+ - Legacy AP3P/AP4P remains supported.
+ 
+ 
+-## 1.9.49 — field-proven connection recovery
+-- Restores 1.9.38-compatible passive BLE presence advertising (non-connectable) for wider OEM compatibility.
+-- Store scan no longer blocks on BLUETOOTH_ADVERTISE permission.
+-- QR pairing accepts the complete Store-issued provision immediately; no second radio ACK can invalidate a valid QR scan.
+-- Bluetooth GATT and LAN pairing accept a complete validated provision immediately; reverse ACK is best-effort only.
+-- Fresh HMAC-authenticated BLE/LAN presence is promoted to a real connected state without requiring fragile GATT/LAN round trips.
+-- GATT ACK remains supplemental; local challenge falls back to the proven BLE/LAN challenge broadcaster.
++## 1.9.50 — connection startup + server heartbeat recovery
++- Employee PresenceService no longer reports a ready link until its foreground-service heartbeat is alive.
++- BLE advertising is connectable again so Store GATT can open the authenticated PING/ACK channel.
++- Employee starts the GATT service before exposing connectable advertising.
++- BLE advertiser no longer remains in a false `running` state when Android permissions are missing; it retries after permission/service recovery.
++- Store Bluetooth permission result now uses the scanner's real request code (`8111`).
++- Store polls authenticated employee server `lastSeenAt` and treats a fresh server heartbeat as a real third transport, alongside BLE and LAN.
++- Server presence is considered live only while the employee heartbeat is fresh; stale links are removed automatically.
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/employee-app/build.gradle.kts attend1950/employee-app/build.gradle.kts
+--- attend1949base/employee-app/build.gradle.kts	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/employee-app/build.gradle.kts	2026-09-05 23:42:33.795333242 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.attendpro.employee"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 56
+-        versionName = "1.9.49"
++        versionCode = 57
++        versionName = "1.9.50"
+     }
+ 
+     compileOptions {
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt attend1950/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
+--- attend1949base/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt	2026-09-05 23:43:52.570340740 +0000
+@@ -88,12 +88,15 @@
+         }
+         this.employeeId = employeeId
+         this.secret = SecretCodec.decode(secretText) ?: ByteArray(0)
+-        running = true
+         if (!hasPermissions()) {
++            // Do not claim the advertiser is running when Android has not granted the radio permission.
++            // PresenceService will retry after the permission is granted or on its next self-heal tick.
++            running = false
+             requestPermissions()
+-            onStatus("اسمح بالأجهزة القريبة؛ الربط عبر الشبكة المحلية يظل يعمل")
++            onStatus("صلاحية Bluetooth Advertising غير متاحة بعد — ستتم إعادة المحاولة تلقائيًا")
+             return
+         }
++        running = true
+         handler.removeCallbacks(proofWatcher)
+         restartInternal()
+         handler.postDelayed(proofWatcher, 1_000L)
+@@ -150,7 +153,7 @@
+         val settings = AdvertiseSettings.Builder()
+             .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+-            .setConnectable(false)
++            .setConnectable(true)
+             .setTimeout(0)
+             .build()
+         val data = AdvertiseData.Builder()
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt attend1950/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+--- attend1949base/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt	2026-09-05 23:42:33.795848380 +0000
+@@ -97,7 +97,7 @@
+         val header = UiKit.heroCard(this,p).apply { gravity = Gravity.CENTER_HORIZONTAL }
+         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_attend_pro); layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity,76),UiKit.dp(this@MainActivity,76)) })
+         header.addView(UiKit.title(this,p,"ATTEND PRO",27f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+-        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.48").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
++        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.50").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+         header.addView(UiKit.subtitle(this,p,"اختياري — جهاز المحل هو النظام الأساسي").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(215,255,255,255)) })
+         root.addView(header)
+ 
+@@ -522,12 +522,41 @@
+         EmployeeLateAlertScheduler.sync(this, identity)
+         refreshProfile()
+         ensureGeoPermissionIfNeeded()
++        // 1.9.50: never report pairing as fully ready before the foreground presence owner is alive.
++        // Save trust first, start every transport, then verify the service heartbeat and radio state.
+         if (identity.autoPresence) startPresence() else startBackgroundPresence()
+-        status.text = "✓ تم الربط محليًا عبر ${identity.localPairingChannel} — الهاتف جاهز دون إنترنت، والخادم للمزامنة فقط"
+-
++        status.text = "تم حفظ الربط عبر ${identity.localPairingChannel} — جاري تشغيل الاتصال الحقيقي…"
++        confirmPresenceStartupAfterPairing()
+         registerProvisionWithServer(p)
+ }
+ 
++
++    private fun confirmPresenceStartupAfterPairing(attempt: Int = 0) {
++        val now = System.currentTimeMillis()
++        val serviceAlive = identity.presenceServiceHeartbeatAt > 0L && now - identity.presenceServiceHeartbeatAt < 12_000L
++        val bleState = identity.lastBleAdvertisingState
++        val lanState = identity.lastLanState
++        if (serviceAlive) {
++            status.text = when {
++                bleState.contains("BLE يعمل") -> "✓ الربط محفوظ وخدمة الاتصال تعمل • Bluetooth يبث فعليًا"
++                lanState.isNotBlank() -> "✓ الربط محفوظ وخدمة الاتصال تعمل • Wi‑Fi/Hotspot نشط"
++                else -> "✓ الربط محفوظ وخدمة الاتصال تعمل • جاري انتظار أول بث/ACK"
++            }
++            return
++        }
++        if (attempt >= 8) {
++            status.text = "الربط محفوظ لكن خدمة الاتصال لم تبدأ. سأعيد تشغيلها الآن؛ افتح حالة الاتصال لمعرفة السبب إذا استمر."
++            startBackgroundPresence()
++            return
++        }
++        Handler(Looper.getMainLooper()).postDelayed({
++            if (!isFinishing) {
++                startBackgroundPresence()
++                confirmPresenceStartupAfterPairing(attempt + 1)
++            }
++        }, 750L)
++    }
++
+     private fun chooseAttendanceMethod(action: AttendanceAction) {
+         if (!identity.isConfigured) { status.text = "يجب ربط الهاتف بالمحل أولًا"; return }
+         pendingAction = action
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt attend1950/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+--- attend1949base/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt	2026-09-05 23:42:33.796063995 +0000
+@@ -117,9 +117,10 @@
+         EmployeeLateAlertScheduler.sync(this, identity)
+         if (identity.autoPresence) {
+             network.start(identity.employeeId, identity.pairingSecret)
+-            bluetooth.start(identity.employeeId, identity.pairingSecret)
+             localChallenges.start(identity.employeeId, identity.pairingSecret)
++            // GATT service must exist before connectable advertising is exposed.
+             directBle.start()
++            startBleAdvertisingWhenGattReady()
+             if (locationMonitoringAllowedForRun) geoMonitor.start() else geoMonitor.stop()
+         } else {
+             network.stop(); bluetooth.stop(); localChallenges.stop(); directBle.stop(); geoMonitor.stop()
+@@ -140,13 +141,23 @@
+         BleChallengeInbox.start(this, bleEmployeeId, bleSecret) { id, method, expires, action -> receiveLocalChallenge(id, method, expires, action) }
+         if (!identity.isConfigured || !identity.autoPresence) return
+         if (!network.isRunning()) network.start(identity.employeeId, identity.pairingSecret)
+-        if (!bluetooth.isRunning()) bluetooth.start(identity.employeeId, identity.pairingSecret)
+         if (!localChallenges.isRunning()) localChallenges.start(identity.employeeId, identity.pairingSecret)
+         if (!directBle.isRunning()) directBle.start()
++        if (!bluetooth.isRunning()) startBleAdvertisingWhenGattReady()
+         if (locationMonitoringAllowedForRun && !geoMonitor.isRunning()) geoMonitor.start()
+         if (!locationMonitoringAllowedForRun && geoMonitor.isRunning()) geoMonitor.stop()
+     }
+ 
++    private fun startBleAdvertisingWhenGattReady(attempt: Int = 0) {
++        if (!identity.isConfigured || !identity.autoPresence) return
++        if (bluetooth.isRunning()) return
++        if (directBle.isServiceReady() || attempt >= 8) {
++            bluetooth.start(identity.employeeId, identity.pairingSecret)
++            return
++        }
++        handler.postDelayed({ startBleAdvertisingWhenGattReady(attempt + 1) }, 250L)
++    }
++
+     private fun receiveLocalChallenge(id: String, method: AttendanceMethod, expires: Long, action: AttendanceAction) {
+         val now = System.currentTimeMillis()
+         if (id == identity.pendingChallengeId || expires <= now) return
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/store-app/build.gradle.kts attend1950/store-app/build.gradle.kts
+--- attend1949base/store-app/build.gradle.kts	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/store-app/build.gradle.kts	2026-09-05 23:42:33.795460424 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.attendpro.store"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 56
+-        versionName = "1.9.49"
++        versionCode = 57
++        versionName = "1.9.50"
+     }
+ 
+     compileOptions {
+diff -ruN '--exclude=.gradle' '--exclude=build' attend1949base/store-app/src/main/java/com/attendpro/store/MainActivity.kt attend1950/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+--- attend1949base/store-app/src/main/java/com/attendpro/store/MainActivity.kt	2026-09-05 22:15:44.000000000 +0000
++++ attend1950/store-app/src/main/java/com/attendpro/store/MainActivity.kt	2026-09-05 23:42:33.797412632 +0000
+@@ -127,6 +127,9 @@
+     private val authenticatedPresenceAt = ConcurrentHashMap<String, Long>()
+     private val lanConfirmedAt = ConcurrentHashMap<String, Long>()
+     private val lanPendingTokens = ConcurrentHashMap<String, Pair<Int, Long>>()
++    private val serverPresenceAt = ConcurrentHashMap<String, Long>()
++    @Volatile private var serverPresencePollInFlight = false
++    private var lastServerPresencePollAt = 0L
+     private var activePairingBeacon: PairingBeacon? = null
+     private var activePairingCode: String = ""
+     private var activePairingProvision: String = ""
+@@ -140,6 +143,7 @@
+             // The compact dashboard does not create the legacy nearbyView.
+             if (::counts.isInitialized || ::connectionSummaryView.isInitialized) refreshDashboard()
+             ensurePresenceDiscoveryRunning()
++            pollServerPresenceIfDue()
+             autoSyncIfReady()
+             if (::lateAlerts.isInitialized) lateAlerts.tick()
+             checkConnectedWithoutProof()
+@@ -246,6 +250,45 @@
+         }
+     }
+ 
++    private fun pollServerPresenceIfDue() {
++        val now = System.currentTimeMillis()
++        if (serverPresencePollInFlight || now - lastServerPresencePollAt < 10_000L) return
++        if (!repo.hasCentralCredentials() || repo.serverUrl.isBlank()) return
++        val employees = repo.employees().filter { it.active && it.companionEnabled }
++        if (employees.isEmpty()) return
++        lastServerPresencePollAt = now
++        serverPresencePollInFlight = true
++        Thread {
++            val identity = DeviceIdentity(this@MainActivity)
++            try {
++                employees.forEach { employee ->
++                    val link = CentralServerClient.employeeLinkStatus(
++                        repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, employee.employeeId
++                    ).getOrNull() ?: return@forEach
++                    val seenAt = link.lastSeenAt
++                    if (link.linked && seenAt > 0L && System.currentTimeMillis() - seenAt <= 30_000L) {
++                        serverPresenceAt[employee.employeeId] = seenAt
++                        val previous = nearby[employee.employeeId]
++                        val channels = previous?.channelTimes.orEmpty().toMutableMap().apply { put("Server • Heartbeat", seenAt) }
++                        nearby[employee.employeeId] = NearbyPhone(
++                            maxOf(previous?.seenAt ?: 0L, seenAt),
++                            previous?.rssi ?: -127, channels, previous?.deviceName.orEmpty(), previous?.gpsInsideAt ?: 0L
++                        )
++                        repo.markCompanionLinked(employee.employeeId, "Server • Heartbeat", seenAt)
++                    } else if (seenAt <= 0L || System.currentTimeMillis() - seenAt > 45_000L) {
++                        serverPresenceAt.remove(employee.employeeId)
++                    }
++                }
++            } finally {
++                serverPresencePollInFlight = false
++                runOnUiThread { if (!isFinishing) refreshDashboard() }
++            }
++        }.apply { isDaemon = true }.start()
++    }
++
++    private fun isServerPresenceConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean =
++        serverPresenceAt[employeeId]?.let { it > 0L && now - it <= 30_000L } == true
++
+     private fun buildActivationLockUi() {
+         window.statusBarColor = p.bg
+         val root = LinearLayout(this).apply {
+@@ -2065,7 +2108,8 @@
+         authenticatedPresenceAt[employeeId]?.let { it > 0L && now - it <= 12_000L } == true
+ 
+     private fun isEmployeeActuallyConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean =
+-        isAuthenticatedPresenceConnected(employeeId, now) || directBle.isConnected(employeeId) || isLanConnected(employeeId, now)
++        isAuthenticatedPresenceConnected(employeeId, now) || directBle.isConnected(employeeId) ||
++            isLanConnected(employeeId, now) || isServerPresenceConnected(employeeId, now)
+ 
+     private fun maybeRecordPhoneProof(employee:PairedEmployee,token:Int,method:AttendanceMethod, extraEvidence:String = "", forcedAction: AttendanceAction? = null){
+         if(!employee.allows(method)) return
+@@ -2107,6 +2151,7 @@
+                 buildList {
+                     if (directBle.isConnected(id)) add("Bluetooth BLE • ACK")
+                     if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
++                    if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
+                 }
+             }.distinct()
+             val server = ServerDiagnostics.snapshot()
+@@ -2310,7 +2355,7 @@
+             appendLine("Advertising: ${when { pairing?.isAdvertising() == true -> "يعمل للربط"; pairing?.isRunning() == true -> "الربط نشط لكن الإعلان غير مؤكد"; else -> "غير مطلوب الآن (يعمل عند ربط موظف)" }}")
+             appendLine("Scan: ${if (scanner.isScanning()) "يعمل" else "متوقف"} • GATT: ${if (actuallyConnected.any { directBle.isConnected(it.employeeId) }) "ACK مؤكد" else "لا يوجد ACK"}")
+             appendLine("LAN Listener: ${if (networkListener.isRunning()) "يعمل" else "متوقف"} • LAN ACK: ${if (actuallyConnected.any { isLanConnected(it.employeeId, now) }) "مؤكد" else "لا يوجد"}")
+-            appendLine("Server: $serverText")
++            appendLine("Server: $serverText • أجهزة Heartbeat حديثة: ${employees.count { isServerPresenceConnected(it.employeeId, now) }}")
+             append("GPS: $gpsText")
+         }
+         box.addView(UiKit.subtitle(this, p, diagnosticText).apply { gravity = Gravity.CENTER })
+@@ -2323,6 +2368,7 @@
+                 if (isAuthenticatedPresenceConnected(id, now)) add("Presence HMAC • موثق")
+                 if (directBle.isConnected(id)) add("Bluetooth GATT • ACK")
+                 if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
++                if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
+             }.joinToString(" + ").ifBlank { "لا يوجد إثبات اتصال حديث" }
+             val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(phone.seenAt))
+             "${if (isEmployeeActuallyConnected(id, now)) "● متصل فعليًا" else "◌ مكتشف فقط"} • $name\nGATT: ${directBle.diagnosticState(id)}\nACK: $actual\nمكتشف عبر: $discovered • آخر ظهور $time • ${phone.rssi} dBm"
+@@ -2493,7 +2539,7 @@
+     override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<out String>,grantResults:IntArray){
+         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+         when(requestCode){
+-            1927 -> {
++            BleEmployeeScanner.REQUEST_SCAN -> {
+                 if(grantResults.isNotEmpty()&&grantResults.all{it==PackageManager.PERMISSION_GRANTED}){status.text="تم منح صلاحيات BLE";ensurePresenceDiscoveryRunning()}
+                 else status.text="يلزم السماح بالأجهزة القريبة/البلوتوث"
+             }
