@@ -85,28 +85,40 @@ jobs:
 
       - name: Attempt permanent signing with approved previous key
         env:
-          KS_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
-          KS_PASS: ${{ secrets.ATTEND_PRO_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
-          KEY_PASS: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p signed
-          EXPECTED='6F:8B:CC:08:AE:6C:8D:96:54:E7:AA:2C:9A:66:1F:B6:BD:F2:1E:31:B7:20:AB:3A:DD:88:AE:D0:CD:4F:4D:82'
-          if [ -z "${KS_B64:-}" ] || [ -z "${KS_PASS:-}" ] || [ -z "${KEY_ALIAS:-}" ] || [ -z "${KEY_PASS:-}" ]; then
-            echo 'PERMANENT_SIGNING_AVAILABLE=false' | tee signing-status.txt
-            exit 0
-          fi
-          echo "$KS_B64" | base64 -d > /tmp/attend-pro.jks
+          EXPECTED='6f8bcc08ae6c8d9654e7aa2c9a661fb6bdf21e31b720ab3add88aed0cd4f4d82'
+          for V in ATTEND_PRO_KEYSTORE_B64 ATTEND_PRO_STORE_PASSWORD ATTEND_PRO_KEY_ALIAS ATTEND_PRO_KEY_PASSWORD; do
+            if [ -z "${!V:-}" ]; then
+              echo 'PERMANENT_SIGNING_AVAILABLE=false' | tee signing-status.txt
+              echo "Missing approved signing secret: $V"
+              exit 0
+            fi
+          done
+          KEYSTORE=/tmp/attend-pro-permanent.jks
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$ATTEND_PRO_STORE_PASSWORD" -alias "$ATTEND_PRO_KEY_ALIAS" >/dev/null
           ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
           APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
           for APP in employee store; do
             if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.58-PERMANENT.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.58-PERMANENT.apk; fi
             UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
-            "$ZIPALIGN" -f 4 "$UNS" /tmp/$APP-aligned.apk
-            "$APKSIGNER" sign --ks /tmp/attend-pro.jks --ks-pass "pass:$KS_PASS" --ks-key-alias "$KEY_ALIAS" --key-pass "pass:$KEY_PASS" --out "signed/$OUT" /tmp/$APP-aligned.apk
+            "$ZIPALIGN" -f -p 4 "$UNS" /tmp/$APP-aligned.apk
+            "$APKSIGNER" sign \
+              --ks "$KEYSTORE" \
+              --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" \
+              --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" \
+              --key-pass "env:ATTEND_PRO_KEY_PASSWORD" \
+              --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+              --out "signed/$OUT" /tmp/$APP-aligned.apk
             "$APKSIGNER" verify --verbose --print-certs "signed/$OUT" | tee "signed/$APP-signing.txt"
-            grep -Fq "$EXPECTED" "signed/$APP-signing.txt"
+            ACTUAL=$("$APKSIGNER" verify --print-certs "signed/$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1 | tr 'A-F' 'a-f')
+            [ "$ACTUAL" = "$EXPECTED" ] || { echo "Permanent certificate mismatch for $APP"; exit 1; }
           done
           echo 'PERMANENT_SIGNING_AVAILABLE=true' | tee signing-status.txt
           sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
