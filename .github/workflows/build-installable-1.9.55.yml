@@ -59,7 +59,7 @@ jobs:
           (cd buildsrc && patch -p1 --batch < /tmp/1954.patch)
 
           base64 -d .source_patches/1.9.55/employee-real-link.patch.xz.b64 | xz -dc > /tmp/1955.patch
-          echo '526dcced448c9f3efd366857998f848e6a2f41a92bdbc891eb2d991135274adb  /tmp/1955.patch' | sha256sum -c -
+          echo 'cd96b310488eb89c095122356462dc2260df44b8bb0c44af61d2c85583171fad  /tmp/1955.patch' | sha256sum -c -
           (cd buildsrc && patch -p1 --batch < /tmp/1955.patch)
 
           grep -q 'versionCode = 62' buildsrc/employee-app/build.gradle.kts
@@ -71,13 +71,20 @@ jobs:
         run: |
           set -euo pipefail
           EMP=buildsrc/employee-app/src/main/java/com/attendpro/employee
+          STORE=buildsrc/store-app/src/main/java/com/attendpro/store
           grep -q 'stopBleScanForGatt()' "$EMP/PairingDiscovery.kt"
           grep -q 'bleScanRetry' "$EMP/PairingDiscovery.kt"
           grep -q 'gattAttempt < 5' "$EMP/PairingDiscovery.kt"
           grep -q 'requestConnectionPriority' "$EMP/PairingDiscovery.kt"
+          grep -q 'ScanFilter.Builder().setServiceUuid(BleProtocol.SERVICE_UUID)' "$EMP/PairingDiscovery.kt"
+          grep -q 'setManufacturerData' "$EMP/PairingDiscovery.kt"
+          grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' "$EMP/BlePresenceAdvertiser.kt"
           grep -q 'addServiceUuid(ParcelUuid(BleDirectProtocol.SERVICE_UUID))' "$EMP/BlePresenceAdvertiser.kt"
           grep -q 'openGattServer' "$EMP/BleDirectLinkServer.kt"
           grep -q 'GATT Server' "$EMP/BleDirectLinkServer.kt"
+          grep -q 'pauseForGatt' "$STORE/BleEmployeeScanner.kt"
+          grep -q 'scanner.pauseForGatt(10_000L)' "$STORE/MainActivity.kt"
+          grep -q 'ScanFilter.Builder().setServiceUuid(BleProtocol.SERVICE_UUID)' "$STORE/BleEmployeeScanner.kt"
 
       - name: Run connection protocol tests
         run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
@@ -104,7 +111,8 @@ jobs:
           cp employee-signing.txt store-signing.txt final/
           printf '%s\n' \
             'ATTEND-PRO 1.9.55 employee real-link field-test build.' \
-            'Employee BLE scanner now stops before GATT, retries scanner failures, uses progressive GATT backoff, retries GATT server startup, and advertises the direct GATT service in scan response.' \
+            'Employee pairing now uses filtered BLE scanning, pauses scan before GATT, retries scan/GATT with progressive backoff, retries GATT server startup, and advertises direct GATT service metadata.' \
+            'Store presence scan is filtered and pauses before direct GATT to avoid scan/connection contention on OEM Android stacks.' \
             'Debug-signed because permanent production signing secrets are unavailable.' \
             'If Android reports a signature conflict, uninstall the prior test build before installing.' > final/INSTALL-NOTE.txt
 
@@ -136,4 +144,4 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v1.9.55-real-link-${GITHUB_RUN_NUMBER}"
-          gh release create "$TAG" final/* --repo "${{ github.repository }}" --title "ATTEND-PRO 1.9.55 Employee Real Link" --notes "Field-test build focused on the employee-side real Bluetooth/GATT linking path and OEM recovery. Debug-signed because permanent production signing secrets are unavailable."
+          gh release create "$TAG" final/* --repo "${{ github.repository }}" --title "ATTEND-PRO 1.9.55 Employee Real Link" --notes "Field-test build focused on employee BLE scan/GATT reliability, filtered screen-off discovery, GATT retry and scan/GATT contention recovery. Debug-signed because permanent production signing secrets are unavailable."
