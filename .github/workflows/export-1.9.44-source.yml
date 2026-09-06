@@ -1,0 +1,24 @@
+name: Export ATTEND-PRO 1.9.44 source audit
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify old source
+        run: |
+          set -euo pipefail
+          unzip -t ATTEND-PRO-V1-source-1.9.44.zip >/dev/null
+          unzip -p ATTEND-PRO-V1-source-1.9.44.zip employee-app/build.gradle.kts | grep -q 'versionName = "1.9.44"'
+          unzip -p ATTEND-PRO-V1-source-1.9.44.zip store-app/build.gradle.kts | grep -q 'versionName = "1.9.44"'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.44-audit
+          path: ATTEND-PRO-V1-source-1.9.44.zip
