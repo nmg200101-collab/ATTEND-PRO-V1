@@ -1,0 +1,2 @@
+ATTEND-PRO 1.9.59 build trigger after workflow registration.
+Connection baseline: 1.9.58 field-approved and CI-locked.
