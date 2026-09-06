@@ -1,0 +1,118 @@
+name: Build ATTEND-PRO 1.9.52 Clean Reset V2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Reconstruct clean 1.9.52 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf old current-src buildsrc artifact
+          mkdir -p old current-src buildsrc artifact
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d old
+          gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
+          unzip -q artifact/ATTEND-PRO-V1-source-1.9.51.zip -d current-src
+          cp -a current-src/. buildsrc/
+          awk '/python3 - <<'"'"'PY'"'"'/{f=1;next} f && /^          PY$/{exit} f{sub(/^          /,"");print}' .github/workflows/build-1.9.52.yml > /tmp/reset1952.py
+          python3 /tmp/reset1952.py
+
+      - name: Correct AP4P compatibility test
+        run: |
+          cat > buildsrc/core/src/test/java/com/attendpro/core/PairingProtocolCompatibility1952Test.kt <<'EOF'
+          package com.attendpro.core
+          import org.junit.Assert.*
+          import org.junit.Test
+          class PairingProtocolCompatibility1952Test {
+              @Test fun ap4pRoundTripPreservesProvision() {
+                  val secret = SecretCodec.encode(ByteArray(32) { (it + 1).toByte() })
+                  val p = PairingProtocol.EmployeeProvision(
+                      storeId="store-1", storeName="Store", employeeId="emp-1", displayName="Employee",
+                      branchId="B1", phone="", jobTitle="", pairingSecret=secret, pinHash="",
+                      expiresAt=System.currentTimeMillis()+600000L,
+                      allowedMethods=setOf(AttendanceMethod.PHONE_BLE_BIOMETRIC.name), serverUrl="https://example.invalid"
+                  )
+                  val compact=PairingProtocol.encodeEmployeeProvisionCompact(p)
+                  assertTrue(compact.startsWith("AP4P:"))
+                  val d=PairingProtocol.decodeEmployeeProvision(compact)
+                  assertNotNull(d); assertEquals(p.employeeId,d!!.employeeId); assertEquals(p.storeId,d.storeId)
+                  assertEquals(p.pairingSecret,d.pairingSecret); assertEquals(p.allowedMethods,d.allowedMethods)
+              }
+          }
+          EOF
+
+      - name: Static regression audit
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 59' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.52"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 59' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.52"' buildsrc/store-app/build.gradle.kts
+          ! grep -RIn --include='*.kt' -E 'الإصدار 1\.9\.(4[0-9]|5[0-1])' buildsrc/employee-app/src/main buildsrc/store-app/src/main
+          grep -q 'BuildConfig.VERSION_NAME' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'BuildConfig.VERSION_NAME' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          cmp old/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          ! grep -RIn 'startImmediatePairingBridge\|pairingConnectionWatcher' buildsrc/employee-app/src/main buildsrc/store-app/src/main
+          grep -q 'bluetooth.start(identity.employeeId, identity.pairingSecret)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'encodeEmployeeProvisionCompact(provision)' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+
+      - name: Run all core tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Build both apps
+        run: gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Verify packaged versions
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
+          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
+          grep -q "versionCode='59' versionName='1.9.52'" employee-badging.txt
+          grep -q "versionCode='59' versionName='1.9.52'" store-badging.txt
+
+      - name: Package clean source
+        run: |
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.52.zip . -x '.gradle/*' 'core/build/*' 'employee-app/build/*' 'store-app/build/*')
+          unzip -t ATTEND-PRO-V1-source-1.9.52.zip >/dev/null
+          sha256sum ATTEND-PRO-V1-source-1.9.52.zip > source-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.52-debug-v2
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.52-debug-v2
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.52-v2
+          path: |
+            ATTEND-PRO-V1-source-1.9.52.zip
+            source-sha256.txt
+            employee-badging.txt
+            store-badging.txt
