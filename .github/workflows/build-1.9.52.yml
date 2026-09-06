@@ -1,0 +1,180 @@
+name: Build ATTEND-PRO 1.9.52 Clean Connection Reset
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Prepare verified old and current sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf old current-src buildsrc artifact
+          mkdir -p old current-src buildsrc artifact
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d old
+          gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
+          unzip -q artifact/ATTEND-PRO-V1-source-1.9.51.zip -d current-src
+          cp -a current-src/. buildsrc/
+          grep -q 'versionName = "1.9.44"' old/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.51"' buildsrc/employee-app/build.gradle.kts
+
+      - name: Apply clean connection reset
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil,re
+          old=Path('old'); out=Path('buildsrc')
+
+          def extract_func(text, signature):
+              i=text.index(signature); brace=text.index('{',i); depth=0; ins=False; esc=False; quote=''; j=brace
+              while j < len(text):
+                  c=text[j]
+                  if ins:
+                      if esc: esc=False
+                      elif c=='\\': esc=True
+                      elif c==quote: ins=False
+                  else:
+                      if c in ('"', "'"): ins=True; quote=c
+                      elif c=='{': depth+=1
+                      elif c=='}':
+                          depth-=1
+                          if depth==0: return text[i:j+1],i,j+1
+                  j+=1
+              raise RuntimeError(signature)
+
+          def replace_func(dst,src,sig):
+              d=dst.read_text(); s=src.read_text(); sf,_,_=extract_func(s,sig); _,a,b=extract_func(d,sig); dst.write_text(d[:a]+sf+d[b:])
+
+          for module in ('employee-app','store-app'):
+              p=out/module/'build.gradle.kts'; s=p.read_text()
+              s=re.sub(r'versionCode\s*=\s*\d+','versionCode = 59',s)
+              s=re.sub(r'versionName\s*=\s*"[^"]+"','versionName = "1.9.52"',s)
+              p.write_text(s)
+
+          emp=out/'employee-app/src/main/java/com/attendpro/employee/MainActivity.kt'
+          oldemp=old/'employee-app/src/main/java/com/attendpro/employee/MainActivity.kt'
+          for sig in ('    private fun handlePairingInput(raw:String)','    private fun acceptProvision(text:String,serverValidated:Boolean=false, localChannel:String="محلي")'):
+              replace_func(emp,oldemp,sig)
+          s=emp.read_text()
+          for sig in ('    private fun startImmediatePairingBridge()','    private fun confirmPresenceStartupAfterPairing(attempt: Int = 0)'):
+              try:
+                  _,a,b=extract_func(s,sig); s=s[:a]+s[b:]
+              except ValueError: pass
+          s=s.replace('"تطبيق الموظف المساند • الإصدار 1.9.51"','"تطبيق الموظف المساند • الإصدار ${BuildConfig.VERSION_NAME}"')
+          s=s.replace('"تطبيق الموظف • الإصدار 1.9.48"','"تطبيق الموظف • الإصدار ${BuildConfig.VERSION_NAME}"')
+          emp.write_text(s)
+
+          shutil.copy2(old/'employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt', out/'employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt')
+
+          ps=out/'employee-app/src/main/java/com/attendpro/employee/PresenceService.kt'; s=ps.read_text()
+          s=s.replace('''            network.start(identity.employeeId, identity.pairingSecret)\n            localChallenges.start(identity.employeeId, identity.pairingSecret)\n            // GATT service must exist before connectable advertising is exposed.\n            directBle.start()\n            startBleAdvertisingWhenGattReady()''','''            network.start(identity.employeeId, identity.pairingSecret)\n            bluetooth.start(identity.employeeId, identity.pairingSecret)\n            localChallenges.start(identity.employeeId, identity.pairingSecret)\n            directBle.start()''')
+          s=s.replace('''        if (!localChallenges.isRunning()) localChallenges.start(identity.employeeId, identity.pairingSecret)\n        if (!directBle.isRunning()) directBle.start()\n        if (!bluetooth.isRunning()) startBleAdvertisingWhenGattReady()''','''        if (!bluetooth.isRunning()) bluetooth.start(identity.employeeId, identity.pairingSecret)\n        if (!localChallenges.isRunning()) localChallenges.start(identity.employeeId, identity.pairingSecret)\n        if (!directBle.isRunning()) directBle.start()''')
+          try:
+              _,a,b=extract_func(s,'    private fun startBleAdvertisingWhenGattReady(attempt: Int = 0)'); s=s[:a]+s[b:]
+          except ValueError: pass
+          ps.write_text(s)
+
+          store=out/'store-app/src/main/java/com/attendpro/store/MainActivity.kt'; olds=old/'store-app/src/main/java/com/attendpro/store/MainActivity.kt'
+          for sig in ('    private fun showProvisionQr(employee:PairedEmployee)','    private fun showPairingTicketDialog(employee:PairedEmployee, localCode:String, fullProvision:String, qrProvision:String)'):
+              replace_func(store,olds,sig)
+          s=store.read_text()
+          s=s.replace('"تفعيل مركزي محمي • الإصدار 1.9.51"','"تفعيل مركزي محمي • الإصدار ${BuildConfig.VERSION_NAME}"')
+          s=s.replace('"نظام حضور المحل • الإصدار 1.9.51"','"نظام حضور المحل • الإصدار ${BuildConfig.VERSION_NAME}"')
+          s=s.replace('"الإصدار 1.9.51"','"الإصدار ${BuildConfig.VERSION_NAME}"')
+          s=s.replace('"الخادم لم يرسل مهلة تشغيل آمنة. استخدم خادم ATTEND PRO المركزي المتوافق مع الإصدار 1.9.2."','"الخادم لم يرسل مهلة تشغيل آمنة. حدّث خدمة ATTEND PRO المركزية إلى واجهة API المتوافقة."')
+          store.write_text(s)
+
+          pb=out/'store-app/src/main/java/com/attendpro/store/PairingBeacon.kt'; shutil.copy2(old/'store-app/src/main/java/com/attendpro/store/PairingBeacon.kt',pb)
+          s=pb.read_text(); marker='    @SuppressLint("MissingPermission")\n    fun stop()'
+          s=s.replace(marker,'    fun isRunning(): Boolean = running\n    fun isAdvertising(): Boolean = running && bleAdvertisingStarted\n    fun isGattServiceReady(): Boolean = running && serviceReady\n\n'+marker)
+          pb.write_text(s)
+
+          settings=out/'store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt'; s=settings.read_text(); s=s.replace('• الإصدار 1.9.43','• الإصدار ${BuildConfig.VERSION_NAME}'); settings.write_text(s)
+
+          test=out/'core/src/test/java/com/attendpro/core/PairingProtocolCompatibility1952Test.kt'; test.parent.mkdir(parents=True,exist_ok=True)
+          test.write_text('''package com.attendpro.core\n\nimport org.junit.Assert.*\nimport org.junit.Test\n\nclass PairingProtocolCompatibility1952Test {\n @Test fun ap4pRoundTripPreservesProvision() {\n  val secret=SecretCodec.encode(ByteArray(32){(it+1).toByte()})\n  val p=PairingProtocol.EmployeeProvision("store-1","Store","B1","emp-1","Employee",secret,"https://example.invalid","",null,null,listOf(AttendanceMethod.PHONE_BLE_BIOMETRIC))\n  val compact=PairingProtocol.encodeEmployeeProvisionCompact(p)\n  assertTrue(compact.startsWith("AP4P:"))\n  val d=PairingProtocol.decodeEmployeeProvision(compact)\n  assertNotNull(d); assertEquals(p.employeeId,d!!.employeeId); assertEquals(p.storeId,d.storeId); assertEquals(p.pairingSecret,d.pairingSecret)\n }\n}\n''')
+          PY
+
+      - name: Static regression audit
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 59' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.52"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 59' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.52"' buildsrc/store-app/build.gradle.kts
+          ! grep -RIn --include='*.kt' -E 'الإصدار 1\.9\.(4[0-9]|5[0-9])' buildsrc/employee-app/src/main buildsrc/store-app/src/main
+          grep -q 'BuildConfig.VERSION_NAME' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'BuildConfig.VERSION_NAME' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          cmp old/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          ! grep -RIn 'startImmediatePairingBridge\|pairingConnectionWatcher' buildsrc/employee-app/src/main buildsrc/store-app/src/main
+          grep -q 'bluetooth.start(identity.employeeId, identity.pairingSecret)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'encodeEmployeeProvisionCompact(provision)' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+
+      - name: Run core tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Build both APKs
+        run: gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Verify APK package versions and no stale UI labels in source
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
+          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
+          grep -q "versionCode='59' versionName='1.9.52'" employee-badging.txt
+          grep -q "versionCode='59' versionName='1.9.52'" store-badging.txt
+
+      - name: Package clean source
+        run: |
+          rm -rf buildsrc/.gradle
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.52.zip .)
+          unzip -t ATTEND-PRO-V1-source-1.9.52.zip >/dev/null
+          sha256sum ATTEND-PRO-V1-source-1.9.52.zip > source-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.52-debug
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.52-debug
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.52
+          path: |
+            ATTEND-PRO-V1-source-1.9.52.zip
+            source-sha256.txt
+            employee-badging.txt
+            store-badging.txt
