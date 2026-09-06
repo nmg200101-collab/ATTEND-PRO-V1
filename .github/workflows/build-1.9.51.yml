@@ -65,10 +65,12 @@ jobs:
         run: |
           gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
 
-      - name: Package 1.9.51 source
+      - name: Package 1.9.51 source without deleting built APKs
         run: |
-          rm -rf buildsrc/.gradle buildsrc/core/build buildsrc/employee-app/build buildsrc/store-app/build
-          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.51.zip .)
+          rm -rf /tmp/attend1951-package
+          cp -a buildsrc /tmp/attend1951-package
+          rm -rf /tmp/attend1951-package/.gradle /tmp/attend1951-package/core/build /tmp/attend1951-package/employee-app/build /tmp/attend1951-package/store-app/build
+          (cd /tmp/attend1951-package && zip -qr "$GITHUB_WORKSPACE/ATTEND-PRO-V1-source-1.9.51.zip" .)
           unzip -t ATTEND-PRO-V1-source-1.9.51.zip >/dev/null
 
       - name: Upload Employee APK
