@@ -68,7 +68,7 @@ jobs:
             buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
 
           base64 -d .source_patches/1.9.54/connection-compat.patch.xz.b64 | xz -dc > /tmp/1954.patch
-          echo '99238328c4275f05e7795cdf5e84c77ee90fb1feaf6571412ffd877c31583e99  /tmp/1954.patch' | sha256sum -c -
+          echo 'b95ebc7e77befcf7aad980be851e42590442579b682c1cce7da8e56f7abccf7f  /tmp/1954.patch' | sha256sum -c -
           (cd buildsrc && patch -p1 --batch < /tmp/1954.patch)
 
       - name: Static Android 8-15+ compatibility and regression audit
