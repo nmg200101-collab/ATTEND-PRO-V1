@@ -1,0 +1,320 @@
+name: Build ATTEND-PRO 1.9.54 Full Connection Compatibility
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.source_patches/1.9.54/**'
+      - '.github/workflows/build-permanent-1.9.54.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-signed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Reconstruct verified 1.9.53 base and apply 1.9.54 compatibility fix
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf artifact buildsrc
+          mkdir -p artifact buildsrc
+
+          gh run download 34022338830 -R "${{ github.repository }}" \
+            -n ATTEND-PRO-V1-source-1.9.52-v3 -D artifact
+          unzip -q artifact/ATTEND-PRO-V1-source-1.9.52.zip -d buildsrc
+
+          base64 -d .source_patches/1.9.53/base.patch.xz.b64 | xz -dc > /tmp/1953-base.patch
+          (cd buildsrc && patch -p4 --batch < /tmp/1953-base.patch)
+
+          grep -q 'versionCode = 60' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.53"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 60' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.53"' buildsrc/store-app/build.gradle.kts
+          grep -q 'directBle.touch(employee.employeeId, secret, device, directBleConfig())' \
+            buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'negotiatedMtu' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          ! grep -RIn 'pairingBridgeGeneration' buildsrc/employee-app/src/main buildsrc/store-app/src/main
+          ! grep -RIn 'context as? Activity' \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
+
+          base64 -d .source_patches/1.9.54/connection-compat.patch.xz.b64 | xz -dc > /tmp/1954.patch
+          echo '99238328c4275f05e7795cdf5e84c77ee90fb1feaf6571412ffd877c31583e99  /tmp/1954.patch' | sha256sum -c -
+          (cd buildsrc && patch -p1 --batch < /tmp/1954.patch)
+
+      - name: Static Android 8-15+ compatibility and regression audit
+        run: |
+          set -euo pipefail
+          EMP=buildsrc/employee-app
+          STORE=buildsrc/store-app
+
+          grep -q 'versionCode = 61' "$EMP/build.gradle.kts"
+          grep -q 'versionName = "1.9.54"' "$EMP/build.gradle.kts"
+          grep -q 'minSdk = 26' "$EMP/build.gradle.kts"
+          grep -q 'targetSdk = 35' "$EMP/build.gradle.kts"
+          grep -q 'versionCode = 61' "$STORE/build.gradle.kts"
+          grep -q 'versionName = "1.9.54"' "$STORE/build.gradle.kts"
+          grep -q 'minSdk = 26' "$STORE/build.gradle.kts"
+          grep -q 'targetSdk = 35' "$STORE/build.gradle.kts"
+
+          grep -q 'REQUEST_BLUETOOTH' "$EMP/src/main/java/com/attendpro/employee/MainActivity.kt"
+          grep -q 'startBackgroundPresence()' "$EMP/src/main/java/com/attendpro/employee/MainActivity.kt"
+          ! grep -RIn 'requestPermissions' "$EMP/src/main/java/com/attendpro/employee/PresenceService.kt"
+          ! grep -RIn 'requestPermissions' "$EMP/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt"
+          ! grep -RIn 'context as? Activity' "$EMP/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt"
+
+          grep -q 'canAdvertiseAndServeGatt' "$EMP/src/main/java/com/attendpro/employee/PresenceService.kt"
+          grep -q 'canScanBleChallenges' "$EMP/src/main/java/com/attendpro/employee/PresenceService.kt"
+          grep -q 'BLUETOOTH_ADVERTISE' "$EMP/src/main/java/com/attendpro/employee/PresenceService.kt"
+          grep -q 'BLUETOOTH_SCAN' "$EMP/src/main/java/com/attendpro/employee/PresenceService.kt"
+          grep -q 'ACCESS_FINE_LOCATION' "$EMP/src/main/java/com/attendpro/employee/BleChallengeInbox.kt"
+          grep -q 'Build.VERSION.SDK_INT >= Build.VERSION_CODES.S' "$EMP/src/main/java/com/attendpro/employee/BleChallengeInbox.kt"
+
+          grep -q 'REQUEST_NOTIFICATIONS' "$EMP/src/main/java/com/attendpro/employee/MainActivity.kt"
+          grep -q 'maybeRequestNotificationPermission' "$EMP/src/main/java/com/attendpro/employee/MainActivity.kt"
+
+          grep -q 'running = false' "$EMP/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt"
+          grep -q 'running = false' "$STORE/src/main/java/com/attendpro/store/NetworkPresenceListener.kt"
+          grep -q 'android.permission.CHANGE_NETWORK_STATE' "$EMP/src/main/AndroidManifest.xml"
+          grep -q 'android.permission.CHANGE_WIFI_STATE' "$EMP/src/main/AndroidManifest.xml"
+
+          grep -q 'directBle.touch(employee.employeeId, secret, device, directBleConfig())' \
+            "$STORE/src/main/java/com/attendpro/store/MainActivity.kt"
+          grep -q 'negotiatedMtu' "$STORE/src/main/java/com/attendpro/store/PairingBeacon.kt"
+          grep -q '18' "$STORE/src/main/java/com/attendpro/store/PairingBeacon.kt"
+
+          ! grep -RIn 'pairingBridgeGeneration' "$EMP/src/main" "$STORE/src/main"
+
+      - name: Add and run connection protocol regression tests
+        run: |
+          set -euo pipefail
+          mkdir -p buildsrc/core/src/test/java/com/attendpro/core
+          cat > buildsrc/core/src/test/java/com/attendpro/core/ConnectionCompatibility1954Test.kt <<'EOF'
+          package com.attendpro.core
+
+          import org.junit.Assert.*
+          import org.junit.Test
+
+          class ConnectionCompatibility1954Test {
+              private val secret = ByteArray(32) { (it * 7 + 3).toByte() }
+
+              @Test fun bleDirectPingAckConfirmIsAuthenticatedEndToEnd() {
+                  val now = 1_780_000_000_000L
+                  val ping = BleDirectProtocol.encodePing(secret, now, 0x12345678)
+                  val decoded = BleDirectProtocol.decodePing(ping, secret, now)
+                  assertNotNull(decoded)
+                  val ack = BleDirectProtocol.encodeAck(secret, decoded!!.nonce, now + 300)
+                  assertTrue(BleDirectProtocol.verifyAck(ack, secret, decoded.nonce, now + 300))
+                  val confirm = BleDirectProtocol.encodeAckConfirm(secret, decoded.nonce, now + 600)
+                  assertTrue(BleDirectProtocol.verifyAckConfirm(confirm, secret, decoded.nonce, now + 600))
+                  assertFalse(BleDirectProtocol.verifyAck(confirm, secret, decoded.nonce, now + 600))
+              }
+
+              @Test fun lanPresenceAckConfirmBindsProofToken() {
+                  val now = 1_780_000_000_000L
+                  val employeeId = "emp-compat-1954"
+                  val raw = BleProtocol.buildPayload(employeeId, secret, 0, now)
+                  val payload = BleProtocol.parse(raw)!!
+                  assertTrue(BleProtocol.verifyAuthenticated(payload, employeeId, secret, now))
+                  val ack = LanAckProtocol.encode(payload.employeeHash, payload.token, secret, now + 100)
+                  assertTrue(LanAckProtocol.verify(ack, payload.employeeHash, payload.token, secret, now + 100))
+                  val confirm = LanConfirmProtocol.encode(payload.employeeHash, payload.token, secret, now + 200)
+                  assertTrue(LanConfirmProtocol.verify(confirm, payload.employeeHash, payload.token, secret, now + 200))
+                  assertFalse(LanConfirmProtocol.verify(confirm, payload.employeeHash, payload.token + 1, secret, now + 200))
+              }
+
+              @Test fun compactProvisionRoundTripsPairingSecret() {
+                  val encoded = SecretCodec.encode(secret)
+                  val provision = PairingProtocol.EmployeeProvision(
+                      storeId = "store-compat", storeName = "Store Compat",
+                      employeeId = "emp-compat", displayName = "Employee Compat",
+                      branchId = "MAIN", phone = "", jobTitle = "",
+                      pairingSecret = encoded, pinHash = "",
+                      expiresAt = System.currentTimeMillis() + 600000,
+                      allowedMethods = setOf(AttendanceMethod.PHONE_BLE_BIOMETRIC.name),
+                      serverUrl = "https://example.invalid"
+                  )
+                  val compact = PairingProtocol.encodeEmployeeProvisionCompact(provision)
+                  val decoded = PairingProtocol.decodeEmployeeProvision(compact)
+                  assertNotNull(decoded)
+                  assertEquals(provision.storeId, decoded!!.storeId)
+                  assertEquals(provision.employeeId, decoded.employeeId)
+                  assertEquals(provision.pairingSecret, decoded.pairingSecret)
+                  assertTrue(SecretCodec.isValid(decoded.pairingSecret))
+              }
+          }
+          EOF
+          gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Compile both apps debug
+        run: gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Build unsigned release APKs
+        run: gradle -p buildsrc :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
+
+      - name: Verify unsigned package metadata and permissions
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          EMP="buildsrc/employee-app/build/outputs/apk/release/employee-app-release-unsigned.apk"
+          STORE="buildsrc/store-app/build/outputs/apk/release/store-app-release-unsigned.apk"
+          test -s "$EMP"
+          test -s "$STORE"
+          "$AAPT" dump badging "$EMP" | tee employee-badging.txt
+          "$AAPT" dump badging "$STORE" | tee store-badging.txt
+          grep -q "versionCode='61' versionName='1.9.54'" employee-badging.txt
+          grep -q "versionCode='61' versionName='1.9.54'" store-badging.txt
+          "$AAPT" dump permissions "$EMP" | tee employee-permissions.txt
+          "$AAPT" dump permissions "$STORE" | tee store-permissions.txt
+          for P in android.permission.BLUETOOTH_SCAN android.permission.BLUETOOTH_CONNECT android.permission.BLUETOOTH_ADVERTISE android.permission.ACCESS_FINE_LOCATION; do
+            grep -q "$P" employee-permissions.txt
+          done
+          grep -q 'android.permission.BLUETOOTH_SCAN' store-permissions.txt
+          grep -q 'android.permission.BLUETOOTH_CONNECT' store-permissions.txt
+
+      - name: Prepare permanent ATTEND-PRO signing key
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for V in ATTEND_PRO_KEYSTORE_B64 ATTEND_PRO_STORE_PASSWORD ATTEND_PRO_KEY_ALIAS ATTEND_PRO_KEY_PASSWORD; do
+            [ -n "${!V:-}" ] || { echo "Required permanent signing secret $V is missing"; exit 1; }
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/ATTEND-PRO-PERMANENT-RELEASE.jks"
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ATTEND_PRO_STORE_PASSWORD" -alias "$ATTEND_PRO_KEY_ALIAS" >/dev/null
+          echo "ATTEND_PRO_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+
+      - name: Zipalign and sign production release APKs
+        env:
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ZIPALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          mkdir -p final
+
+          EMP_U="buildsrc/employee-app/build/outputs/apk/release/employee-app-release-unsigned.apk"
+          STORE_U="buildsrc/store-app/build/outputs/apk/release/store-app-release-unsigned.apk"
+          EMP_A="$RUNNER_TEMP/employee-aligned.apk"
+          STORE_A="$RUNNER_TEMP/store-aligned.apk"
+          EMP_F="final/ATTEND-PRO-Employee-1.9.54-FULL-CONNECTION-FIX.apk"
+          STORE_F="final/ATTEND-PRO-Store-1.9.54-FULL-CONNECTION-FIX.apk"
+
+          "$ZIPALIGN" -f -p 4 "$EMP_U" "$EMP_A"
+          "$ZIPALIGN" -f -p 4 "$STORE_U" "$STORE_A"
+
+          "$APKSIGNER" sign \
+            --ks "$ATTEND_PRO_KEYSTORE_PATH" \
+            --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" \
+            --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" \
+            --key-pass "env:ATTEND_PRO_KEY_PASSWORD" \
+            --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$EMP_F" "$EMP_A"
+
+          "$APKSIGNER" sign \
+            --ks "$ATTEND_PRO_KEYSTORE_PATH" \
+            --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" \
+            --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" \
+            --key-pass "env:ATTEND_PRO_KEY_PASSWORD" \
+            --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+            --out "$STORE_F" "$STORE_A"
+
+          "$ZIPALIGN" -c -v 4 "$EMP_F"
+          "$ZIPALIGN" -c -v 4 "$STORE_F"
+
+      - name: Verify permanent signature and final APKs
+        run: |
+          set -euo pipefail
+          EXPECTED="6f8bcc08ae6c8d9654e7aa2c9a661fb6bdf21e31b720ab3add88aed0cd4f4d82"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          for APK in final/*.apk; do
+            "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "${APK}.verify.txt"
+            ACTUAL=$($APKSIGNER verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n1 | tr 'A-F' 'a-f')
+            [ "$ACTUAL" = "$EXPECTED" ] || { echo "Permanent certificate mismatch for $APK"; exit 1; }
+            "$AAPT" dump badging "$APK" | grep -q "versionCode='61' versionName='1.9.54'"
+          done
+          sha256sum final/*.apk | tee final/SHA256SUMS.txt
+
+      - name: Package final 1.9.54 source and verification report
+        run: |
+          set -euo pipefail
+          cat > final/ATTEND-PRO-1.9.54-FINAL-VERIFICATION.txt <<'EOF'
+          ATTEND-PRO 1.9.54 FULL CONNECTION COMPATIBILITY - FINAL CI VERIFICATION
+          - Android floor: API 26 / Android 8.0.
+          - Android 12+: Bluetooth runtime permission is resolved by Activity before PresenceService starts.
+          - Android 8-11: BLE scan uses legacy location permission path.
+          - BLE advertising/GATT, BLE challenge scan, LAN/Hotspot and Server are independently gated.
+          - BLE/GATT failure cannot stop LAN/Server presence.
+          - Employee GATT server retries service registration failure automatically.
+          - LAN presence sockets self-heal after bind/socket failure on both Store and Employee.
+          - Store authenticated BLE discovery starts direct GATT touch/connect.
+          - Provisioning remains negotiated-MTU aware with safe default chunking and validated reassembly.
+          - Android 13+ notification permission is sequenced separately from Bluetooth permission.
+          - Core authenticated BLE, LAN and provisioning protocol regressions passed.
+          - Both apps compile and release APKs are permanently signed with the expected ATTEND-PRO certificate.
+          IMPORTANT: CI cannot certify RF/Bluetooth behavior of every physical OEM device. Field testing on representative phones remains required.
+          EOF
+          (cd buildsrc && zip -qr ../final/ATTEND-PRO-V1-source-1.9.54-FULL-CONNECTION.zip . \
+            -x '.gradle/*' 'core/build/*' 'employee-app/build/*' 'store-app/build/*')
+          sha256sum final/ATTEND-PRO-V1-source-1.9.54-FULL-CONNECTION.zip >> final/SHA256SUMS.txt
+          cp employee-badging.txt store-badging.txt employee-permissions.txt store-permissions.txt final/
+
+      - name: Upload Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.54-FULL-CONNECTION-FIX
+          path: final/ATTEND-PRO-Employee-1.9.54-FULL-CONNECTION-FIX.apk
+
+      - name: Upload Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.54-FULL-CONNECTION-FIX
+          path: final/ATTEND-PRO-Store-1.9.54-FULL-CONNECTION-FIX.apk
+
+      - name: Upload source and verification bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.54-FULL-CONNECTION-VERIFIED
+          path: |
+            final/ATTEND-PRO-V1-source-1.9.54-FULL-CONNECTION.zip
+            final/ATTEND-PRO-1.9.54-FINAL-VERIFICATION.txt
+            final/SHA256SUMS.txt
+            final/*.verify.txt
+            final/*-badging.txt
+            final/*-permissions.txt
