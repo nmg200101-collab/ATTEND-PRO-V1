@@ -1,0 +1,136 @@
+name: Build ATTEND-PRO 1.9.57 Real Pairing Session Fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-installable-1.9.57.yml'
+      - '.source_patches/1.9.57/**'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-installable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Reconstruct verified 1.9.57 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf artifact buildsrc final
+          mkdir -p artifact buildsrc final
+          gh release download v1.9.56-discovery-1 -R "${{ github.repository }}" -p 'ATTEND-PRO-V1-source-1.9.56-DISCOVERY-FIX.zip' -D artifact
+          unzip -q artifact/ATTEND-PRO-V1-source-1.9.56-DISCOVERY-FIX.zip -d buildsrc
+          base64 -d .source_patches/1.9.57/pairing-session-fix.patch.xz.b64 | xz -dc > /tmp/1957.patch
+          echo '42ea30dc9eb97aec5e41cafd54540f034f0e03051b6a0f1a36531661ae86a58c  /tmp/1957.patch' | sha256sum -c -
+          (cd buildsrc && patch -p1 --batch < /tmp/1957.patch)
+          grep -q 'versionCode = 64' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.57"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 64' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.57"' buildsrc/store-app/build.gradle.kts
+
+      - name: Static real pairing audit
+        run: |
+          set -euo pipefail
+          EMP_MAIN=buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          EMP_DISC=buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          STORE_MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          QR=buildsrc/core/src/main/java/com/attendpro/core/QrScannerActivity.kt
+          grep -q 'encodeQrPairingEnvelope(localCode, provision)' "$STORE_MAIN"
+          grep -q 'decodeQrPairingEnvelope(value)' "$EMP_MAIN"
+          grep -q 'pairingDiscovery.start(envelope.code, PairingDiscovery.Mode.ALL)' "$EMP_MAIN"
+          grep -q 'pairingSessionDialog' "$EMP_MAIN"
+          grep -q 'لن تغلق شاشة الربط أثناء البحث' "$EMP_MAIN"
+          grep -q 'scanner.startScan(emptyList(), settings, scanCallback)' "$EMP_DISC"
+          grep -q 'هذا ليس QR خاصًا بـ ATTEND PRO' "$QR"
+          grep -q 'PairingProtocol.decodeQrPairingEnvelope(text)' "$QR"
+
+      - name: Run core protocol tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Compile both applications
+        run: gradle -p buildsrc :employee-app:compileDebugKotlin :store-app:compileDebugKotlin --stacktrace
+
+      - name: Build installable APKs
+        run: gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Verify packages and signatures
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          EMP="buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk"
+          STORE="buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk"
+          test -s "$EMP" && test -s "$STORE"
+          "$AAPT" dump badging "$EMP" | grep -q "versionCode='64' versionName='1.9.57'"
+          "$AAPT" dump badging "$STORE" | grep -q "versionCode='64' versionName='1.9.57'"
+          "$APKSIGNER" verify --verbose --print-certs "$EMP" | tee employee-signing.txt
+          "$APKSIGNER" verify --verbose --print-certs "$STORE" | tee store-signing.txt
+          cp "$EMP" final/ATTEND-PRO-Employee-1.9.57-REAL-PAIRING-TEST.apk
+          cp "$STORE" final/ATTEND-PRO-Store-1.9.57-REAL-PAIRING-TEST.apk
+          sha256sum final/*.apk | tee final/SHA256SUMS.txt
+          cp employee-signing.txt store-signing.txt final/
+          printf '%s\n' \
+            'ATTEND-PRO 1.9.57 real pairing field-test build.' \
+            'QR now uses AP5Q bound to the active Store session; Employee does not declare QR success until the live Store session is rediscovered and an authenticated ACK is sent.' \
+            'Employee pairing center remains visible during Bluetooth/Wi-Fi discovery and shows each stage.' \
+            'QR scanner ignores unrelated barcodes instead of immediately returning to the main screen.' \
+            'BLE pairing uses an unfiltered foreground scan and validates ATTEND-PRO frames in-app for OEM compatibility.' \
+            'Debug-signed field-test build.' > final/INSTALL-NOTE.txt
+
+      - name: Package source
+        run: (cd buildsrc && zip -qr ../final/ATTEND-PRO-V1-source-1.9.57-REAL-PAIRING.zip .)
+
+      - name: Upload Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.57-REAL-PAIRING-TEST
+          path: final/ATTEND-PRO-Employee-1.9.57-REAL-PAIRING-TEST.apk
+
+      - name: Upload Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.57-REAL-PAIRING-TEST
+          path: final/ATTEND-PRO-Store-1.9.57-REAL-PAIRING-TEST.apk
+
+      - name: Upload source and verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.57-REAL-PAIRING-VERIFICATION
+          path: final/
+
+      - name: Publish field-test release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v1.9.57-real-pairing-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" final/* --repo "${{ github.repository }}" --title "ATTEND-PRO 1.9.57 Real Pairing Session Fix" --notes "Field-test build fixing the one-way QR flow and invisible Employee pairing flow. QR is bound to the active Store session and must complete an authenticated local ACK; Bluetooth/Wi-Fi pairing now remains visibly in progress until success or cancellation."
