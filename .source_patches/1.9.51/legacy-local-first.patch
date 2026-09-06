@@ -1,0 +1,232 @@
+--- a/employee-app/build.gradle.kts
++++ b/employee-app/build.gradle.kts
+@@ -11,8 +11,8 @@
+         applicationId = "com.attendpro.employee"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 57
+-        versionName = "1.9.50"
++        versionCode = 58
++        versionName = "1.9.51"
+     }
+ 
+     compileOptions {
+--- a/store-app/build.gradle.kts
++++ b/store-app/build.gradle.kts
+@@ -11,8 +11,8 @@
+         applicationId = "com.attendpro.store"
+         minSdk = 26
+         targetSdk = 35
+-        versionCode = 57
+-        versionName = "1.9.50"
++        versionCode = 58
++        versionName = "1.9.51"
+     }
+ 
+     compileOptions {
+--- a/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
++++ b/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+@@ -97,7 +97,7 @@
+         val header = UiKit.heroCard(this,p).apply { gravity = Gravity.CENTER_HORIZONTAL }
+         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_attend_pro); layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity,76),UiKit.dp(this@MainActivity,76)) })
+         header.addView(UiKit.title(this,p,"ATTEND PRO",27f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+-        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.50").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
++        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار 1.9.51").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+         header.addView(UiKit.subtitle(this,p,"اختياري — جهاز المحل هو النظام الأساسي").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(215,255,255,255)) })
+         root.addView(header)
+ 
+@@ -522,15 +522,50 @@
+         EmployeeLateAlertScheduler.sync(this, identity)
+         refreshProfile()
+         ensureGeoPermissionIfNeeded()
+-        // 1.9.50: never report pairing as fully ready before the foreground presence owner is alive.
++        // 1.9.51: never report pairing as fully ready before the foreground presence owner is alive.
+         // Save trust first, start every transport, then verify the service heartbeat and radio state.
+-        if (identity.autoPresence) startPresence() else startBackgroundPresence()
+-        status.text = "تم حفظ الربط عبر ${identity.localPairingChannel} — جاري تشغيل الاتصال الحقيقي…"
+-        confirmPresenceStartupAfterPairing()
++        // 1.9.51 local-first bridge: for a few seconds the foreground Activity itself emits
++        // authenticated BLE + LAN presence before handing long-term ownership to PresenceService.
++        // This restores the older working transition: Store receives the trusted HMAC while its
++        // pairing dialog is still open, even if an OEM delays foreground-service startup.
++        startImmediatePairingBridge()
++        status.text = "تم حفظ الربط عبر ${identity.localPairingChannel} — جاري إرسال BLE/Wi‑Fi محلي فوري ثم تثبيت الخدمة الدائمة…"
+         registerProvisionWithServer(p)
+ }
+ 
+ 
++    private var pairingBridgeGeneration: Long = 0L
++
++    private fun startImmediatePairingBridge() {
++        if (!identity.isConfigured) return
++        val generation = System.currentTimeMillis()
++        pairingBridgeGeneration = generation
++
++        // A previous PresenceService may still own UDP/BLE from an older pairing attempt. Stop it
++        // first so the foreground local-first bridge owns the radio/port cleanly.
++        runCatching { advertiser.stop() }
++        runCatching { networkPresence.stop() }
++        runCatching { stopBackgroundPresence() }
++
++        Handler(Looper.getMainLooper()).postDelayed({
++            if (pairingBridgeGeneration != generation || !identity.isConfigured) return@postDelayed
++            networkPresence.start(identity.employeeId, identity.pairingSecret)
++            if (advertiser.hasPermissions()) advertiser.start(identity.employeeId, identity.pairingSecret)
++            else advertiser.requestPermissions()
++
++            Handler(Looper.getMainLooper()).postDelayed({
++                if (pairingBridgeGeneration != generation || !identity.isConfigured) return@postDelayed
++                runCatching { advertiser.stop() }
++                runCatching { networkPresence.stop() }
++                pairingBridgeGeneration = 0L
++                // The persistent foreground service takes over only after Store had a clean window
++                // to receive authenticated AP4P-derived HMAC presence from this foreground Activity.
++                if (identity.autoPresence) startPresence() else startBackgroundPresence()
++                confirmPresenceStartupAfterPairing()
++            }, 4_000L)
++        }, 350L)
++    }
++
+     private fun confirmPresenceStartupAfterPairing(attempt: Int = 0) {
+         val now = System.currentTimeMillis()
+         val serviceAlive = identity.presenceServiceHeartbeatAt > 0L && now - identity.presenceServiceHeartbeatAt < 12_000L
+@@ -817,7 +852,9 @@
+         super.onResume()
+         if (::identity.isInitialized && identity.isConfigured) {
+             EmployeeLateAlertScheduler.sync(this, identity)
+-            if(identity.autoPresence) startPresence() else startBackgroundPresence()
++            if (pairingBridgeGeneration == 0L) {
++                if(identity.autoPresence) startPresence() else startBackgroundPresence()
++            }
+         }
+         if (intent?.getBooleanExtra("open_late_attendance", false) == true) {
+             intent.removeExtra("open_late_attendance")
+@@ -954,8 +991,13 @@
+         super.onRequestPermissionsResult(requestCode,permissions,grantResults)
+         when(requestCode) {
+             BlePresenceAdvertiser.REQUEST_BLUETOOTH -> {
+-                if(grantResults.isNotEmpty()&&grantResults.all{it==PackageManager.PERMISSION_GRANTED}) startPresence()
+-                else status.text="يلزم السماح بالأجهزة القريبة/البلوتوث"
++                if(grantResults.isNotEmpty()&&grantResults.all{it==PackageManager.PERMISSION_GRANTED}) {
++                    if (identity.isConfigured && pairingBridgeGeneration > 0L) {
++                        // Keep the 4-second foreground bridge intact; its scheduled handoff will
++                        // start PresenceService after Store has had time to observe the HMAC frame.
++                        advertiser.start(identity.employeeId, identity.pairingSecret)
++                    } else startPresence()
++                } else status.text="يلزم السماح بالأجهزة القريبة/البلوتوث"
+             }
+             REQUEST_GPS_PERMISSION -> {
+                 if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+--- a/store-app/src/main/java/com/attendpro/store/MainActivity.kt
++++ b/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+@@ -305,7 +305,7 @@
+             layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 72), UiKit.dp(this@MainActivity, 72)).apply { gravity = Gravity.CENTER_HORIZONTAL }
+         })
+         hero.addView(UiKit.title(this, p, "ATTEND PRO", 28f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+-        hero.addView(UiKit.subtitle(this, p, "تفعيل مركزي محمي • الإصدار 1.9.48").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
++        hero.addView(UiKit.subtitle(this, p, "تفعيل مركزي محمي • الإصدار 1.9.51").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+         root.addView(hero)
+ 
+         val lock = UiKit.card(this, p)
+@@ -435,7 +435,7 @@
+             layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 52), UiKit.dp(this@MainActivity, 52))
+         })
+         header.addView(UiKit.title(this, p, "ATTEND PRO", 25f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+-        header.addView(UiKit.subtitle(this, p, "نظام حضور المحل • الإصدار 1.9.48").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
++        header.addView(UiKit.subtitle(this, p, "نظام حضور المحل • الإصدار 1.9.51").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+         storeSummary = UiKit.subtitle(this, p, storeSummaryText()).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(235,255,255,255)); setPadding(0, UiKit.dp(this@MainActivity, 5), 0, 0) }
+         header.addView(storeSummary)
+         root.addView(header)
+@@ -617,7 +617,7 @@
+             setTextColor(android.graphics.Color.WHITE)
+         }
+         header.addView(storeSummary)
+-        header.addView(UiKit.subtitle(this, p, "الإصدار 1.9.48").apply {
++        header.addView(UiKit.subtitle(this, p, "الإصدار 1.9.51").apply {
+             gravity = Gravity.CENTER
+             setTextColor(android.graphics.Color.argb(215, 255, 255, 255))
+         })
+@@ -1423,8 +1423,12 @@
+         val provision = repo.newProvision(employee)
+         val fullProvision = OfflinePairingCache.capture(provision)
+         val localCode = UUID.randomUUID().toString().replace("-", "").take(8).uppercase(Locale.US)
+-        val qrProvision = PairingProtocol.encodeQrPairingEnvelope(localCode, provision)
+-        status.text = "تم تجهيز ربط ذري آمن — QR نفسه يؤكد الجلسة ولا يكتفي بنقل البيانات"
++        // Restore the known-stable 1.9.43 model: QR contains the compact complete AP4P provision
++        // and is committed locally before any server/temporary-session acknowledgement. AP5Q is
++        // still decoded by Employee for backward compatibility, but new QR codes no longer depend
++        // on the extra atomic envelope.
++        val qrProvision = PairingProtocol.encodeEmployeeProvisionCompact(provision)
++        status.text = "تم تجهيز QR محلي كامل بنمط AP4P المستقر — لا يحتاج خادمًا ولا ACK مؤقتًا"
+         showPairingTicketDialog(employee, localCode, fullProvision, qrProvision)
+     }
+ 
+@@ -1440,16 +1444,19 @@
+         }
+         val scroll = ScrollView(this).apply { isFillViewport = true; addView(content) }
+         val linkState = TextView(this).apply {
+-            text="جاهز: الربط يثبت من ملف الموظف، ثم يؤكده أول بث HMAC من الهاتف — بدون اعتماد على ACK مؤقت"
++            text="جاهز: QR يثبت الملف محليًا، ومسح Bluetooth/Wi‑Fi الدائم يبقى يعمل حتى يستقبل أول HMAC موثق"
+             textSize=15f; gravity=Gravity.CENTER; setTextColor(p.accent); setPadding(0,8,0,10)
+         }
+-        // Pairing needs exclusive access to BLE on some OEM phones. Pause normal presence
+-        // discovery while the pairing ticket is open, then restore it on dismiss.
+-        runCatching { scanner.stop() }
+-        runCatching { networkListener.stop() }
++        // 1.9.51 legacy-stable behavior: NEVER pause the persistent Store discovery channels
++        // while the pairing QR/dialog is open. The Employee commits the local provision first,
++        // then its first authenticated presence frame is allowed to reach this scanner/listener
++        // immediately. Older working releases used this local-first transition; pausing discovery
++        // here created the QR-read -> disconnected deadlock seen in 1.9.48-1.9.50.
++        ensurePresenceDiscoveryRunning()
+ 
+         val pairingAlive = AtomicBoolean(true)
+         val pairingCompleted = AtomicBoolean(false)
++        val linkedBeforePairing = repo.companionLinkedAt(employee.employeeId)
+         var beacon: PairingBeacon? = null
+ 
+         fun completePairing(channel: String, linkedAt: Long = System.currentTimeMillis()) {
+@@ -1470,6 +1477,26 @@
+             }
+         }
+ 
++        // Watch the real persistent connection state as the source of truth. QR does not need a
++        // second temporary ACK: as soon as the Store receives a fresh authenticated BLE/LAN/Server
++        // presence frame, handleBlePayload()/handleLanConfirm() updates companionLinkedAt and this
++        // watcher finalizes the pairing dialog. This also gives Bluetooth GATT pairing a fallback
++        // if the temporary session closes after provisioning but before its UI ACK is delivered.
++        val pairingConnectionWatcher = object : Runnable {
++            override fun run() {
++                if (!pairingAlive.get() || pairingCompleted.get()) return
++                val linkedAt = repo.companionLinkedAt(employee.employeeId)
++                val actuallyConnected = isEmployeeActuallyConnected(employee.employeeId, System.currentTimeMillis())
++                if ((linkedAt > linkedBeforePairing && linkedAt > 0L) || actuallyConnected) {
++                    val channel = repo.companionLinkedChannel(employee.employeeId).ifBlank { "اتصال محلي موثق" }
++                    completePairing(channel, linkedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
++                    return
++                }
++                nearbyRefreshHandler.postDelayed(this, 250L)
++            }
++        }
++        nearbyRefreshHandler.post(pairingConnectionWatcher)
++
+         beacon = PairingBeacon(this,{message->runOnUiThread{if (!pairingCompleted.get()) linkState.text=message}}) { _, channel ->
+             completePairing(channel)
+         }
+@@ -1484,7 +1511,7 @@
+ 
+         val qrCard = UiKit.card(this,p,10)
+         qrCard.addView(UiKit.sectionLabel(this,p,"1 — QR / باركود الربط"))
+-        qrCard.addView(UiKit.subtitle(this,p,"يمسح الموظف هذا الرمز من تطبيق الموظف. يتم حفظ الربط فورًا محليًا، ثم يظهر الهاتف كمتصل عند أول بث HMAC موثق.").apply { gravity = Gravity.CENTER })
++        qrCard.addView(UiKit.subtitle(this,p,"يمسح الموظف هذا AP4P الكامل. يُحفظ الربط محليًا أولًا، ويبقى Scan/LAN في المحل يعملان حتى يصل أول HMAC موثق من الهاتف.").apply { gravity = Gravity.CENTER })
+         qrCard.addView(ImageView(this).apply {
+             setImageBitmap(qr); adjustViewBounds=true
+             layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,UiKit.dp(this@MainActivity,300))
+@@ -1574,6 +1601,7 @@
+             .create()
+         dialog.setOnDismissListener{
+             pairingAlive.set(false)
++            nearbyRefreshHandler.removeCallbacks(pairingConnectionWatcher)
+             beacon?.stop()
+             if (activePairingBeacon === beacon) {
+                 activePairingBeacon = null; activePairingCode = ""; activePairingProvision = ""; activePairingMode = PairingBeacon.Mode.ALL
