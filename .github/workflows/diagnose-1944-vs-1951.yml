@@ -1,0 +1,60 @@
+name: Diagnose ATTEND-PRO 1.9.44 vs 1.9.51 pairing engine
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf old new artifact diffout
+          mkdir -p old new artifact diffout
+          unzip -q ATTEND-PRO-V1-source-1.9.44.zip -d old
+          gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
+          unzip -q artifact/ATTEND-PRO-V1-source-1.9.51.zip -d new
+          printf 'OLD VERSION\n' > diffout/summary.txt
+          grep -n 'versionName\|versionCode' old/employee-app/build.gradle.kts old/store-app/build.gradle.kts >> diffout/summary.txt || true
+          printf '\nNEW VERSION\n' >> diffout/summary.txt
+          grep -n 'versionName\|versionCode' new/employee-app/build.gradle.kts new/store-app/build.gradle.kts >> diffout/summary.txt || true
+          printf '\nSTALE DISPLAY VERSION STRINGS IN 1.9.51\n' >> diffout/summary.txt
+          grep -RIn --include='*.kt' -E 'الإصدار 1\.9\.|Version 1\.9\.' new/employee-app/src/main new/store-app/src/main >> diffout/summary.txt || true
+      - name: Diff pairing engine
+        run: |
+          set +e
+          for f in \
+            core/src/main/java/com/attendpro/core/PairingProtocol.kt \
+            core/src/main/java/com/attendpro/core/QrScannerActivity.kt \
+            employee-app/src/main/java/com/attendpro/employee/MainActivity.kt \
+            employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
+            employee-app/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt \
+            employee-app/src/main/java/com/attendpro/employee/PresenceService.kt \
+            store-app/src/main/java/com/attendpro/store/MainActivity.kt \
+            store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+            store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
+            store-app/src/main/java/com/attendpro/store/NetworkPresenceListener.kt; do
+              if [ -f "old/$f" ] || [ -f "new/$f" ]; then
+                mkdir -p "diffout/$(dirname "$f")"
+                diff -u "old/$f" "new/$f" > "diffout/$f.diff" 2>&1 || true
+                cp "old/$f" "diffout/$f.OLD-1.9.44" 2>/dev/null || true
+              fi
+          done
+          tar -czf pairing-diff-1944-vs-1951.tgz diffout
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-pairing-diff-1.9.44-vs-1.9.51
+          path: |
+            pairing-diff-1944-vs-1951.tgz
+            diffout/summary.txt
