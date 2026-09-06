@@ -1,0 +1,90 @@
+name: Build ATTEND-PRO 1.9.51
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Download verified 1.9.50 source artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf previous-source buildsrc
+          mkdir -p previous-source buildsrc
+          gh run download 33999494092 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.50 -D previous-source
+          unzip -q previous-source/ATTEND-PRO-V1-source-1.9.50.zip -d buildsrc
+          grep -q 'versionName = "1.9.50"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.50"' buildsrc/store-app/build.gradle.kts
+
+      - name: Verify and apply 1.9.51 local-first recovery
+        run: |
+          echo "6da7667de82eb8090dfe8af67cce23a31ec83a6c9a135fc682db986152da5f86  .source_patches/1.9.51/legacy-local-first.patch" | sha256sum -c -
+          patch -d buildsrc -p1 --batch < .source_patches/1.9.51/legacy-local-first.patch
+          grep -q 'versionName = "1.9.51"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.51"' buildsrc/store-app/build.gradle.kts
+          grep -q 'encodeEmployeeProvisionCompact(provision)' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'pairingConnectionWatcher' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'startImmediatePairingBridge()' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'networkPresence.start(identity.employeeId, identity.pairingSecret)' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+
+      - name: Run core connection and pairing tests
+        run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
+
+      - name: Build Employee and Store APKs
+        run: |
+          gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+
+      - name: Package 1.9.51 source
+        run: |
+          rm -rf buildsrc/.gradle buildsrc/core/build buildsrc/employee-app/build buildsrc/store-app/build
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.51.zip .)
+          unzip -t ATTEND-PRO-V1-source-1.9.51.zip >/dev/null
+
+      - name: Upload Employee APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.51-debug
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+
+      - name: Upload Store APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.51-debug
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V1-source-1.9.51
+          path: ATTEND-PRO-V1-source-1.9.51.zip
