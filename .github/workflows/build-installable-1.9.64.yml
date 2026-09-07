@@ -1,0 +1,119 @@
+name: Build ATTEND-PRO 1.9.64 System Admin Auto Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.source_patches/1.9.64/**'
+      - '.github/workflows/build-installable-1.9.64.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Reconstruct verified 1.9.63 source
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf base_art buildsrc
+          mkdir -p base_art buildsrc
+          gh run download 34110347062 -R "${{ github.repository }}" -n ATTEND-PRO-1.9.63-VERIFICATION-SOURCE -D base_art
+          SRC=$(find base_art -name 'ATTEND-PRO-V1-source-1.9.63-SYSTEM-ADMIN.zip' -print -quit)
+          test -n "$SRC"
+          unzip -q "$SRC" -d buildsrc
+          test -f buildsrc/settings.gradle.kts
+
+      - name: Apply and verify 1.9.64 patch
+        run: |
+          set -euo pipefail
+          tr -d '\r\n' < .source_patches/1.9.64/system-admin-auto-recovery.patch.xz.b64 | base64 -d | xz -dc > /tmp/1964.patch
+          echo 'ca67a5d661f0ce6269db9fd82885aba1e4e49c5504555a3aa4aad06f201e340e  /tmp/1964.patch' | sha256sum -c -
+          (cd buildsrc && patch -p1 --batch < /tmp/1964.patch)
+
+      - name: Enforce approved 1.9.58 connection engine lock
+        run: |
+          set -euo pipefail
+          cd buildsrc
+          sha256sum -c CONNECTION_CORE_LOCK_1.9.58.sha256
+
+      - name: Static 1.9.64 administration audit
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 71' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.64"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 71' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.64"' buildsrc/store-app/build.gradle.kts
+          grep -q 'سجل جميع طلبات التفعيل' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q 'السياسة العامة للاستعادة' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q 'إشعارات الأجهزة التي تمت استعادتها' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q 'تمت استعادة التفعيل تلقائيًا' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q '/api/v1/admin/activation/delete-request' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          grep -q '/api/v1/admin/recovery-notifications' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+
+      - name: Core tests and Kotlin compile
+        run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin --stacktrace
+
+      - name: Build debug and unsigned release APKs
+        run: gradle -p buildsrc :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
+
+      - name: Verify packages and version
+        run: |
+          set -euo pipefail
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          EMP=buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+          STO=buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+          "$AAPT" dump badging "$EMP" | tee employee-badging.txt
+          "$AAPT" dump badging "$STO" | tee store-badging.txt
+          grep -q "package: name='com.attendpro.employee' versionCode='71' versionName='1.9.64'" employee-badging.txt
+          grep -q "package: name='com.attendpro.store' versionCode='71' versionName='1.9.64'" store-badging.txt
+
+      - name: Package verified source
+        run: |
+          set -euo pipefail
+          (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.64-SYSTEM-ADMIN-AUTO-RECOVERY.zip . -x '.gradle/*' 'core/build/*' 'employee-app/build/*' 'store-app/build/*')
+          cp /tmp/1964.patch ATTEND-PRO-1.9.64-SYSTEM-ADMIN-AUTO-RECOVERY.patch
+          sha256sum ATTEND-PRO-V1-source-1.9.64-SYSTEM-ADMIN-AUTO-RECOVERY.zip > source-sha256.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Employee-1.9.64-DEBUG-TEST
+          path: buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-Store-1.9.64-DEBUG-TEST
+          path: buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.64-UNSIGNED-RELEASE
+          path: |
+            buildsrc/employee-app/build/outputs/apk/release/employee-app-release-unsigned.apk
+            buildsrc/store-app/build/outputs/apk/release/store-app-release-unsigned.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.64-VERIFICATION-SOURCE
+          path: |
+            ATTEND-PRO-V1-source-1.9.64-SYSTEM-ADMIN-AUTO-RECOVERY.zip
+            ATTEND-PRO-1.9.64-SYSTEM-ADMIN-AUTO-RECOVERY.patch
+            employee-badging.txt
+            store-badging.txt
+            source-sha256.txt
