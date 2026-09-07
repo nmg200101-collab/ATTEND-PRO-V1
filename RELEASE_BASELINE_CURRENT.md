@@ -1,6 +1,6 @@
 # ATTEND-PRO Current Approved Baseline
 
-Status: FIELD-APPROVED BASELINE
+Status: FIELD-APPROVED + OFFICIAL-SIGNING-VERIFIED BASELINE
 
 Version: 1.9.65
 Version code: 72
@@ -16,6 +16,15 @@ Verified build provenance
 - Build commit: 9e6cd1957bf4743c466f866916f5c6e87ed09ea1
 - Verified source artifact: ATTEND-PRO-V1-source-1.9.65-BLUETOOTH-ACK-AFTER-QR.zip
 - Verified source SHA-256: b8ba7ed0e6cf3c5a7fcfe8010c8b761b961d8b8838785a8875800719e6b7c180
+
+Official signing verification
+- Existing permanent ATTEND-PRO key reused; no replacement key generated.
+- Required certificate SHA-256: 6F:8B:CC:08:AE:6C:8D:96:54:E7:AA:2C:9A:66:1F:B6:BD:F2:1E:31:B7:20:AB:3A:DD:88:AE:D0:CD:4F:4D:82
+- Employee APK SHA-256: 27bca85459fae6856335348db8ea1f83eff19bfd9096ec94baf3bebb4039500b
+- Store APK SHA-256: 7ecc707d8a7f701c42b582da5622ee5ff556e25cf5b9854c1f9985173a9bd5a1
+- APK Signature Scheme v2: PASS
+- APK Signature Scheme v3: PASS
+- zipalign: PASS
 
 Connection invariants for every later release
 1. Preserve the approved 1.9.65 Bluetooth orchestration behavior after QR.
