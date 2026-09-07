@@ -28,12 +28,19 @@ jobs:
         run: |
           set -euo pipefail
           BT="$ANDROID_HOME/build-tools/35.0.0"
-          mkdir -p export/lib
+          mkdir -p export/lib export/lib64
           cp "$BT/apksigner" export/
           cp "$BT/lib/apksigner.jar" export/lib/
           cp "$BT/zipalign" export/
+          if [ -f "$BT/lib64/libc++.so" ]; then
+            cp "$BT/lib64/libc++.so" export/lib64/
+          else
+            LIBCPP=$(find "$ANDROID_HOME" -type f -name 'libc++.so' | head -1 || true)
+            test -n "$LIBCPP"
+            cp "$LIBCPP" export/lib64/libc++.so
+          fi
           chmod +x export/apksigner export/zipalign
-          sha256sum export/apksigner export/lib/apksigner.jar export/zipalign > export/SHA256SUMS.txt
+          sha256sum export/apksigner export/lib/apksigner.jar export/zipalign export/lib64/libc++.so > export/SHA256SUMS.txt
           "$BT/apksigner" --version > export/APKSIGNER-VERSION.txt
       - uses: actions/upload-artifact@v4
         with:
