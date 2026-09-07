@@ -51,6 +51,11 @@ jobs:
           base64 -d /tmp/1966.b64 | xz -dc > /tmp/1966.patch
           echo '849ee1a1b0f2bc887d829ade54f0c91ca36edc7f8a0928d4a4f0da547c67110c  /tmp/1966.patch' | sha256sum -c -
           (cd buildsrc && patch -p1 --batch < /tmp/1966.patch)
+          tr -d '\r\n' < .source_patches/1.9.66/compile-fix.patch.xz.b64 > /tmp/1966-fix.b64
+          echo '9a57e9f2fee028d46bd740db434af8ecf0fcaad2320bcd04a8b384376b622f2e  /tmp/1966-fix.b64' | sha256sum -c -
+          base64 -d /tmp/1966-fix.b64 | xz -dc > /tmp/1966-fix.patch
+          echo 'c9eff97e129d00d9d7a9930dc810067aa60e6211bb00b4f72a24cbe6e1f805b8  /tmp/1966-fix.patch' | sha256sum -c -
+          (cd buildsrc && patch -p1 --batch < /tmp/1966-fix.patch)
 
       - name: Enforce approved connection engine lock
         run: |
@@ -128,6 +133,7 @@ jobs:
           set -euo pipefail
           (cd buildsrc && zip -qr ../ATTEND-PRO-V1-source-1.9.66-GPS-ATTENDANCE-VOICE.zip . -x '.gradle/*' 'core/build/*' 'employee-app/build/*' 'store-app/build/*')
           cp /tmp/1966.patch ATTEND-PRO-1.9.66.patch
+          cp /tmp/1966-fix.patch ATTEND-PRO-1.9.66-COMPILE-FIX.patch
           sha256sum ATTEND-PRO-V1-source-1.9.66-GPS-ATTENDANCE-VOICE.zip > source-sha256.txt
 
       - uses: actions/upload-artifact@v4
@@ -155,6 +161,7 @@ jobs:
           path: |
             ATTEND-PRO-V1-source-1.9.66-GPS-ATTENDANCE-VOICE.zip
             ATTEND-PRO-1.9.66.patch
+            ATTEND-PRO-1.9.66-COMPILE-FIX.patch
             signing-status.txt
             employee-badging.txt
             store-badging.txt
