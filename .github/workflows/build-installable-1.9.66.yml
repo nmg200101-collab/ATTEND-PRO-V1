@@ -2,7 +2,7 @@ name: Build ATTEND-PRO 1.9.66 FINAL SOURCE
 on:
   push:
     branches: [main]
-    paths: ['ATTEND-PRO-1.9.66-FINAL-SOURCE.zip','.github/workflows/build-installable-1.9.66.yml']
+    paths: ['ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip','.github/workflows/build-installable-1.9.66.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
       - name: Extract final source
         run: |
           rm -rf buildsrc && mkdir buildsrc
-          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE.zip -d buildsrc
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
           test -f buildsrc/settings.gradle.kts
       - name: Verify source and connection lock
         run: |
@@ -74,4 +74,4 @@ jobs:
           path: |
             buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
             buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
-# final-build-trigger: 2026-09-08T23:35+03:00
+# fixed-source-build-trigger: 2026-09-09
