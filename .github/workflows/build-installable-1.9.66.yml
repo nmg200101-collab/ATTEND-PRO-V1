@@ -74,3 +74,4 @@ jobs:
           path: |
             buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
             buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
+# final-build-trigger: 2026-09-08T23:35+03:00
