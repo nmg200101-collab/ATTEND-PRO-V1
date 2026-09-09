@@ -1,0 +1,104 @@
+name: Build ATTEND-PRO 1.9.68 SYSTEM ADMIN
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-installable-1.9.68.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - name: Extract stable source
+        run: |
+          rm -rf buildsrc && mkdir buildsrc
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
+          test -f buildsrc/settings.gradle.kts
+      - name: Apply conservative 1.9.68 system administration update
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for mod in ['employee-app','store-app']:
+              p=Path('buildsrc')/mod/'build.gradle.kts'
+              s=p.read_text()
+              s=s.replace('versionCode = 73','versionCode = 75').replace('versionName = "1.9.66"','versionName = "1.9.68"')
+              if 'versionCode = 75' not in s or 'versionName = "1.9.68"' not in s: raise SystemExit(f'version patch failed: {p}')
+              p.write_text(s)
+          p=Path('buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt')
+          s=p.read_text()
+          old='''                val labels = stores.map { s ->\n                    val state = if (s.status == "ACTIVE" && s.expiresAt > System.currentTimeMillis()) "● نشط" else "○ ${s.status}"\n                    "$state • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
+          new='''                val now = System.currentTimeMillis()\n                val labels = stores.map { s ->\n                    val accountState = when {\n                        s.status == "SUSPENDED" -> "موقوف"\n                        s.status == "ARCHIVED" -> "مؤرشف"\n                        s.expiresAt in 1..now -> "منتهي"\n                        s.status == "ACTIVE" -> "نشط"\n                        else -> s.status\n                    }\n                    val recentlyOnline = s.lastSeenAt > 0 && now - s.lastSeenAt <= 2 * 60_000L\n                    val connectionState = if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"\n                    "${if (recentlyOnline) "●" else "○"} $accountState • $connectionState • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
+          if old not in s: raise SystemExit('central store labels block not found')
+          s=s.replace(old,new)
+          old2='''            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nالحالة: ${store.status}\\n")'''
+          new2='''            val now = System.currentTimeMillis()\n            val accountState = when { store.status == "SUSPENDED" -> "موقوف"; store.status == "ARCHIVED" -> "مؤرشف"; store.expiresAt in 1..now -> "منتهي"; store.status == "ACTIVE" -> "نشط"; else -> store.status }\n            val accountWorks = store.status == "ACTIVE" && (store.expiresAt <= 0 || store.expiresAt > now)\n            val recentlyOnline = store.lastSeenAt > 0 && now - store.lastSeenAt <= 2 * 60_000L\n            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nحالة الحساب: ${if (accountWorks) "يعمل ✓" else accountState}\\nحالة الاتصال: ${if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"}\\n")'''
+          if old2 not in s: raise SystemExit('central store details block not found')
+          s=s.replace(old2,new2)
+          s=s.replace('حذف المحل وبياناته نهائيًا من الخادم','🗑 حذف هذا الحساب من الخادم')
+          p.write_text(s)
+          PY
+      - name: Regression guard and connection core lock
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 75' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "1.9.68"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 75' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "1.9.68"' buildsrc/store-app/build.gradle.kts
+          grep -q 'حالة الحساب' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q 'حالة الاتصال' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q '🗑 حذف هذا الحساب من الخادم' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          cd buildsrc
+          sha256sum -c CONNECTION_CORE_LOCK_1.9.58.sha256
+      - name: Full regression compile and build
+        run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
+      - name: Verify APK identity
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
+          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
+          grep -q "package: name='com.attendpro.employee' versionCode='75' versionName='1.9.68'" employee-badging.txt
+          grep -q "package: name='com.attendpro.store' versionCode='75' versionName='1.9.68'" store-badging.txt
+      - name: Sign permanent release
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir signed
+          EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          KEYSTORE=/tmp/attend-pro.jks
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.68-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.68-FINAL.apk; fi
+            UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
+            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk
+            ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$ACTUAL" = "$EXPECTED"
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose signed/$OUT > signed/$APP-signature.txt
+          done
+          sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.68-FINAL-SIGNED
+          path: signed/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.68-DEBUG
+          path: |
+            buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk
+            buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk
