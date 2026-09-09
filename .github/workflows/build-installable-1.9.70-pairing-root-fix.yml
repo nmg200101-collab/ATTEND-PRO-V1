@@ -1,0 +1,104 @@
+name: Build ATTEND-PRO 1.9.70 PAIRING ROOT FIX
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build-installable-1.9.70-pairing-root-fix.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - name: Extract current coherent source
+        run: |
+          rm -rf buildsrc && mkdir buildsrc
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
+          test -f buildsrc/settings.gradle.kts
+      - name: Apply AP5Q root fix and 1.9.70 identity
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          for mod in ['employee-app','store-app']:
+              p=Path('buildsrc')/mod/'build.gradle.kts'
+              s=p.read_text().replace('versionCode = 73','versionCode = 77').replace('versionName = "1.9.66"','versionName = "1.9.70"')
+              if 'versionCode = 77' not in s or 'versionName = "1.9.70"' not in s: raise SystemExit('version patch failed '+str(p))
+              p.write_text(s)
+          p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
+          s=p.read_text()
+          old='''        // 1.9.57: QR is the discovery seed, not a silent one-way success.  The embedded AP5Q
+        // session code is used to rediscover the exact open Store session over BLE/LAN.
+        // PairingDiscovery then receives the Store-issued provision over that live channel and
+        // sends the authenticated ACK that lets the Store mark this phone as really linked.
+        pendingPairingCode = envelope.code
+        status.text = "✓ تم التقاط QR الصحيح — جاري تأكيد نفس جلسة المحل عبر Bluetooth/Wi‑Fi وإرسال ACK…"
+        updatePairingSessionStatus(status.text.toString())
+        pairingDiscovery.start(envelope.code, PairingDiscovery.Mode.ALL)'''
+          new='''        // 1.9.70: AP5Q already contains the complete Store-issued provision and pairing secret.
+        // Commit that authenticated provision immediately. Requiring a second BLE/LAN discovery
+        // after a successful QR scan caused the UI to remain on "جاري الارتباط" on real OEM phones.
+        // The persistent presence channel still gives Store the independent live-device proof.
+        pendingPairingCode = ""
+        pairingDiscovery.stop()
+        status.text = "✓ تم التحقق من QR — جاري حفظ الاقتران وتشغيل الاتصال الدائم…"
+        updatePairingSessionStatus(status.text.toString())
+        acceptProvision(envelope.provisionText, localChannel = "QR AP5Q • ملف موثق")'''
+          if old not in s: raise SystemExit('AP5Q block not found')
+          p.write_text(s.replace(old,new))
+          PY
+      - name: Verify coherent BLE/GATT transport and QR path
+        run: |
+          set -euo pipefail
+          grep -q 'stopBleScanForGatt()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'requestMtu(247)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'ScanFilter' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'PROVISION_CHARACTERISTIC_UUID' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'PROVISION_CHARACTERISTIC_UUID' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'acceptProvision(envelope.provisionText, localChannel = "QR AP5Q • ملف موثق")' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          ! grep -A25 'private fun beginAtomicQrPairing' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt | grep -q 'pairingDiscovery.start(envelope.code'
+      - name: Full regression tests and build
+        run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
+      - name: Verify APK identity
+        run: |
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
+          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
+          grep -q "package: name='com.attendpro.employee' versionCode='77' versionName='1.9.70'" employee-badging.txt
+          grep -q "package: name='com.attendpro.store' versionCode='77' versionName='1.9.70'" store-badging.txt
+      - name: Sign official release
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir signed
+          EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          KEYSTORE=/tmp/attend-pro.jks
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.70-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.70-FINAL.apk; fi
+            UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
+            "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk
+            ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$ACTUAL" = "$EXPECTED"
+          done
+          sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.70-FINAL-SIGNED
+          path: signed/*
