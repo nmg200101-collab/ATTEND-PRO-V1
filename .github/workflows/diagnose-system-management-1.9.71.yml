@@ -36,24 +36,19 @@ jobs:
           p.write_text(s)
           PY
 
-      - name: Inventory administrative source
+      - name: Export relevant source
         shell: bash
         run: |
           {
-            echo '=== Kotlin/Java files ==='
-            find buildsrc/store-app/src/main -type f \( -name '*.kt' -o -name '*.java' -o -name '*.xml' \) | sort
-            echo
             echo '=== Admin/Owner/Activation/Subscription matches ==='
-            grep -RniE 'owner|admin|agent|activation|subscription|system.?owner|مالك|وكيل|تفعيل|اشتراك|مشترك' buildsrc/store-app/src/main --include='*.kt' --include='*.java' --include='*.xml' || true
+            grep -RniE 'owner|admin|agent|activation|subscription|system.?owner|مالك|وكيل|تفعيل|اشتراك|مشترك' buildsrc/store-app/src/main buildsrc/core/src/main --include='*.kt' --include='*.java' --include='*.xml' || true
             echo
-            echo '=== API/server URL matches ==='
-            grep -RniE '/api/v1|ATTEND_PRO|cloudflare|https?://' buildsrc/store-app/src/main --include='*.kt' --include='*.java' --include='*.xml' || true
+            echo '=== API and device proof matches ==='
+            grep -RniE '/api/v1|x-ap-|sign|DeviceIdentity|requestActivation|activationStatus' buildsrc/core/src/main --include='*.kt' --include='*.java' || true
           } > diag/report.txt
-
-          mkdir -p diag/store-main
-          rsync -a --prune-empty-dirs \
-            --include='*/' --include='*.kt' --include='*.java' --include='*.xml' --exclude='*' \
-            buildsrc/store-app/src/main/ diag/store-main/
+          mkdir -p diag/store-main diag/core-main
+          rsync -a --prune-empty-dirs --include='*/' --include='*.kt' --include='*.java' --include='*.xml' --exclude='*' buildsrc/store-app/src/main/ diag/store-main/
+          rsync -a --prune-empty-dirs --include='*/' --include='*.kt' --include='*.java' --include='*.xml' --exclude='*' buildsrc/core/src/main/ diag/core-main/
 
       - name: Verify stable pairing baseline remains present
         run: |
@@ -65,5 +60,5 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-1.9.71-SYSTEM-MANAGEMENT-DIAG
+          name: ATTEND-PRO-1.9.71-SYSTEM-MANAGEMENT-DIAG-CORE
           path: diag/
