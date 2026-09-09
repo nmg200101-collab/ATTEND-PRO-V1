@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/build-installable-1.9.74-final-polish.yml'
       - 'tools/patch-1.9.74-final-polish.py'
+      - 'tools/fix-1.9.74-missing-helpers.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -53,6 +54,7 @@ jobs:
           python3 tools/patch-1.9.72-management-ui.py
           python3 tools/patch-1.9.73-management-final.py
           python3 tools/patch-1.9.74-final-polish.py
+          python3 tools/fix-1.9.74-missing-helpers.py
       - name: Verify protected pairing and final polish
         run: |
           sha256sum -c /tmp/pairing.sha256
@@ -65,6 +67,8 @@ jobs:
           grep -q 'بحث بالاسم أو الهاتف' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
           grep -q 'تعليم الكل كمقروء' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
           grep -q 'إجراء سريع' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
+          grep -q 'private fun showOverflowMenu' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
+          grep -q 'private fun statusArabic' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
           grep -q 'نموذج الأقسام' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
           grep -q 'dashboard_mode' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
       - name: Build and regression test
