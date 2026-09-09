@@ -21,7 +21,7 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.9'}
-      - name: Prepare 1.9.68 source and stable pairing reference
+      - name: Prepare current source and proven 1.9.51 pairing transport
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -31,46 +31,25 @@ jobs:
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
           gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
           unzip -q artifact/ATTEND-PRO-V1-source-1.9.51.zip -d stable
-          if [ -f stable/ATTEND-PRO-V1-source-1.9.51.zip ]; then unzip -q stable/ATTEND-PRO-V1-source-1.9.51.zip -d stable/tmp && rm stable/ATTEND-PRO-V1-source-1.9.51.zip && cp -a stable/tmp/. stable/; fi
-      - name: Reapply 1.9.68 admin update
+          if [ -f stable/ATTEND-PRO-V1-source-1.9.51.zip ]; then mkdir -p stable/tmp; unzip -q stable/ATTEND-PRO-V1-source-1.9.51.zip -d stable/tmp; cp -a stable/tmp/. stable/; fi
+          test -f stable/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          test -f stable/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+      - name: Restore only stable pairing transport
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p=Path('buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt')
-          s=p.read_text()
-          old='''                val labels = stores.map { s ->\n                    val state = if (s.status == "ACTIVE" && s.expiresAt > System.currentTimeMillis()) "● نشط" else "○ ${s.status}"\n                    "$state • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
-          new='''                val now = System.currentTimeMillis()\n                val labels = stores.map { s ->\n                    val accountState = when { s.status == "SUSPENDED" -> "موقوف"; s.status == "ARCHIVED" -> "مؤرشف"; s.expiresAt in 1..now -> "منتهي"; s.status == "ACTIVE" -> "نشط"; else -> s.status }\n                    val recentlyOnline = s.lastSeenAt > 0 && now - s.lastSeenAt <= 2 * 60_000L\n                    val connectionState = if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"\n                    "${if (recentlyOnline) "●" else "○"} $accountState • $connectionState • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
-          if old in s: s=s.replace(old,new)
-          old2='''            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nالحالة: ${store.status}\\n")'''
-          new2='''            val now = System.currentTimeMillis()\n            val accountState = when { store.status == "SUSPENDED" -> "موقوف"; store.status == "ARCHIVED" -> "مؤرشف"; store.expiresAt in 1..now -> "منتهي"; store.status == "ACTIVE" -> "نشط"; else -> store.status }\n            val accountWorks = store.status == "ACTIVE" && (store.expiresAt <= 0 || store.expiresAt > now)\n            val recentlyOnline = store.lastSeenAt > 0 && now - store.lastSeenAt <= 2 * 60_000L\n            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nحالة الحساب: ${if (accountWorks) "يعمل ✓" else accountState}\\nحالة الاتصال: ${if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"}\\n")'''
-          if old2 in s: s=s.replace(old2,new2)
-          s=s.replace('حذف المحل وبياناته نهائيًا من الخادم','🗑 حذف هذا الحساب من الخادم')
-          p.write_text(s)
-          PY
-      - name: Restore proven pairing transport only
-        run: |
-          set -euo pipefail
-          # Restore only the initial-pair transport pair. Do not roll back attendance, presence,
-          # admin, GPS, server, biometrics, QR envelope protocol, or any other current feature.
           cp stable/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
           cp stable/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
-          cmp -s stable/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-          cmp -s stable/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
-      - name: Set hotfix version
+      - name: Set 1.9.69 identity
         run: |
-          sed -i 's/versionCode = 73/versionCode = 76/; s/versionName = "1.9.66"/versionName = "1.9.69"/' buildsrc/employee-app/build.gradle.kts
-          sed -i 's/versionCode = 73/versionCode = 76/; s/versionName = "1.9.66"/versionName = "1.9.69"/' buildsrc/store-app/build.gradle.kts
-      - name: Protect all unrelated connection code
+          sed -i 's/versionCode = 73/versionCode = 76/g; s/versionName = "1.9.66"/versionName = "1.9.69"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+      - name: Verify pairing repair boundaries
         run: |
           set -euo pipefail
-          # PairingProtocol must remain exactly current; QR AP5Q stays current.
-          cmp -s buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt stable/core/src/main/java/com/attendpro/core/PairingProtocol.kt
           grep -q 'AP5Q' buildsrc/core/src/main/java/com/attendpro/core/QrScannerActivity.kt
           grep -q 'decodeQrPairingEnvelope' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
           grep -q 'pairingDiscovery.start(envelope.code' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
           grep -q 'encodeQrPairingEnvelope' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'versionCode = 76' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "1.9.69"' buildsrc/store-app/build.gradle.kts
+          grep -q 'MAX_GATT_CHUNK_SIZE = 180' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'startPrepared' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
       - name: Full regression tests and build
         run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
       - name: Verify APK identity
@@ -80,7 +59,7 @@ jobs:
           "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
           grep -q "package: name='com.attendpro.employee' versionCode='76' versionName='1.9.69'" employee-badging.txt
           grep -q "package: name='com.attendpro.store' versionCode='76' versionName='1.9.69'" store-badging.txt
-      - name: Sign with same permanent 1.9.68 key
+      - name: Sign official release
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -93,7 +72,7 @@ jobs:
           KEYSTORE=/tmp/attend-pro.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.69-CONNECTION-FIX.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.69-CONNECTION-FIX.apk; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.69-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.69-FINAL.apk; fi
             UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
             "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk
@@ -104,5 +83,5 @@ jobs:
           sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-1.9.69-CONNECTION-FIX-SIGNED
+          name: ATTEND-PRO-1.9.69-FINAL-SIGNED
           path: signed/*
