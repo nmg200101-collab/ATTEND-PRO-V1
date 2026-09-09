@@ -45,7 +45,9 @@ jobs:
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt > /tmp/pairing.sha256
       - name: Apply 1.9.71 management and self-registration
-        run: python3 tools/patch-1.9.71-system-management.py
+        run: |
+          python3 tools/patch-1.9.71-system-management.py
+          python3 tools/fix-1.9.71-self-registration-kotlin.py
       - name: Verify stable pairing unchanged
         run: |
           sha256sum -c /tmp/pairing.sha256
