@@ -5,6 +5,7 @@ on:
     paths:
       - '.source_patches/1.9.71/**'
       - 'tools/patch-1.9.71-system-management.py'
+      - 'tools/fix-1.9.71-self-registration-kotlin.py'
       - '.github/workflows/verify-1.9.71-system-management.yml'
   workflow_dispatch:
 permissions:
@@ -48,7 +49,9 @@ jobs:
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt > /tmp/pairing.sha256
       - name: Apply management patch
-        run: python3 tools/patch-1.9.71-system-management.py
+        run: |
+          python3 tools/patch-1.9.71-system-management.py
+          python3 tools/fix-1.9.71-self-registration-kotlin.py
       - name: Verify pairing unchanged
         run: |
           sha256sum -c /tmp/pairing.sha256
