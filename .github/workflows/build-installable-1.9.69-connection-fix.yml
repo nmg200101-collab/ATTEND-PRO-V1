@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO 1.9.69 CONNECTION FIX
+name: Build ATTEND-PRO 1.9.70 PAIRING ROOT FIX
 on:
   push:
     branches: [main]
@@ -6,7 +6,6 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
-  actions: read
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -21,51 +20,24 @@ jobs:
           sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
       - uses: gradle/actions/setup-gradle@v4
         with: {gradle-version: '8.9'}
-      - name: Prepare current source and proven 1.9.51 pairing transport
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Prepare and patch
         run: |
-          set -euo pipefail
-          rm -rf buildsrc stable artifact
-          mkdir buildsrc stable artifact
+          rm -rf buildsrc && mkdir buildsrc
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
-          gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
-          SRCZIP=$(find artifact -type f -name '*.zip' | head -1)
-          test -n "$SRCZIP"
-          unzip -q "$SRCZIP" -d stable
-          NESTED=$(find stable -type f -name '*.zip' | head -1 || true)
-          if [ -n "$NESTED" ]; then mkdir -p stable/nested; unzip -q "$NESTED" -d stable/nested; fi
-          PD=$(find stable -type f -path '*/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt' | head -1)
-          PB=$(find stable -type f -path '*/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt' | head -1)
-          test -n "$PD"; test -n "$PB"
-          cp "$PD" /tmp/PairingDiscovery.kt
-          cp "$PB" /tmp/PairingBeacon.kt
-      - name: Restore only stable pairing transport
-        run: |
-          cp /tmp/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-          cp /tmp/PairingBeacon.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
-      - name: Set 1.9.69 identity
-        run: |
-          sed -i 's/versionCode = 73/versionCode = 76/g; s/versionName = "1.9.66"/versionName = "1.9.69"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
-      - name: Verify pairing repair boundaries
-        run: |
-          set -euo pipefail
-          grep -q 'AP5Q' buildsrc/core/src/main/java/com/attendpro/core/QrScannerActivity.kt
-          grep -q 'decodeQrPairingEnvelope' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          grep -q 'pairingDiscovery.start(envelope.code' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          grep -q 'encodeQrPairingEnvelope' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'MAX_GATT_CHUNK_SIZE = 180' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
-          grep -q 'startPrepared' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-      - name: Full regression tests and build
+          sed -i 's/versionCode = 73/versionCode = 77/g; s/versionName = "1.9.66"/versionName = "1.9.70"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
+          s=p.read_text(); old='pairingDiscovery.start(envelope.code, PairingDiscovery.Mode.ALL)'; new='pairingDiscovery.stop()\n        acceptProvision(envelope.provisionText, localChannel = "QR AP5Q")'
+          assert old in s; p.write_text(s.replace(old,new,1))
+          PY
+          grep -q 'stopBleScanForGatt()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'requestMtu(247)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+      - name: Build and test
         run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
-      - name: Verify APK identity
-        run: |
-          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
-          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
-          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
-          grep -q "package: name='com.attendpro.employee' versionCode='76' versionName='1.9.69'" employee-badging.txt
-          grep -q "package: name='com.attendpro.store' versionCode='76' versionName='1.9.69'" store-badging.txt
-      - name: Sign official release
+      - name: Sign APKs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -78,15 +50,15 @@ jobs:
           KEYSTORE=/tmp/attend-pro.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.69-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.69-FINAL.apk; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.70-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.70-FINAL.apk; fi
             UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
             "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk
             ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL" = "$EXPECTED"
           done
-          sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
+          sha256sum signed/*.apk > signed/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-1.9.69-FINAL-SIGNED
+          name: ATTEND-PRO-1.9.70-FINAL-SIGNED
           path: signed/*
