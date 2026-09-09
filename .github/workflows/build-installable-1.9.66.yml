@@ -51,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir signed
-          EXPECTED=6f8bcc08ae6c8d9654e7aa2c9a661fb6bdf21e31b720ab3add88aed0cd4f4d82
+          EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           KEYSTORE=/tmp/attend-pro.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           for APP in employee store; do
