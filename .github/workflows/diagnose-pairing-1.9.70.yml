@@ -1,0 +1,27 @@
+name: Diagnose ATTEND-PRO pairing 1.9.70
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diagnose-pairing-1.9.70.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract current source
+        run: |
+          rm -rf src out && mkdir src out
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d src
+          cp src/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt out/EmployeeMainActivity.kt
+          cp src/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt out/PairingDiscovery-current.kt
+          cp src/store-app/src/main/java/com/attendpro/store/MainActivity.kt out/StoreMainActivity.kt
+          cp src/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt out/PairingBeacon-current.kt
+          cp src/core/src/main/java/com/attendpro/core/PairingProtocol.kt out/PairingProtocol.kt
+          grep -RInE 'AP5Q|beginAtomicQrPairing|pairingDiscovery\.start|startPrepared|SERVICE_UUID|PROVISION_CHARACTERISTIC_UUID|requestMtu|discoverServices|ACK|MAX_GATT_CHUNK_SIZE' out | tee out/TRACE.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pairing-diagnosis-1.9.70
+          path: out/*
