@@ -1,0 +1,69 @@
+name: Diagnose ATTEND-PRO 1.9.71 System Management
+
+on:
+  push:
+    branches:
+      - attend-pro-1.9.71-system-management
+    paths:
+      - '.github/workflows/diagnose-system-management-1.9.71.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare exact 1.9.70 source baseline
+        run: |
+          rm -rf buildsrc diag
+          mkdir -p buildsrc diag
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
+          sed -i 's/versionCode = 73/versionCode = 77/g; s/versionName = "1.9.66"/versionName = "1.9.70"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
+          s=p.read_text()
+          needle='pairingDiscovery.start(envelope.code, PairingDiscovery.Mode.ALL)'
+          replacement='pairingDiscovery.stop()\n        acceptProvision(envelope.provisionText, localChannel = "QR AP5Q")'
+          if needle in s:
+              s=s.replace(needle,replacement,1)
+          elif 'acceptProvision(envelope.provisionText' not in s:
+              raise SystemExit('Cannot establish stable 1.9.70 AP5Q baseline')
+          p.write_text(s)
+          PY
+
+      - name: Inventory administrative source
+        shell: bash
+        run: |
+          {
+            echo '=== Kotlin/Java files ==='
+            find buildsrc/store-app/src/main -type f \( -name '*.kt' -o -name '*.java' -o -name '*.xml' \) | sort
+            echo
+            echo '=== Admin/Owner/Activation/Subscription matches ==='
+            grep -RniE 'owner|admin|agent|activation|subscription|system.?owner|مالك|وكيل|تفعيل|اشتراك|مشترك' buildsrc/store-app/src/main --include='*.kt' --include='*.java' --include='*.xml' || true
+            echo
+            echo '=== API/server URL matches ==='
+            grep -RniE '/api/v1|ATTEND_PRO|cloudflare|https?://' buildsrc/store-app/src/main --include='*.kt' --include='*.java' --include='*.xml' || true
+          } > diag/report.txt
+
+          mkdir -p diag/store-main
+          rsync -a --prune-empty-dirs \
+            --include='*/' --include='*.kt' --include='*.java' --include='*.xml' --exclude='*' \
+            buildsrc/store-app/src/main/ diag/store-main/
+
+      - name: Verify stable pairing baseline remains present
+        run: |
+          grep -q 'stopBleScanForGatt()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'requestMtu(247)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'acceptProvision(envelope.provisionText' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.71-SYSTEM-MANAGEMENT-DIAG
+          path: diag/
