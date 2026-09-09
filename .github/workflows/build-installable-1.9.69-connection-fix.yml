@@ -30,14 +30,20 @@ jobs:
           mkdir buildsrc stable artifact
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
           gh run download 34001726164 -R "${{ github.repository }}" -n ATTEND-PRO-V1-source-1.9.51 -D artifact
-          unzip -q artifact/ATTEND-PRO-V1-source-1.9.51.zip -d stable
-          if [ -f stable/ATTEND-PRO-V1-source-1.9.51.zip ]; then mkdir -p stable/tmp; unzip -q stable/ATTEND-PRO-V1-source-1.9.51.zip -d stable/tmp; cp -a stable/tmp/. stable/; fi
-          test -f stable/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-          test -f stable/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          SRCZIP=$(find artifact -type f -name '*.zip' | head -1)
+          test -n "$SRCZIP"
+          unzip -q "$SRCZIP" -d stable
+          NESTED=$(find stable -type f -name '*.zip' | head -1 || true)
+          if [ -n "$NESTED" ]; then mkdir -p stable/nested; unzip -q "$NESTED" -d stable/nested; fi
+          PD=$(find stable -type f -path '*/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt' | head -1)
+          PB=$(find stable -type f -path '*/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt' | head -1)
+          test -n "$PD"; test -n "$PB"
+          cp "$PD" /tmp/PairingDiscovery.kt
+          cp "$PB" /tmp/PairingBeacon.kt
       - name: Restore only stable pairing transport
         run: |
-          cp stable/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-          cp stable/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          cp /tmp/PairingDiscovery.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          cp /tmp/PairingBeacon.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
       - name: Set 1.9.69 identity
         run: |
           sed -i 's/versionCode = 73/versionCode = 76/g; s/versionName = "1.9.66"/versionName = "1.9.69"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
@@ -78,7 +84,6 @@ jobs:
             "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk
             ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs signed/$OUT > signed/$APP-signature.txt
           done
           sha256sum signed/*.apk | tee signed/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
