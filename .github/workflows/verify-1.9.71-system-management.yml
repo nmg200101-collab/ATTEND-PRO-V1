@@ -1,0 +1,68 @@
+name: Verify ATTEND-PRO 1.9.71 System Management
+on:
+  push:
+    branches: [attend-pro-1.9.71-system-management]
+    paths:
+      - '.source_patches/1.9.71/**'
+      - 'tools/patch-1.9.71-system-management.py'
+      - '.github/workflows/verify-1.9.71-system-management.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with: {gradle-version: '8.9'}
+      - name: Prepare stable 1.9.70 source as 1.9.71
+        run: |
+          rm -rf buildsrc
+          mkdir buildsrc
+          unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
+          sed -i 's/versionCode = 73/versionCode = 78/g; s/versionName = "1.9.66"/versionName = "1.9.71"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
+          s=p.read_text(encoding='utf-8')
+          old='pairingDiscovery.start(envelope.code, PairingDiscovery.Mode.ALL)'
+          new='pairingDiscovery.stop()\n        acceptProvision(envelope.provisionText, localChannel = "QR AP5Q")'
+          if old in s:
+              s=s.replace(old,new,1)
+          elif 'acceptProvision(envelope.provisionText' not in s:
+              raise SystemExit('stable 1.9.70 AP5Q baseline missing')
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Snapshot protected pairing files
+        run: |
+          sha256sum \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt > /tmp/pairing.sha256
+      - name: Apply management patch
+        run: python3 tools/patch-1.9.71-system-management.py
+      - name: Verify pairing unchanged
+        run: |
+          sha256sum -c /tmp/pairing.sha256
+          grep -q 'stopBleScanForGatt()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'requestMtu(247)' buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+          grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+          grep -q 'acceptProvision(envelope.provisionText' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+      - name: Compile and regression test
+        run: |
+          gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-1.9.71-VERIFY-DEBUG
+          path: |
+            buildsrc/store-app/build/outputs/apk/debug/*.apk
+            buildsrc/employee-app/build/outputs/apk/debug/*.apk
