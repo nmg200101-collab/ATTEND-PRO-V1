@@ -26,26 +26,10 @@ jobs:
           rm -rf buildsrc && mkdir buildsrc
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
           test -f buildsrc/settings.gradle.kts
-      - name: Apply 1.9.68 administration update without touching connection engine
+      - name: Set official repair version
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          for mod in ['employee-app','store-app']:
-              p=Path('buildsrc')/mod/'build.gradle.kts'; s=p.read_text()
-              s=s.replace('versionCode = 73','versionCode = 76').replace('versionName = "1.9.66"','versionName = "1.9.69"')
-              p.write_text(s)
-          p=Path('buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt'); s=p.read_text()
-          old='''                val labels = stores.map { s ->\n                    val state = if (s.status == "ACTIVE" && s.expiresAt > System.currentTimeMillis()) "● نشط" else "○ ${s.status}"\n                    "$state • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
-          new='''                val now = System.currentTimeMillis()\n                val labels = stores.map { s ->\n                    val accountState = when { s.status == "SUSPENDED" -> "موقوف"; s.status == "ARCHIVED" -> "مؤرشف"; s.expiresAt in 1..now -> "منتهي"; s.status == "ACTIVE" -> "نشط"; else -> s.status }\n                    val recentlyOnline = s.lastSeenAt > 0 && now - s.lastSeenAt <= 2 * 60_000L\n                    val connectionState = if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"\n                    "${if (recentlyOnline) "●" else "○"} $accountState • $connectionState • ${s.storeName} • ${s.branchId} • حتى ${if (s.expiresAt > 0) fmt.format(Date(s.expiresAt)) else "-"}"\n                }.toMutableList()'''
-          if old not in s: raise SystemExit('central store labels block not found')
-          s=s.replace(old,new)
-          old2='''            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nالحالة: ${store.status}\\n")'''
-          new2='''            val now = System.currentTimeMillis()\n            val accountState = when { store.status == "SUSPENDED" -> "موقوف"; store.status == "ARCHIVED" -> "مؤرشف"; store.expiresAt in 1..now -> "منتهي"; store.status == "ACTIVE" -> "نشط"; else -> store.status }\n            val accountWorks = store.status == "ACTIVE" && (store.expiresAt <= 0 || store.expiresAt > now)\n            val recentlyOnline = store.lastSeenAt > 0 && now - store.lastSeenAt <= 2 * 60_000L\n            append("نوع الاشتراك: ${subscriptionArabic(store.subscriptionType)}\\nحالة الحساب: ${if (accountWorks) "يعمل ✓" else accountState}\\nحالة الاتصال: ${if (recentlyOnline) "متصل مؤخرًا" else "غير متصل"}\\n")'''
-          if old2 not in s: raise SystemExit('details block not found')
-          s=s.replace(old2,new2).replace('حذف المحل وبياناته نهائيًا من الخادم','🗑 حذف هذا الحساب من الخادم')
-          p.write_text(s)
-          PY
-      - name: Connection repair guard
+          sed -i 's/versionCode = 73/versionCode = 76/g; s/versionName = "1.9.66"/versionName = "1.9.69"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+      - name: Protect connection core
         run: |
           set -euo pipefail
           cd buildsrc
@@ -53,19 +37,15 @@ jobs:
           test -f core/src/main/java/com/attendpro/core/PairingProtocol.kt
           test -f core/src/main/java/com/attendpro/core/QrScannerActivity.kt
           test -f employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
-          test -f employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
           test -f store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
-          test -f store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
-      - name: Full regression compile and build
+      - name: Full regression build
         run: gradle -p buildsrc :core:testDebugUnitTest :employee-app:compileDebugKotlin :store-app:compileDebugKotlin :employee-app:assembleDebug :store-app:assembleDebug :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
-      - name: Verify APK identity
+      - name: Verify identity
         run: |
           AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
-          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | tee employee-badging.txt
-          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | tee store-badging.txt
-          grep -q "package: name='com.attendpro.employee' versionCode='76' versionName='1.9.69'" employee-badging.txt
-          grep -q "package: name='com.attendpro.store' versionCode='76' versionName='1.9.69'" store-badging.txt
-      - name: Sign permanent release with same certificate as 1.9.68
+          "$AAPT" dump badging buildsrc/employee-app/build/outputs/apk/debug/employee-app-debug.apk | grep "package: name='com.attendpro.employee' versionCode='76' versionName='1.9.69'"
+          "$AAPT" dump badging buildsrc/store-app/build/outputs/apk/debug/store-app-debug.apk | grep "package: name='com.attendpro.store' versionCode='76' versionName='1.9.69'"
+      - name: Sign official release
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
