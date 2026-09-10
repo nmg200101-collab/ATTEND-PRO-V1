@@ -10,8 +10,8 @@ class AttendProDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
         db.setForeignKeyConstraintsEnabled(true)
-        db.execSQL("PRAGMA busy_timeout=5000")
-        db.execSQL("PRAGMA secure_delete=ON")
+        db.rawQuery("PRAGMA busy_timeout=5000", null).use { it.moveToFirst() }
+        db.rawQuery("PRAGMA secure_delete=ON", null).use { it.moveToFirst() }
     }
 
     override fun onCreate(db: SQLiteDatabase) = createSchema(db)
