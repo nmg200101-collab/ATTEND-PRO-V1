@@ -1,10 +1,10 @@
-name: Build ATTEND-PRO 1.9.80 SECURITY HARDENING
+name: Build ATTEND-PRO 1.9.81 RELEASE CANDIDATE
 on:
   push:
-    branches: [attend-pro-1.9.80-security-hardening]
+    branches: [attend-pro-1.9.81-release-candidate]
     paths:
       - '.github/workflows/build-installable-1.9.77-final.yml'
-      - 'tools/patch-1.9.80-security-hardening.py'
+      - 'tools/patch-1.9.81-release-candidate-stability.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,13 +26,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Prepare 1.9.80 from stable source
+      - name: Prepare 1.9.81 from stable source
         run: |
           set -euo pipefail
           rm -rf buildsrc signed
           mkdir buildsrc signed
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
-          sed -i 's/versionCode = 73/versionCode = 87/g; s/versionName = "1.9.66"/versionName = "1.9.80"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionCode = 73/versionCode = 88/g; s/versionName = "1.9.66"/versionName = "1.9.81"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
           python3 - <<'PY'
           from pathlib import Path
           p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
@@ -44,7 +44,7 @@ jobs:
           p.write_text(s,encoding='utf-8')
           PY
 
-      - name: Rebuild exact 1.9.79 feature baseline
+      - name: Rebuild exact 1.9.80 feature baseline
         run: |
           set -euo pipefail
           python3 tools/patch-1.9.71-system-management.py
@@ -60,14 +60,15 @@ jobs:
           python3 tools/patch-1.9.78-semi-final-home-ui.py
           python3 tools/patch-1.9.78-terminology-polish.py
           python3 tools/patch-1.9.79-agent-entry-fix.py
+          python3 tools/patch-1.9.80-security-hardening.py
 
       - name: Snapshot protected pairing and connection core
         run: python3 tools/guard-1.9.77-core-pairing.py snapshot
 
-      - name: Apply 1.9.80 security hardening
-        run: python3 tools/patch-1.9.80-security-hardening.py
+      - name: Apply 1.9.81 release-candidate stability patch
+        run: python3 tools/patch-1.9.81-release-candidate-stability.py
 
-      - name: Verify pairing core unchanged and hardening contract
+      - name: Verify protected core and stability contract
         run: |
           set -euo pipefail
           python3 tools/guard-1.9.77-core-pairing.py verify
@@ -76,21 +77,18 @@ jobs:
           grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
           grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
           grep -q 'sendLocalMessage' buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt
-          grep -q 'object CredentialHash1980' buildsrc/core/src/main/java/com/attendpro/core/CredentialHash1980.kt
-          grep -q 'employee_pairing_secret_v1980' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
-          grep -q 'employees_json_v1980' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
-          grep -q 'CredentialHash1980.verify' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'challengePollInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'messagePollInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'registerDefaultNetworkCallback' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'serverBackoff1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'inboxLoadInFlight1981' buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
+          grep -q 'loadInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessages1975Activity.kt
+          grep -q 'class CredentialHash1980Test' buildsrc/core/src/test/java/com/attendpro/core/CredentialHash1980Test.kt
           grep -q 'دخول الوكيل المركزي' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
-          ! grep -q 'setOnClickListener { agentLogin() }' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
           grep -q 'handleExternalPairing1980' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          grep -q 'استبدال ارتباط الهاتف' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          grep -q 'ensureNotificationPermission1980' buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
-          grep -q 'رد على الموظف' buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
-          grep -q 'ShiftWindow.resolve' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'ShiftWindow.resolve' buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
           ! grep -q 'android.permission.CALL_PHONE' buildsrc/store-app/src/main/AndroidManifest.xml
 
-      - name: Core protocol and security compile tests
+      - name: Core protocol and stability tests
         run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
 
       - name: Compile and assemble both apps
@@ -100,7 +98,7 @@ jobs:
             :employee-app:assembleDebug :store-app:assembleDebug \
             :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
 
-      - name: Sign official release with stable certificate
+      - name: Sign official release candidate with stable certificate
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -112,7 +110,7 @@ jobs:
           KEYSTORE=/tmp/attend-pro.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.80-FINAL.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.80-FINAL.apk; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.81-RC.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.81-RC.apk; fi
             UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
             test -f "$UNS"
             "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
@@ -122,21 +120,19 @@ jobs:
             test "$ACTUAL" = "$EXPECTED"
           done
           sha256sum signed/*.apk > signed/SHA256SUMS.txt
-          printf 'ATTEND-PRO 1.9.80\nBase: 1.9.79\nSecurity and release hardening\nCentral agent is the only visible agent path\nExternal shared pairing requires explicit confirmation\nEmployee pairing secret and Store employee records migrate to Android Keystore-backed AES-GCM vault\nLocal admin credentials migrate to salted PBKDF2 on successful login/change\nOvernight shift calculations unified with ShiftWindow\nStore messaging requests notification permission and supports direct reply\nUnused CALL_PHONE permission removed\nProtected pairing/BLE/QR/GATT/direct-message core unchanged\nCertificate SHA-256: %s\n' "$EXPECTED" > signed/RELEASE-INFO.txt
+          printf 'ATTEND-PRO 1.9.81 RC\nBase: 1.9.80\nRelease-candidate stability only; no new pairing protocol\nPrevents overlapping challenge/message server polls\nBounded exponential backoff on network failures\nModern ConnectivityManager NetworkCallback while PresenceService is active\nDuplicate message refresh suppression in Store and Employee apps\nPBKDF2 migration regression tests added\nProtected pairing/BLE/QR/GATT/heartbeat/direct-message core unchanged\nCertificate SHA-256: %s\n' "$EXPECTED" > signed/RELEASE-INFO.txt
 
-      - name: Package final source without obsolete bundled server
+      - name: Package release-candidate source without obsolete bundled server
         run: |
           rm -rf buildsrc/central-server
           cat > buildsrc/CLOUD_SERVER_REFERENCE.md <<'EOF'
           # ATTEND-PRO Cloud Server
-          The production server is maintained separately in:
-          nmg200101-collab/ATTEND-PRO-CLOUDFLARE-SERVER
-          Current compatible server baseline: attend-pro-1.9.75-store-messaging and later.
-          Do not use the obsolete bundled Node server from early Android source packages.
+          Production server repository: nmg200101-collab/ATTEND-PRO-CLOUDFLARE-SERVER
+          Compatible baseline: attend-pro-1.9.75-store-messaging and later.
           EOF
-          (cd buildsrc && zip -qr ../signed/ATTEND-PRO-1.9.80-FINAL-SOURCE.zip . -x '*/build/*' '.gradle/*')
+          (cd buildsrc && zip -qr ../signed/ATTEND-PRO-1.9.81-RC-SOURCE.zip . -x '*/build/*' '.gradle/*')
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-1.9.80-FINAL-SIGNED
+          name: ATTEND-PRO-1.9.81-RC-SIGNED
           path: signed/*
