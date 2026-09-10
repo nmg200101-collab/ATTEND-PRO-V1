@@ -91,6 +91,16 @@ or network clients.
 
 ## Security continuity
 
+### V2.0.0-RC1 backup and UI-lock boundary
+
+- `foundation.backup.EncryptedBackupCodec` owns the portable password-encrypted envelope and has no UI dependency.
+- `foundation.backup.StoreBackupManager` adapts the current live stores into validated snapshots during the gradual SQLite cutover.
+- `CentralServerClient` transports only opaque envelopes through device-signed HTTPS requests.
+- The Cloudflare V2 wrapper enforces active-store authorization, binding, replay protection, and five-version retention.
+- `AppLockManager` owns local policy; `AttendProApplication` observes real background transitions; `AppLockGateActivity` owns authentication UI.
+- App-lock state and activation credentials stay outside the backup boundary.
+- Store and Employee launchers are thin app-specific subclasses of the common gate.
+
 The existing Android Keystore, AES-GCM, PBKDF2, signature verification, anti-tamper checks,
 HTTPS-only policy, R8/resource shrinking, and protected administration screens remain the runtime
 security authority. The release workflow refuses to publish APKs unless both packages:
@@ -99,7 +109,7 @@ security authority. The release workflow refuses to publish APKs unless both pac
 2. pass zip alignment and APK Signature Scheme v2/v3 verification;
 3. match certificate SHA-256
    `2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59`;
-4. report version code 90 and version name `2.0.0-FOUNDATION`.
+4. report the release-specific version values enforced by its CI workflow.
 
 ## Incremental migration sequence
 

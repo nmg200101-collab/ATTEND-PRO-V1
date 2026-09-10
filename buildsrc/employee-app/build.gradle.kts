@@ -5,14 +5,14 @@ plugins {
 
 android {
     namespace = "com.attendpro.employee"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.attendpro.employee"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 90
-        versionName = "2.0.0-FOUNDATION"
+        targetSdk = 36
+        versionCode = 91
+        versionName = "2.0.0-RC1"
     }
 
     compileOptions {
@@ -24,6 +24,18 @@ android {
 
     buildFeatures {
         buildConfig = true
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("direct") {
+            dimension = "distribution"
+            buildConfigField("boolean", "DIRECT_DISTRIBUTION", "true")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "DIRECT_DISTRIBUTION", "false")
+        }
     }
 
     buildTypes {

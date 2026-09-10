@@ -6,6 +6,7 @@ import android.app.AlertDialog
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.location.Location
 import android.location.LocationManager
 import android.location.LocationListener
@@ -24,6 +25,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.attendpro.core.NetworkTools
+import com.attendpro.core.AppLockGateActivity
+import com.attendpro.core.AppLockSettingsDialog
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.DeviceIdentity
 import com.attendpro.core.QrScannerActivity
@@ -31,6 +34,14 @@ import com.attendpro.core.QrCodeTools
 import com.attendpro.core.ReportProtocol
 import com.attendpro.core.StoreRepository
 import com.attendpro.core.UiKit
+import com.attendpro.foundation.backup.EncryptedBackupCodec
+import com.attendpro.foundation.backup.StoreBackupArtifact
+import com.attendpro.foundation.backup.StoreBackupManager
+import com.attendpro.foundation.backup.StoreBackupPreview
+import java.io.ByteArrayOutputStream
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class StoreSettingsActivity : Activity() {
     private lateinit var repo: StoreRepository
@@ -38,6 +49,7 @@ class StoreSettingsActivity : Activity() {
     private var authenticated = false
     private var sessionToken = ""
     private var advancedMode1977 = false
+    private var pendingPhoneBackupEnvelope: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -228,6 +240,8 @@ class StoreSettingsActivity : Activity() {
             "التقارير والمشاركة" to { startActivity(Intent(this, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) },
             "هواتف استلام التقارير" to { manageReportReceivers() },
             (if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية") to { changeStorePin() },
+            "قفل التطبيق والبصمة" to { showAppLockSettings() },
+            "النسخ الاحتياطي والاستعادة" to { showBackupCenter() },
             "فحص جاهزية المحل" to { healthCheck() },
             "المظهر والقوالب" to { UiKit.showAppearancePicker(this) }
         ))
@@ -300,6 +314,7 @@ class StoreSettingsActivity : Activity() {
         security.addView(UiKit.sectionLabel(this, p, "الحماية والصلاحيات"))
         security.addView(UiKit.subtitle(this, p, if (repo.hasStoreAdminPin) "✓ إدارة المحل محمية برمز مستقل." else "القسم غير محمي حاليًا. أنشئ رمزًا لمنع وصول الموظفين إلى الإعدادات."))
         security.addView(UiKit.button(this, p, if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية", false).apply { setOnClickListener { changeStorePin() } })
+        security.addView(UiKit.button(this, p, "قفل التطبيق والبصمة", false).apply { setOnClickListener { showAppLockSettings() } })
         if (repo.hasStoreAdminPin) security.addView(UiKit.button(this, p, "قفل إدارة المحل الآن", false).apply {
             setOnClickListener { authenticated = false; repo.clearStoreAdminSession(); sessionToken = ""; showLogin() }
         })
@@ -309,6 +324,7 @@ class StoreSettingsActivity : Activity() {
         appearance.addView(UiKit.sectionLabel(this, p, "المظهر والصيانة"))
         appearance.addView(UiKit.subtitle(this, p, UiKit.appearanceSummary(this)))
         appearance.addView(UiKit.button(this, p, "المظهر والقوالب", false).apply { setOnClickListener { UiKit.showAppearancePicker(this@StoreSettingsActivity) } })
+        appearance.addView(UiKit.button(this, p, "النسخ الاحتياطي والاستعادة", false).apply { setOnClickListener { showBackupCenter() } })
         appearance.addView(UiKit.button(this, p, "فحص جاهزية المحل", false).apply { setOnClickListener { healthCheck() } })
         appearance.addView(UiKit.button(this, p, "إدارة ATTEND PRO العليا", false).apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, SystemSettingsActivity::class.java)) } })
         appearance.addView(UiKit.button(this, p, "إغلاق إدارة المحل", false).apply { setOnClickListener { authenticated = false; repo.clearStoreAdminSession(); sessionToken = ""; finish() } })
@@ -459,6 +475,29 @@ class StoreSettingsActivity : Activity() {
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQUEST_BACKUP_CREATE) {
+            val envelope = pendingPhoneBackupEnvelope
+            pendingPhoneBackupEnvelope = null
+            if (resultCode != RESULT_OK || data?.data == null || envelope == null) return
+            val destination = data.data ?: return
+            Thread {
+                val result = runCatching {
+                    contentResolver.openOutputStream(destination, "w")?.use { stream ->
+                        stream.write(envelope.toByteArray(Charsets.UTF_8)); stream.flush()
+                    } ?: error("تعذر فتح ملف الحفظ")
+                }
+                runOnUiThread {
+                    if (result.isSuccess) info("تم إنشاء النسخة ✓", "حُفظت نسخة الهاتف المشفرة بنجاح. احتفظ بكلمة النسخة في مكان آمن؛ لا يمكن استعادتها بدونها.")
+                    else info("تعذر الحفظ", result.exceptionOrNull()?.message ?: "تعذر كتابة ملف النسخة")
+                }
+            }.apply { isDaemon = true }.start()
+            return
+        }
+        if (requestCode == REQUEST_BACKUP_OPEN) {
+            if (resultCode != RESULT_OK || data?.data == null) return
+            importBackupFromPhone(data.data ?: return)
+            return
+        }
         if (requestCode != REQUEST_REPORT_RECEIVER_QR) return
         if (resultCode != RESULT_OK) { info("هواتف التقارير", data?.getStringExtra(QrScannerActivity.EXTRA_ERROR) ?: "تم إلغاء المسح"); return }
         val raw = data?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty()
@@ -521,6 +560,231 @@ class StoreSettingsActivity : Activity() {
         }
         dialog.show()
     }
+
+    private fun showAppLockSettings() {
+        AppLockSettingsDialog.show(this, onLockNow = {
+            packageManager.getLaunchIntentForPackage(packageName)?.let { gate ->
+                gate.putExtra(AppLockGateActivity.EXTRA_GATE_ONLY, true)
+                startActivity(gate)
+            }
+        })
+    }
+
+    private fun showBackupCenter() {
+        val state = getSharedPreferences("attend_pro_backup_state_v2", MODE_PRIVATE)
+        val lastUpload = state.getLong("lastServerUploadAt", 0L)
+        val lastRestore = state.getLong("lastRestoredAt", 0L)
+        val statusText = buildString {
+            append("نسخ الهاتف: بيانات كاملة مع صور ملفات الوجه المتاحة.\n")
+            append("نسخ الخادم: بيانات الموظفين والحضور والقوالب بلا صور مرجعية، ومشفرة قبل الرفع.\n\n")
+            append("آخر رفع للخادم: ${formatBackupTime(lastUpload)}\n")
+            append("آخر استعادة: ${formatBackupTime(lastRestore)}")
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
+        }
+        box.addView(UiKit.subtitle(this, p, statusText))
+        box.addView(UiKit.button(this, p, "إنشاء نسخة على الهاتف").apply { setOnClickListener { createPhoneBackup() } })
+        box.addView(UiKit.button(this, p, "استعادة نسخة من الهاتف", false).apply { setOnClickListener { selectPhoneBackup() } })
+        box.addView(UiKit.button(this, p, "رفع نسخة مشفرة إلى الخادم", false).apply { setOnClickListener { uploadServerBackup() } })
+        box.addView(UiKit.button(this, p, "استعادة أحدث نسخة من الخادم", false).apply { setOnClickListener { downloadServerBackup() } })
+        AlertDialog.Builder(this).setTitle("النسخ الاحتياطي والاستعادة").setView(box).setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun createPhoneBackup() {
+        promptBackupPassword(confirm = true, title = "كلمة نسخة الهاتف") { password ->
+            info("جاري تجهيز النسخة", "يجري تشفير البيانات وصور ملفات الوجه على هذا الهاتف. اختر مكان الحفظ عند اكتمال التجهيز.")
+            Thread {
+                val result = runCatching { StoreBackupManager(this).createEncryptedBackup(password, BuildConfig.VERSION_NAME, includeFaceFiles = true) }
+                password.fill('\u0000')
+                runOnUiThread {
+                    result.onSuccess { artifact ->
+                        pendingPhoneBackupEnvelope = artifact.envelope
+                        val stamp = SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date(artifact.metadata.createdAt))
+                        startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = "application/json"
+                            putExtra(Intent.EXTRA_TITLE, "ATTEND-PRO-STORE-$stamp.apbackup")
+                        }, REQUEST_BACKUP_CREATE)
+                    }.onFailure { info("تعذر إنشاء النسخة", backupError(it)) }
+                }
+            }.apply { isDaemon = true }.start()
+        }
+    }
+
+    private fun selectPhoneBackup() {
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }, REQUEST_BACKUP_OPEN)
+    }
+
+    private fun importBackupFromPhone(uri: Uri) {
+        info("فحص النسخة", "يجري قراءة ملف النسخة المشفرة والتحقق من حجمه وصيغته.")
+        Thread {
+            val result = runCatching {
+                contentResolver.openInputStream(uri)?.use { input ->
+                    val output = ByteArrayOutputStream()
+                    val buffer = ByteArray(8 * 1024)
+                    var total = 0
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        require(total <= EncryptedBackupCodec.MAX_ENVELOPE_BYTES) { "ملف النسخة أكبر من الحد الآمن" }
+                        output.write(buffer, 0, count)
+                    }
+                    output.toString(Charsets.UTF_8.name())
+                } ?: error("تعذر فتح ملف النسخة")
+            }
+            runOnUiThread {
+                result.onSuccess { envelope -> requestBackupRestore(envelope, "الهاتف") }
+                    .onFailure { info("ملف غير صالح", backupError(it)) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun uploadServerBackup() {
+        if (!repo.isCentralActivationActive() || repo.centralAccessToken.isBlank()) {
+            info("التفعيل مطلوب", "يلزم تفعيل هذا المحل مركزيًا قبل رفع نسخة إلى الخادم.")
+            return
+        }
+        promptBackupPassword(confirm = true, title = "كلمة نسخة الخادم") { password ->
+            info("جاري الرفع", "يجري تشفير نسخة جديدة داخل الهاتف ثم رفع النص المشفر فقط إلى خادم ATTEND PRO.")
+            Thread {
+                val result = runCatching {
+                    val artifact = StoreBackupManager(this).createEncryptedBackup(password, BuildConfig.VERSION_NAME, includeFaceFiles = false)
+                    require(artifact.envelope.toByteArray(Charsets.UTF_8).size <= MAX_SERVER_BACKUP_BYTES) {
+                        "حجم بيانات المحل أكبر من حد النسخ على الخادم؛ استخدم نسخة الهاتف الكاملة"
+                    }
+                    CentralServerClient.uploadEncryptedBackup(
+                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                        artifact.envelope, BuildConfig.VERSION_NAME
+                    ).getOrThrow() to artifact
+                }
+                password.fill('\u0000')
+                runOnUiThread {
+                    result.onSuccess { (receipt, artifact) ->
+                        getSharedPreferences("attend_pro_backup_state_v2", MODE_PRIVATE).edit()
+                            .putLong("lastServerUploadAt", receipt.createdAt)
+                            .putString("lastServerBackupId", receipt.backupId).apply()
+                        info("تم رفع النسخة ✓", backupSummaryText(artifact) + "\nيحتفظ الخادم بآخر ${receipt.retainedCount} نسخة مشفرة لهذا المحل.")
+                    }.onFailure { info("تعذر رفع النسخة", backupError(it)) }
+                }
+            }.apply { isDaemon = true }.start()
+        }
+    }
+
+    private fun downloadServerBackup() {
+        if (!repo.isCentralActivationActive() || repo.centralAccessToken.isBlank()) {
+            info("التفعيل مطلوب", "انقل تفعيل المحل إلى هذا الهاتف واعتمده أولًا، ثم استعد نسخته المشفرة.")
+            return
+        }
+        info("الاتصال بالخادم", "يجري طلب أحدث نسخة مشفرة خاصة بهذا المحل.")
+        Thread {
+            val result = CentralServerClient.downloadLatestEncryptedBackup(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this)
+            )
+            runOnUiThread {
+                result.onSuccess { remote ->
+                    if (!remote.available) info("لا توجد نسخة", "لم يُرفع لهذا المحل أي نسخة احتياطية بعد.")
+                    else requestBackupRestore(remote.envelope, "الخادم")
+                }.onFailure { info("تعذر تنزيل النسخة", backupError(it)) }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun requestBackupRestore(envelope: String, sourceLabel: String) {
+        promptBackupPassword(confirm = false, title = "فتح نسخة $sourceLabel") { password ->
+            info("التحقق من النسخة", "يجري فك التشفير محليًا والتحقق من هوية المحل وسلامة جميع البيانات قبل عرضها.")
+            Thread {
+                val result = runCatching { StoreBackupManager(this).preview(envelope, password) }
+                runOnUiThread {
+                    result.onSuccess { preview -> confirmRestore(envelope, password, preview, sourceLabel) }
+                        .onFailure { password.fill('\u0000'); info("تعذر فتح النسخة", backupError(it)) }
+                }
+            }.apply { isDaemon = true }.start()
+        }
+    }
+
+    private fun confirmRestore(envelope: String, password: CharArray, preview: StoreBackupPreview, sourceLabel: String) {
+        val details = "المحل: ${preview.storeName}\n" +
+            "تاريخ النسخة: ${formatBackupTime(preview.metadata.createdAt)}\n" +
+            "الإصدار: ${preview.appVersion.ifBlank { "غير محدد" }}\n" +
+            "الموظفون: ${preview.summary.employeeCount}\n" +
+            "سجلات الحضور: ${preview.summary.attendanceCount}\n" +
+            "الإعدادات: ${preview.summary.settingsCount}\n" +
+            "صور ملفات الوجه: ${preview.summary.faceFileCount}\n\n" +
+            "سيبقى تفعيل هذا الهاتف ومفاتيحه الأمنية كما هما. ستستبدل بيانات العمل الحالية ببيانات النسخة."
+        AlertDialog.Builder(this).setTitle("تأكيد الاستعادة من $sourceLabel").setMessage(details)
+            .setPositiveButton("استعادة", null).setNegativeButton("إلغاء") { _, _ -> password.fill('\u0000') }.create().also { dialog ->
+                dialog.setOnShowListener {
+                    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                        dialog.dismiss()
+                        info("جاري الاستعادة", "لا تغلق التطبيق حتى يكتمل التحقق والكتابة.")
+                        Thread {
+                            val restored = runCatching { StoreBackupManager(this).restore(envelope, password) }
+                            password.fill('\u0000')
+                            runOnUiThread {
+                                restored.onSuccess { result ->
+                                    AlertDialog.Builder(this).setTitle("اكتملت الاستعادة ✓")
+                                        .setMessage("تمت استعادة ${result.summary.employeeCount} موظف و${result.summary.attendanceCount} سجل حضور. سيُعاد فتح التطبيق لتحديث جميع الشاشات.")
+                                        .setCancelable(false).setPositiveButton("إعادة فتح التطبيق") { _, _ ->
+                                            val launch = packageManager.getLaunchIntentForPackage(packageName)
+                                            finishAffinity()
+                                            if (launch != null) startActivity(launch)
+                                        }.show()
+                                }.onFailure { info("لم تتم الاستعادة", backupError(it)) }
+                            }
+                        }.apply { isDaemon = true }.start()
+                    }
+                }
+                dialog.show()
+            }
+    }
+
+    private fun promptBackupPassword(confirm: Boolean, title: String, ready: (CharArray) -> Unit) {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(28, 8, 28, 4) }
+        box.addView(UiKit.subtitle(this, p, "استخدم عبارة قوية من 8 أحرف على الأقل. لا تُرسل هذه الكلمة إلى الخادم ولا يمكن استرجاعها إذا فُقدت."))
+        val first = UiKit.field(this, p, "كلمة النسخة الاحتياطية", true).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        box.addView(first)
+        val second = if (confirm) UiKit.field(this, p, "تأكيد كلمة النسخة", true).apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            box.addView(this)
+        } else null
+        val dialog = AlertDialog.Builder(this).setTitle(title).setView(box).setPositiveButton("متابعة", null).setNegativeButton("إلغاء", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val value = first.text.toString()
+                if (value.length < 8 || value.isBlank()) { first.error = "أدخل 8 أحرف على الأقل"; return@setOnClickListener }
+                if (second != null && value != second.text.toString()) { second.error = "الكلمتان غير متطابقتين"; return@setOnClickListener }
+                val password = value.toCharArray()
+                first.text?.clear(); second?.text?.clear(); dialog.dismiss(); ready(password)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun backupSummaryText(artifact: StoreBackupArtifact): String =
+        "الموظفون: ${artifact.summary.employeeCount} • الحضور: ${artifact.summary.attendanceCount} • الإعدادات: ${artifact.summary.settingsCount}\n" +
+            "الحجم المشفر: ${artifact.metadata.sizeBytes / 1024} KB"
+
+    private fun backupError(error: Throwable): String {
+        val raw = error.message.orEmpty()
+        return when {
+            raw.contains("password", true) || raw.contains("modified", true) -> "كلمة النسخة غير صحيحة أو تم تعديل الملف."
+            raw.contains("another store", true) -> "هذه النسخة تخص محلًا آخر. انقل تفعيل المحل نفسه إلى هذا الهاتف أولًا."
+            raw.contains("HTTP 404") -> "خدمة النسخ على الخادم لم تُفعّل بعد على هذا الخادم."
+            raw.isNotBlank() -> raw.take(300)
+            else -> "حدث خطأ غير متوقع أثناء معالجة النسخة."
+        }
+    }
+
+    private fun formatBackupTime(value: Long): String = if (value <= 0L) "لا يوجد" else
+        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault()).format(Date(value))
 
     private fun healthCheck() {
         val bt = getSystemService(BluetoothManager::class.java)?.adapter
@@ -591,6 +855,11 @@ class StoreSettingsActivity : Activity() {
         if (advancedMode1977) showDashboard() else super.onBackPressed()
     }
 
-    companion object { private const val REQUEST_REPORT_RECEIVER_QR = 9201 }
+    companion object {
+        private const val REQUEST_REPORT_RECEIVER_QR = 9201
+        private const val REQUEST_BACKUP_CREATE = 9301
+        private const val REQUEST_BACKUP_OPEN = 9302
+        private const val MAX_SERVER_BACKUP_BYTES = 1_500_000
+    }
 
 }

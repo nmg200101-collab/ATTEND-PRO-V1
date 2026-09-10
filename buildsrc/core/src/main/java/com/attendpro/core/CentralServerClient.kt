@@ -11,6 +11,8 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 
 object CentralServerClient {
+    private const val MAX_REMOTE_BACKUP_BYTES = 1_500_000
+
     data class ActivationApplicant(
         val ownerName: String,
         val storeName: String,
@@ -97,6 +99,20 @@ object CentralServerClient {
     )
     data class EmployeePairingTicket(val code: String, val expiresAt: Long, val transportText: String)
     data class AttendancePull(val events: List<AttendanceEvent>, val cursor: Long)
+    data class EncryptedBackupReceipt(
+        val backupId: String,
+        val createdAt: Long,
+        val sizeBytes: Int,
+        val retainedCount: Int
+    )
+    data class RemoteEncryptedBackup(
+        val available: Boolean,
+        val backupId: String = "",
+        val createdAt: Long = 0L,
+        val sizeBytes: Int = 0,
+        val appVersion: String = "",
+        val envelope: String = ""
+    )
     data class PresenceChallenge(
         val challengeId: String, val employeeId: String, val requiredMethod: AttendanceMethod,
         val status: String, val createdAt: Long, val expiresAt: Long, val verifiedAt: Long = 0L,
@@ -260,6 +276,66 @@ object CentralServerClient {
             runCatching { AttendanceEvent.fromJson(rows.getJSONObject(index)).copy(synced = true) }.getOrNull()
         }
         AttendancePull(events, o.optLong("cursor", afterCursor))
+    }
+
+    /** Uploads an already end-to-end encrypted backup. The server never receives its password or plaintext. */
+    fun uploadEncryptedBackup(
+        serverUrl: String,
+        storeToken: String,
+        storeId: String,
+        identity: DeviceIdentity,
+        envelope: String,
+        appVersion: String
+    ): Result<EncryptedBackupReceipt> = runCatching {
+        requireHttps(serverUrl)
+        require(storeToken.isNotBlank()) { "Central activation is required" }
+        val size = envelope.toByteArray(Charsets.UTF_8).size
+        require(size in 64..MAX_REMOTE_BACKUP_BYTES) { "Encrypted server backup exceeds the allowed size" }
+        val parsed = JSONObject(envelope)
+        require(parsed.optString("format") == "ATTEND-PRO-ENCRYPTED-BACKUP" && parsed.optString("role") == "STORE") {
+            "Invalid encrypted store backup"
+        }
+        val result = request(serverUrl, "/api/v1/store/backups/upload", "POST", JSONObject().apply {
+            put("backupId", parsed.getString("backupId"))
+            put("createdAt", parsed.getLong("createdAt"))
+            put("formatVersion", parsed.getInt("version"))
+            put("appVersion", appVersion.take(80))
+            put("envelope", envelope)
+        }, bearer = storeToken, deviceIdentity = identity, storeId = storeId)
+        EncryptedBackupReceipt(
+            result.getString("backupId"),
+            result.getLong("createdAt"),
+            result.getInt("sizeBytes"),
+            result.optInt("retainedCount", 1).coerceIn(1, 5)
+        )
+    }
+
+    /** Downloads only the current store's latest opaque encrypted backup. */
+    fun downloadLatestEncryptedBackup(
+        serverUrl: String,
+        storeToken: String,
+        storeId: String,
+        identity: DeviceIdentity
+    ): Result<RemoteEncryptedBackup> = runCatching {
+        requireHttps(serverUrl)
+        require(storeToken.isNotBlank()) { "Central activation is required" }
+        val result = request(
+            serverUrl, "/api/v1/store/backups/latest", "GET", null,
+            bearer = storeToken, deviceIdentity = identity, storeId = storeId
+        )
+        if (!result.optBoolean("available", false)) RemoteEncryptedBackup(false) else {
+            val envelope = result.getString("envelope")
+            val size = envelope.toByteArray(Charsets.UTF_8).size
+            require(size in 64..MAX_REMOTE_BACKUP_BYTES) { "Server returned an invalid backup size" }
+            RemoteEncryptedBackup(
+                true,
+                result.getString("backupId"),
+                result.getLong("createdAt"),
+                result.optInt("sizeBytes", size),
+                result.optString("appVersion", ""),
+                envelope
+            )
+        }
     }
 
     fun requestActivation(serverUrl: String, storeId: String, branchId: String, applicant: ActivationApplicant, identity: DeviceIdentity): Result<ActivationRequestResult> = runCatching {

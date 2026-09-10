@@ -28,6 +28,10 @@ object AppUpdateManager {
     )
 
     fun check(activity: Activity, serverUrl: String, channel: String, manual: Boolean = false) {
+        if (!supportsDirectInstall(activity)) {
+            if (manual) showPlayManagedUpdate(activity)
+            return
+        }
         Thread {
             val result = runCatching { fetchRelease(serverUrl, channel) }
             activity.runOnUiThread {
@@ -139,6 +143,25 @@ object AppUpdateManager {
         val intent = Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         activity.startActivity(intent)
+    }
+
+    private fun supportsDirectInstall(activity: Activity): Boolean {
+        val info = activity.packageManager.getPackageInfo(activity.packageName, PackageManager.GET_PERMISSIONS)
+        return info.requestedPermissions?.contains(android.Manifest.permission.REQUEST_INSTALL_PACKAGES) == true
+    }
+
+    private fun showPlayManagedUpdate(activity: Activity) {
+        AlertDialog.Builder(activity)
+            .setTitle("تحديثات Google Play")
+            .setMessage("هذه نسخة Google Play الرسمية؛ تتم تحديثاتها من المتجر ولا تطلب صلاحية تثبيت تطبيقات خارجية.")
+            .setPositiveButton("فتح Google Play") { _, _ ->
+                val market = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${activity.packageName}"))
+                runCatching { activity.startActivity(market) }.onFailure {
+                    activity.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=${activity.packageName}")))
+                }
+            }
+            .setNegativeButton("إغلاق", null)
+            .show()
     }
 
     private fun currentVersionCode(activity: Activity): Long {

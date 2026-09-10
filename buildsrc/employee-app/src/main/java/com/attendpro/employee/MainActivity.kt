@@ -33,6 +33,8 @@ import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
 import com.attendpro.core.AppIntegrity1982
+import com.attendpro.core.AppLockGateActivity
+import com.attendpro.core.AppLockSettingsDialog
 import com.attendpro.core.AttendanceMethod
 import com.attendpro.core.AttendanceAction
 import com.attendpro.core.AppUpdateManager
@@ -519,10 +521,20 @@ class MainActivity : Activity() {
         showLayeredMenu1977("الإعدادات", listOf(
             "إدارة الاتصال" to { showEmployeeConnectionControl1977() },
             "المظهر وطريقة العرض" to { UiKit.showAppearancePicker(this) },
-            "كلمة مرور التطبيق" to { setupLocalCredentials() },
+            "قفل التطبيق والبصمة" to { showAppLockSettings() },
+            "كلمة مرور إثبات الحضور" to { setupLocalCredentials() },
             "فحص تحديث التطبيق" to { AppUpdateManager.check(this, AppUpdateManager.DEFAULT_SERVER, "employee", manual = true) },
             "إلغاء ربط الهاتف" to { confirmUnlink() }
         ))
+    }
+
+    private fun showAppLockSettings() {
+        AppLockSettingsDialog.show(this, onLockNow = {
+            packageManager.getLaunchIntentForPackage(packageName)?.let { gate ->
+                gate.putExtra(AppLockGateActivity.EXTRA_GATE_ONLY, true)
+                startActivity(gate)
+            }
+        })
     }
 
     private fun showEmployeeConnectionControl1977() {
