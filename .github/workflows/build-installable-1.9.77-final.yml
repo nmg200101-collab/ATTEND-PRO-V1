@@ -1,10 +1,10 @@
-name: Build ATTEND-PRO 1.9.81 RELEASE CANDIDATE
+name: Build ATTEND-PRO 1.9.82 ANTI TAMPER
 on:
   push:
-    branches: [attend-pro-1.9.81-release-candidate]
+    branches: [attend-pro-1.9.82-anti-tamper]
     paths:
       - '.github/workflows/build-installable-1.9.77-final.yml'
-      - 'tools/patch-1.9.81-release-candidate-stability.py'
+      - 'tools/patch-1.9.82-anti-tamper.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,13 +26,13 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Prepare 1.9.81 from stable source
+      - name: Prepare 1.9.82 from stable source
         run: |
           set -euo pipefail
           rm -rf buildsrc signed
           mkdir buildsrc signed
           unzip -q ATTEND-PRO-1.9.66-FINAL-SOURCE-FIXED.zip -d buildsrc
-          sed -i 's/versionCode = 73/versionCode = 88/g; s/versionName = "1.9.66"/versionName = "1.9.81"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionCode = 73/versionCode = 89/g; s/versionName = "1.9.66"/versionName = "1.9.82"/g' buildsrc/employee-app/build.gradle.kts buildsrc/store-app/build.gradle.kts
           python3 - <<'PY'
           from pathlib import Path
           p=Path('buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt')
@@ -44,7 +44,7 @@ jobs:
           p.write_text(s,encoding='utf-8')
           PY
 
-      - name: Rebuild exact 1.9.80 feature baseline
+      - name: Rebuild exact 1.9.81 release-candidate baseline
         run: |
           set -euo pipefail
           python3 tools/patch-1.9.71-system-management.py
@@ -61,14 +61,15 @@ jobs:
           python3 tools/patch-1.9.78-terminology-polish.py
           python3 tools/patch-1.9.79-agent-entry-fix.py
           python3 tools/patch-1.9.80-security-hardening.py
+          python3 tools/patch-1.9.81-release-candidate-stability.py
 
       - name: Snapshot protected pairing and connection core
         run: python3 tools/guard-1.9.77-core-pairing.py snapshot
 
-      - name: Apply 1.9.81 release-candidate stability patch
-        run: python3 tools/patch-1.9.81-release-candidate-stability.py
+      - name: Apply 1.9.82 anti-tamper hardening
+        run: python3 tools/patch-1.9.82-anti-tamper.py
 
-      - name: Verify protected core and stability contract
+      - name: Verify protected core and anti-tamper contract
         run: |
           set -euo pipefail
           python3 tools/guard-1.9.77-core-pairing.py verify
@@ -77,28 +78,36 @@ jobs:
           grep -q 'MAX_GATT_CHUNK_SIZE = 360' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
           grep -q 'addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
           grep -q 'sendLocalMessage' buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt
-          grep -q 'challengePollInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'messagePollInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'registerDefaultNetworkCallback' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'serverBackoff1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'inboxLoadInFlight1981' buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
-          grep -q 'loadInFlight1981' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessages1975Activity.kt
-          grep -q 'class CredentialHash1980Test' buildsrc/core/src/test/java/com/attendpro/core/CredentialHash1980Test.kt
-          grep -q 'دخول الوكيل المركزي' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
-          grep -q 'handleExternalPairing1980' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          ! grep -q 'android.permission.CALL_PHONE' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'OFFICIAL_CERT_SHA256' buildsrc/core/src/main/java/com/attendpro/core/AppIntegrity1982.kt
+          grep -q 'ENFORCE_OFFICIAL_SIGNATURE' buildsrc/store-app/build.gradle.kts
+          grep -q 'isMinifyEnabled = true' buildsrc/store-app/build.gradle.kts
+          grep -q 'isShrinkResources = true' buildsrc/store-app/build.gradle.kts
+          grep -q 'isMinifyEnabled = true' buildsrc/employee-app/build.gradle.kts
+          grep -q 'isShrinkResources = true' buildsrc/employee-app/build.gradle.kts
+          grep -q 'usesCleartextTraffic="false"' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'usesCleartextTraffic="false"' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'enforceOfficialBuild1982' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'enforceOfficialBuild1982' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'FLAG_SECURE' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
+          grep -q 'activeInstrumentationDetected' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
+          grep -q 'FLAG_SECURE' buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          grep -q 'FLAG_SECURE' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
 
-      - name: Core protocol and stability tests
+      - name: Core tests
         run: gradle -p buildsrc :core:testDebugUnitTest --stacktrace
 
-      - name: Compile and assemble both apps
+      - name: Compile debug and build minified release APKs
         run: |
           gradle -p buildsrc \
             :employee-app:compileDebugKotlin :store-app:compileDebugKotlin \
             :employee-app:assembleDebug :store-app:assembleDebug \
             :employee-app:assembleRelease :store-app:assembleRelease --stacktrace
+          test -s buildsrc/employee-app/build/outputs/mapping/release/mapping.txt
+          test -s buildsrc/store-app/build/outputs/mapping/release/mapping.txt
+          wc -l buildsrc/employee-app/build/outputs/mapping/release/mapping.txt
+          wc -l buildsrc/store-app/build/outputs/mapping/release/mapping.txt
 
-      - name: Sign official release candidate with stable certificate
+      - name: Sign official release with stable certificate
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -110,7 +119,7 @@ jobs:
           KEYSTORE=/tmp/attend-pro.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.81-RC.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.81-RC.apk; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; OUT=ATTEND-PRO-Employee-1.9.82-PROTECTED.apk; else MOD=store-app; OUT=ATTEND-PRO-Store-1.9.82-PROTECTED.apk; fi
             UNS=buildsrc/$MOD/build/outputs/apk/release/$MOD-release-unsigned.apk
             test -f "$UNS"
             "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f -p 4 "$UNS" /tmp/$APP.apk
@@ -120,19 +129,21 @@ jobs:
             test "$ACTUAL" = "$EXPECTED"
           done
           sha256sum signed/*.apk > signed/SHA256SUMS.txt
-          printf 'ATTEND-PRO 1.9.81 RC\nBase: 1.9.80\nRelease-candidate stability only; no new pairing protocol\nPrevents overlapping challenge/message server polls\nBounded exponential backoff on network failures\nModern ConnectivityManager NetworkCallback while PresenceService is active\nDuplicate message refresh suppression in Store and Employee apps\nPBKDF2 migration regression tests added\nProtected pairing/BLE/QR/GATT/heartbeat/direct-message core unchanged\nCertificate SHA-256: %s\n' "$EXPECTED" > signed/RELEASE-INFO.txt
+          cp buildsrc/store-app/build/outputs/mapping/release/mapping.txt signed/STORE-R8-MAPPING-OWNER-ONLY.txt
+          cp buildsrc/employee-app/build/outputs/mapping/release/mapping.txt signed/EMPLOYEE-R8-MAPPING-OWNER-ONLY.txt
+          printf 'ATTEND-PRO 1.9.82 PROTECTED\nBase: 1.9.81 RC\nRelease R8 obfuscation + resource shrinking enabled\nRuntime official signing-certificate enforcement enabled\nHTTPS-only network policy enabled\nSensitive management screens protected with FLAG_SECURE\nActive debugger/tracer/instrumentation blocks privileged System Management\nProtected pairing/BLE/QR/GATT/heartbeat/local-message core unchanged\nImportant: keep R8 mapping files private; they de-obfuscate crash traces and code names.\nCertificate SHA-256: %s\n' "$EXPECTED" > signed/RELEASE-INFO.txt
 
-      - name: Package release-candidate source without obsolete bundled server
+      - name: Package protected source backup
         run: |
           rm -rf buildsrc/central-server
           cat > buildsrc/CLOUD_SERVER_REFERENCE.md <<'EOF'
           # ATTEND-PRO Cloud Server
           Production server repository: nmg200101-collab/ATTEND-PRO-CLOUDFLARE-SERVER
-          Compatible baseline: attend-pro-1.9.75-store-messaging and later.
+          Keep production authorization and business-critical secrets server-side.
           EOF
-          (cd buildsrc && zip -qr ../signed/ATTEND-PRO-1.9.81-RC-SOURCE.zip . -x '*/build/*' '.gradle/*')
+          (cd buildsrc && zip -qr ../signed/ATTEND-PRO-1.9.82-PROTECTED-SOURCE.zip . -x '*/build/*' '.gradle/*')
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-1.9.81-RC-SIGNED
+          name: ATTEND-PRO-1.9.82-PROTECTED-SIGNED
           path: signed/*
