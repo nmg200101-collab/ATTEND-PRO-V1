@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/build-installable-1.9.75-store-management.yml'
       - 'tools/patch-1.9.75-store-management.py'
+      - 'tools/fix-1.9.75-store-message-receiver.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -55,6 +56,7 @@ jobs:
           python3 tools/patch-1.9.74-final-polish.py
           python3 tools/fix-1.9.74-missing-helpers.py
           python3 tools/patch-1.9.75-store-management.py
+          python3 tools/fix-1.9.75-store-message-receiver.py
       - name: Verify pairing untouched and 1.9.75 features present
         run: |
           set -euo pipefail
@@ -67,6 +69,7 @@ jobs:
           test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreVoiceControl1975Activity.kt
           test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
           test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessages1975Activity.kt
+          grep -q 'override fun onReceive(context: Context, intent: Intent)' buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessagePoll1975.kt
           grep -q 'employeeMessageNotificationsEnabled' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
           grep -q '/api/v1/messages/employee/poll' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
           grep -q 'showOwnerMessaging1975' buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt
