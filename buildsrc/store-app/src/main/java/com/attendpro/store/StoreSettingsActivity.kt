@@ -719,6 +719,7 @@ class StoreSettingsActivity : Activity() {
             "سيبقى تفعيل هذا الهاتف ومفاتيحه الأمنية كما هما. ستستبدل بيانات العمل الحالية ببيانات النسخة."
         AlertDialog.Builder(this).setTitle("تأكيد الاستعادة من $sourceLabel").setMessage(details)
             .setPositiveButton("استعادة", null).setNegativeButton("إلغاء") { _, _ -> password.fill('\u0000') }.create().also { dialog ->
+                dialog.setOnCancelListener { password.fill('\u0000') }
                 dialog.setOnShowListener {
                     dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                         dialog.dismiss()

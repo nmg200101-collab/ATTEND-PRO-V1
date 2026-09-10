@@ -6,7 +6,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class EncryptedBackupCodecTest {
     @Test fun roundTripPreservesArabicDataAndMetadata() {
         val payload = JSONObject().put("store", "فرع بغداد").put("events", 37).toString()
