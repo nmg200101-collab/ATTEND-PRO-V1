@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name="com.attendpro.core.QrScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:hardwareAccelerated="true" />
+    </application>
+</manifest>

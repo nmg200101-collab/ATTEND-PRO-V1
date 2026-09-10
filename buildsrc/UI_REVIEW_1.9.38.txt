@@ -1,0 +1,34 @@
+ATTEND PRO 1.9.38 — PRE-BUILD QA
+====================================================
+PASS | XML employee-app/src/main/AndroidManifest.xml
+PASS | XML store-app/src/main/AndroidManifest.xml
+PASS | Employee version 1.9.38
+PASS | Store version 1.9.38
+PASS | Notification permission
+PASS | Foreground connected device service
+PASS | Boot receiver present
+PASS | Six UI presets
+PASS | Visible method التعرف بالوجه
+PASS | Visible method بصمة الصوت
+PASS | Visible method كلمة المرور
+PASS | Visible method بصمة/وجه هاتف الموظف
+PASS | Visible method QR مباشر
+PASS | No active PIN dialog call | count=1
+PASS | No active pattern dialog call | count=1
+PASS | No PIN/PATTERN method checkboxes
+PASS | Phone credential not exposed as method checkbox
+PASS | QR proof flag declared
+PASS | Employee emits QR proof
+PASS | QR replay cache
+PASS | Store records QR proof
+PASS | No passive proximity auto-attendance
+PASS | Challenge port 47719 | 47719
+PASS | Presence ports distinct
+PASS | High priority notification
+PASS | Notification dedupe
+PASS | Date picker
+PASS | Time/number picker
+PASS | Kotlin syntax smoke (no parser errors)
+
+TOTAL: 29 | PASS: 29 | FAIL: 0
+NOTE: Full Android compilation still requires Android SDK/Gradle. This environment has Kotlin parser only, so unresolved Android symbols are expected in syntax smoke.

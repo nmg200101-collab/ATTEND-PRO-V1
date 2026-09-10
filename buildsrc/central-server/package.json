@@ -1,0 +1,8 @@
+{
+  "name": "attend-pro-central-server",
+  "version": "1.9.2",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "check": "node --check server.mjs" },
+  "engines": { "node": ">=22" }
+}

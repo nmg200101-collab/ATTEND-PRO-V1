@@ -1,15 +1,9 @@
-# ATTEND-PRO V2.0.0-FOUNDATION
+# ATTEND-PRO Android Source — V2.0.0-FOUNDATION
 
-This branch materializes the protected 1.9.82 Android source and adds a production-oriented V2
-Foundation module without replacing the field-proven connection runtime. Start with
-`ARCHITECTURE_V2_FOUNDATION.md`, `MIGRATION_REPORT_V2_FOUNDATION.md`, and
-`RELEASE_NOTES_V2.0.0_FOUNDATION.md`.
-
-- Build root: `buildsrc/`
-- Store package: `com.attendpro.store`
-- Employee package: `com.attendpro.employee`
-- Protected baseline: `b651ff153f82ed740109a76474b2e52708686fa0`
-- Main merge: manual only after CI and real-device regression approval
+The `core`, `store-app`, and `employee-app` modules are the protected 1.9.82 runtime baseline. The
+additive `foundation` module contains V2 contracts, SQLite repositories, migration machinery,
+authorization, messaging orchestration, attendance rules, and tests. Do not modify protected
+connection files without updating the explicit guard through an approved field-tested change.
 
 ## Legacy product history
 

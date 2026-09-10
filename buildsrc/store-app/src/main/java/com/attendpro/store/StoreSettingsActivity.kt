@@ -1,0 +1,596 @@
+package com.attendpro.store
+
+import android.Manifest
+import android.app.Activity
+import android.app.AlertDialog
+import android.bluetooth.BluetoothManager
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
+import android.location.LocationListener
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
+import android.view.WindowManager
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.CheckBox
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import com.attendpro.core.NetworkTools
+import com.attendpro.core.CentralServerClient
+import com.attendpro.core.DeviceIdentity
+import com.attendpro.core.QrScannerActivity
+import com.attendpro.core.QrCodeTools
+import com.attendpro.core.ReportProtocol
+import com.attendpro.core.StoreRepository
+import com.attendpro.core.UiKit
+
+class StoreSettingsActivity : Activity() {
+    private lateinit var repo: StoreRepository
+    private val p by lazy { UiKit.palette(this) }
+    private var authenticated = false
+    private var sessionToken = ""
+    private var advancedMode1977 = false
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        repo = StoreRepository(this)
+        if (!repo.isCentralActivationActive()) { showCentralActivationRequired(); return }
+        authenticated = savedInstanceState?.getBoolean("authenticated", false) ?: false
+        sessionToken = savedInstanceState?.getString("sessionToken").orEmpty()
+        showGateOrDashboard()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("authenticated", authenticated)
+        outState.putString("sessionToken", sessionToken)
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::repo.isInitialized && !repo.isCentralActivationActive()) { showCentralActivationRequired(); return }
+        if (authenticated || !repo.hasStoreAdminPin) showDashboard()
+    }
+
+    private fun showCentralActivationRequired() {
+        window.statusBarColor = p.bg
+        val root = baseRoot()
+        val card = UiKit.card(this, p)
+        card.addView(UiKit.statusBadge(this, p, "التفعيل المركزي مطلوب", false))
+        card.addView(UiKit.title(this, p, "إدارة المحل موقوفة", 23f).apply { gravity = Gravity.CENTER })
+        card.addView(UiKit.subtitle(this, p, "لا يمكن فتح إعدادات المحل أو إدارة الموظفين قبل اعتماد جهاز المحل من إدارة نظام ATTEND PRO عبر الخادم المركزي.").apply { gravity = Gravity.CENTER })
+        card.addView(UiKit.button(this, p, "العودة لشاشة التفعيل", false).apply { setOnClickListener { finish() } })
+        root.addView(card)
+        setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun showGateOrDashboard() {
+        if (!repo.hasStoreAdminPin) {
+            authenticated = true
+            sessionToken = repo.issueStoreAdminSession()
+            showDashboard()
+            return
+        }
+        if (repo.storeAdminLockUntil > System.currentTimeMillis()) {
+            val remaining = ((repo.storeAdminLockUntil - System.currentTimeMillis()) / 1000L).coerceAtLeast(1)
+            showLockedScreen("تم إيقاف المحاولات مؤقتًا. حاول بعد $remaining ثانية.")
+            return
+        }
+        showLogin()
+    }
+
+    private fun showLogin() {
+        window.statusBarColor = p.bg
+        val root = baseRoot()
+        val card = UiKit.card(this, p)
+        card.addView(UiKit.sectionLabel(this, p, "إدارة المحل"))
+        card.addView(UiKit.title(this, p, "دخول صاحب المحل", 24f))
+        card.addView(UiKit.subtitle(this, p, "هذا القسم مخصص لمعلومات المحل والموظفين وطرق الحضور والتقارير. أدخل رمز الحماية للمتابعة."))
+        val pin = UiKit.field(this, p, "رمز إدارة المحل", true).apply {
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        }
+        card.addView(pin)
+        card.addView(UiKit.button(this, p, "دخول").apply {
+            setOnClickListener {
+                if (repo.verifyStoreAdminPin(pin.text.toString())) {
+                    authenticated = true
+                    sessionToken = repo.issueStoreAdminSession()
+                    showDashboard()
+                } else {
+                    pin.error = if (repo.storeAdminLockUntil > System.currentTimeMillis()) "تم القفل لمدة دقيقة" else "الرمز غير صحيح"
+                }
+            }
+        })
+        card.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        root.addView(card)
+        setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun showLockedScreen(message: String) {
+        window.statusBarColor = p.bg
+        val root = baseRoot()
+        val card = UiKit.card(this, p)
+        card.addView(UiKit.title(this, p, "إدارة المحل محمية", 23f))
+        card.addView(UiKit.subtitle(this, p, message))
+        card.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        root.addView(card)
+        setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun showDashboard() {
+        advancedMode1977 = false
+        if (repo.hasStoreAdminPin && !repo.validateStoreAdminSession(sessionToken)) {
+            authenticated = false
+            sessionToken = ""
+            showLogin()
+            return
+        }
+        if (!repo.hasStoreAdminPin && !repo.validateStoreAdminSession(sessionToken)) sessionToken = repo.issueStoreAdminSession()
+        StoreMessagePoll1975.schedule(this)
+        window.statusBarColor = p.bg
+        val root = baseRoot()
+        val employees = repo.employees().filter { it.active }
+        val linked = employees.count { it.companionEnabled }
+
+        val header = UiKit.heroCard(this, p, 12)
+        header.addView(TextView(this).apply {
+            text = "⋮"
+            textSize = 28f
+            gravity = Gravity.CENTER
+            setTextColor(android.graphics.Color.WHITE)
+            contentDescription = "القائمة"
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@StoreSettingsActivity, 48), UiKit.dp(this@StoreSettingsActivity, 44)).apply { gravity = Gravity.END }
+            setOnClickListener { showStoreTopMenu1976() }
+        })
+        header.addView(UiKit.title(this, p, repo.storeName, 24f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+        header.addView(UiKit.subtitle(this, p, "إدارة المحل • ${employees.size} موظف • $linked هاتف مفعّل").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        root.addView(header)
+
+        val hint = UiKit.card(this, p, 10)
+        hint.addView(UiKit.subtitle(this, p, "اختر القسم الذي تحتاجه فقط. جميع التفاصيل القديمة ما زالت موجودة داخل «الإعدادات المتقدمة» في قائمة ⋮.").apply { gravity = Gravity.CENTER })
+        root.addView(hint)
+
+        fun largeSection(title: String, subtitle: String, action: () -> Unit): LinearLayout = UiKit.card(this, p, 12).apply {
+            addView(UiKit.title(this@StoreSettingsActivity, p, title, 18f).apply { gravity = Gravity.CENTER })
+            addView(UiKit.subtitle(this@StoreSettingsActivity, p, subtitle).apply { gravity = Gravity.CENTER })
+            UiKit.makeInteractive(this, this@StoreSettingsActivity, p)
+            setOnClickListener { action() }
+        }
+
+        root.addView(largeSection("الموظفون", "إضافة موظف، تعديل بياناته، وتجهيز طرق التحقق") {
+            startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_EMPLOYEE_MANAGER, true).putExtra(MainActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken))
+        })
+        root.addView(largeSection("الحضور والتشغيل", "طرق الحضور، الدوام، الموقع، والبصمة الخارجية") { showStoreOperations1976() })
+        root.addView(largeSection("الصوت والرسائل", "التحكم الصوتي، إشعارات المحل، ورسائل الموظفين") { showStoreCommunication1976() })
+        root.addView(largeSection("التقارير والحماية", "التقارير، الصلاحيات، حماية الإدارة، وجاهزية المحل") { showStoreReportsSecurity1976() })
+
+        val footer = UiKit.card(this, p, 8)
+        footer.addView(UiKit.subtitle(this, p, if (repo.isCentralActivationActive()) "● الخادم المركزي متصل والتفعيل نشط" else "● يحتاج التفعيل المركزي إلى مراجعة").apply { gravity = Gravity.CENTER })
+        footer.addView(UiKit.button(this, p, "إغلاق إدارة المحل", false).apply {
+            setOnClickListener { authenticated = false; repo.clearStoreAdminSession(); sessionToken = ""; finish() }
+        })
+        root.addView(footer)
+        setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
+        }
+        items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
+        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("رجوع", null).show()
+    }
+
+    private fun showStoreTopMenu1976() {
+        showLayeredMenu1977("القائمة", listOf(
+            "الإشعارات" to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
+            "دليل مستخدم إدارة المحل" to { showStoreUserGuide1976() },
+            "الإعدادات المتقدمة" to { showAdvancedDashboard1975() }
+        ))
+    }
+
+    private fun showStoreUserGuide1976() {
+        AlertDialog.Builder(this)
+            .setTitle("دليل مستخدم إدارة المحل")
+            .setMessage("1. الموظفون: أضف الموظف بالبيانات الأساسية، ثم جهّز الوجه أو الهاتف أو أي طريقة تحقق تحتاجها.\n\n2. الحضور والتشغيل: عدّل الدوام والموقع وطرق الحضور من قسم واحد.\n\n3. الصوت والرسائل: تحكم في نطق جهاز المحل وتنبيه هاتف الموظف واستقبل الرسائل.\n\n4. التقارير والحماية: افتح التقارير وحماية الإدارة وفحص الجاهزية.\n\n5. قائمة ⋮ أعلى الشاشة: الإشعارات، دليل المستخدم، والإعدادات المتقدمة.\n\nملاحظة: إعدادات Bluetooth وQR والاقتران تعمل كما هي ولا تحتاج تعديلًا أثناء الاستخدام العادي.")
+            .setPositiveButton("حسنًا", null)
+            .show()
+    }
+
+    private fun showStoreOperations1976() {
+        showLayeredMenu1977("الحضور والتشغيل", listOf(
+            "طرق الحضور" to { attendanceMethodsSettings() },
+            "الدوام ودقائق السماح" to { shiftSettings() },
+            "موقع المحل وGPS" to { gpsSettings() },
+            "قارئ البصمة الخارجي" to { fingerprintSettings() }
+        ))
+    }
+
+    private fun showStoreCommunication1976() {
+        showLayeredMenu1977("الصوت والرسائل", listOf(
+            "التحكم الصوتي" to { startActivity(Intent(this, StoreVoiceControl1975Activity::class.java)) },
+            "الرسائل والإشعارات" to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) }
+        ))
+    }
+
+    private fun showStoreReportsSecurity1976() {
+        showLayeredMenu1977("التقارير والحماية", listOf(
+            "التقارير والمشاركة" to { startActivity(Intent(this, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) },
+            "هواتف استلام التقارير" to { manageReportReceivers() },
+            (if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية") to { changeStorePin() },
+            "فحص جاهزية المحل" to { healthCheck() },
+            "المظهر والقوالب" to { UiKit.showAppearancePicker(this) }
+        ))
+    }
+
+    private fun showAdvancedDashboard1975() {
+        advancedMode1977 = true
+        if (repo.hasStoreAdminPin && !repo.validateStoreAdminSession(sessionToken)) {
+            authenticated = false
+            sessionToken = ""
+            showLogin()
+            return
+        }
+        if (!repo.hasStoreAdminPin && !repo.validateStoreAdminSession(sessionToken)) sessionToken = repo.issueStoreAdminSession()
+        StoreMessagePoll1975.schedule(this)
+        window.statusBarColor = p.bg
+        val root = baseRoot()
+        val employees = repo.employees().filter { it.active }
+        val linked = employees.count { it.companionEnabled }
+
+        val header = UiKit.heroCard(this, p)
+        header.addView(UiKit.title(this, p, repo.storeName, 25f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+        header.addView(UiKit.subtitle(this, p, "إدارة المحل • الفرع ${repo.branchId} • الإصدار ${attendProVersionName()}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        root.addView(header)
+
+        val summary = UiKit.card(this, p)
+        summary.addView(UiKit.sectionLabel(this, p, "لوحة إدارة المحل"))
+        summary.addView(UiKit.title(this, p, "${employees.size} موظف نشط • $linked هاتف موظف مفعّل", 20f))
+        summary.addView(UiKit.subtitle(this, p, recognitionSummary()))
+        summary.addView(UiKit.subtitle(this, p, if (repo.isCentralActivationActive()) "● الخادم المركزي متصل والتفعيل نشط" else "● يحتاج التفعيل المركزي إلى مراجعة"))
+        root.addView(summary)
+
+        val store = UiKit.card(this, p)
+        store.addView(UiKit.sectionLabel(this, p, "المحل والموظفون"))
+        store.addView(UiKit.subtitle(this, p, "بيانات المنشأة وإدارة الموظفين من مكان واحد."))
+        store.addView(UiKit.button(this, p, "معلومات المحل").apply { setOnClickListener { editStoreProfile() } })
+        store.addView(UiKit.button(this, p, "إضافة وإدارة الموظفين", false).apply {
+            setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, MainActivity::class.java).putExtra(MainActivity.EXTRA_EMPLOYEE_MANAGER, true).putExtra(MainActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) }
+        })
+        root.addView(store)
+
+        val attendance = UiKit.card(this, p)
+        attendance.addView(UiKit.sectionLabel(this, p, "الحضور والتحقق"))
+        attendance.addView(UiKit.subtitle(this, p, "إعداد طرق الحضور والموقع والدوام والبصمة الخارجية. إعدادات الارتباط نفسها لم تتغير."))
+        attendance.addView(UiKit.button(this, p, "تفعيل وتعطيل طرق الحضور").apply { setOnClickListener { attendanceMethodsSettings() } })
+        attendance.addView(UiKit.button(this, p, "إعداد GPS وموقع المحل", false).apply { setOnClickListener { gpsSettings() } })
+        attendance.addView(UiKit.button(this, p, "الدوام ودقائق السماح", false).apply { setOnClickListener { shiftSettings() } })
+        attendance.addView(UiKit.button(this, p, "قارئ البصمة الخارجي", false).apply { setOnClickListener { fingerprintSettings() } })
+        root.addView(attendance)
+
+        val voice = UiKit.card(this, p)
+        voice.addView(UiKit.sectionLabel(this, p, "الصوت والتنبيهات"))
+        voice.addView(UiKit.subtitle(this, p, "تحكم عام في نطق جهاز المحل وتنبيهات هاتف الموظف، مع إعداد مستقل لكل موظف. لا يغيّر هذا القسم التحقق ببصمة الصوت."))
+        voice.addView(UiKit.button(this, p, "فتح التحكم الصوتي").apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, StoreVoiceControl1975Activity::class.java)) } })
+        root.addView(voice)
+
+        val messages = UiKit.card(this, p)
+        messages.addView(UiKit.sectionLabel(this, p, "الرسائل والإشعارات"))
+        messages.addView(UiKit.subtitle(this, p, "استقبال رسائل صاحب النظام وردود الموظفين، وإرسال رسالة خاصة لأي موظف مع أولوية وخيار قراءة الرسالة بصوت."))
+        messages.addView(UiKit.button(this, p, "فتح مركز الرسائل").apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, StoreMessages1975Activity::class.java)) } })
+        root.addView(messages)
+
+        val reports = UiKit.card(this, p)
+        reports.addView(UiKit.sectionLabel(this, p, "التقارير والمراقبة"))
+        reports.addView(UiKit.button(this, p, "فتح التقارير والمشاركة").apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) } })
+        reports.addView(UiKit.button(this, p, "هواتف استلام التقارير والصلاحيات", false).apply { setOnClickListener { manageReportReceivers() } })
+        root.addView(reports)
+
+        val security = UiKit.card(this, p, 13)
+        security.addView(UiKit.sectionLabel(this, p, "الحماية والصلاحيات"))
+        security.addView(UiKit.subtitle(this, p, if (repo.hasStoreAdminPin) "✓ إدارة المحل محمية برمز مستقل." else "القسم غير محمي حاليًا. أنشئ رمزًا لمنع وصول الموظفين إلى الإعدادات."))
+        security.addView(UiKit.button(this, p, if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية", false).apply { setOnClickListener { changeStorePin() } })
+        if (repo.hasStoreAdminPin) security.addView(UiKit.button(this, p, "قفل إدارة المحل الآن", false).apply {
+            setOnClickListener { authenticated = false; repo.clearStoreAdminSession(); sessionToken = ""; showLogin() }
+        })
+        root.addView(security)
+
+        val appearance = UiKit.card(this, p)
+        appearance.addView(UiKit.sectionLabel(this, p, "المظهر والصيانة"))
+        appearance.addView(UiKit.subtitle(this, p, UiKit.appearanceSummary(this)))
+        appearance.addView(UiKit.button(this, p, "المظهر والقوالب", false).apply { setOnClickListener { UiKit.showAppearancePicker(this@StoreSettingsActivity) } })
+        appearance.addView(UiKit.button(this, p, "فحص جاهزية المحل", false).apply { setOnClickListener { healthCheck() } })
+        appearance.addView(UiKit.button(this, p, "إدارة ATTEND PRO العليا", false).apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, SystemSettingsActivity::class.java)) } })
+        appearance.addView(UiKit.button(this, p, "إغلاق إدارة المحل", false).apply { setOnClickListener { authenticated = false; repo.clearStoreAdminSession(); sessionToken = ""; finish() } })
+        root.addView(appearance)
+
+        setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun recognitionSummary(): String {
+        val employees = repo.employees().filter { it.active }
+        val face = employees.count { it.faceTemplate.isNotBlank() && it.faceQualityScore >= 45 }
+        val password = employees.count { it.passwordHash.isNotBlank() }
+        val voice = employees.count { it.voicePhraseHash.isNotBlank() }
+        val phone = employees.count { it.companionEnabled }
+        return "◉ الوجه $face • ◖ الصوت $voice • ▣ كلمة المرور $password\n" +
+            "◎ هاتف الموظف $phone • ▦ QR ${if (repo.allowQrAttendance) "مفعّل" else "متوقف"} • حماية الموقع ${if (repo.isGpsConfigured) "جاهزة" else "غير مضبوطة"}"
+}
+
+    private fun editStoreProfile() {
+        val scroll = ScrollView(this)
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 10) }
+        scroll.addView(box)
+        val name = UiKit.field(this, p, "اسم المحل").apply { setText(repo.storeName) }
+        val branch = UiKit.field(this, p, "رمز الفرع").apply { setText(repo.branchId) }
+        val phone = UiKit.field(this, p, "هاتف المحل - اختياري").apply { setText(repo.storePhone) }
+        val address = UiKit.field(this, p, "العنوان - اختياري").apply { setText(repo.storeAddress) }
+        val manager = UiKit.field(this, p, "اسم صاحب / مدير المحل - اختياري").apply { setText(repo.storeManagerName) }
+        val commercial = UiKit.field(this, p, "السجل / المعرف التجاري - اختياري").apply { setText(repo.storeCommercialId) }
+        val notes = UiKit.field(this, p, "ملاحظات المحل - اختياري").apply { setText(repo.storeNotes); minLines = 2 }
+        listOf(name, branch, phone, address, manager, commercial, notes).forEach { box.addView(it) }
+        val dialog = AlertDialog.Builder(this).setTitle("معلومات المحل").setView(scroll).setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val n = name.text.toString().trim(); val b = branch.text.toString().trim()
+                if (n.isBlank() || b.isBlank()) {
+                    name.error = if (n.isBlank()) "اسم المحل مطلوب" else null
+                    branch.error = if (b.isBlank()) "رمز الفرع مطلوب" else null
+                    return@setOnClickListener
+                }
+                repo.storeName = n; repo.branchId = b; repo.storePhone = phone.text.toString(); repo.storeAddress = address.text.toString()
+                repo.storeManagerName = manager.text.toString(); repo.storeCommercialId = commercial.text.toString(); repo.storeNotes = notes.text.toString()
+                repo.ensureCurrentStoreInManagement(); dialog.dismiss(); info("تم الحفظ", "تم تحديث معلومات المحل."); showDashboard()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun attendanceMethodsSettings() {
+        PhoneAttendanceSettingsDialog1928.show(this, repo)
+}
+
+    private fun gpsSettings() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
+        val lat = UiKit.field(this, p, "خط العرض Latitude").apply { setText(if (repo.storeLatitude.isFinite()) repo.storeLatitude.toString() else "") }
+        val lon = UiKit.field(this, p, "خط الطول Longitude").apply { setText(if (repo.storeLongitude.isFinite()) repo.storeLongitude.toString() else "") }
+        val radius = UiKit.field(this, p, "نطاق التعرف GPS بالمتر", true).apply { setText(repo.gpsRadiusMeters.toString()) }
+        box.addView(UiKit.subtitle(this, p, "أدخل إحداثيات المحل مرة واحدة. GPS في 1.9.58 للمراقبة فقط: يسجل متى أصبح الهاتف داخل/قرب/خارج النطاق مع المسافة والدقة. يمكن استخدام 10م للمحل الصغير، لكن التطبيق يعرض الدقة ولا يعتبر GPS إثبات حضور."))
+        listOf(lat, lon, radius).forEach { box.addView(it) }
+        box.addView(UiKit.button(this, p, "استخدام موقع هذا الجهاز الآن", false).apply {
+            setOnClickListener {
+                val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                if (!fine && !coarse) {
+                    requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), 9101)
+                    info("صلاحية الموقع", "اسمح بالموقع ثم اضغط «استخدام موقع هذا الجهاز الآن» مرة أخرى.")
+                    return@setOnClickListener
+                }
+                val manager = getSystemService(LocationManager::class.java) ?: return@setOnClickListener
+                info("GPS", "يجري الآن التقاط موقع حديث من GPS والشبكة. قد يستغرق حتى 30 ثانية داخل المباني.")
+                requestFreshLocation(manager) { location ->
+                    if (location == null) { info("الموقع", "لم يصل موقع صالح. فعّل دقة الموقع العالية واقترب من نافذة أو مكان مفتوح ثم أعد المحاولة."); return@requestFreshLocation }
+                    if (isMockLocation(location)) { info("الموقع", "تم رفض موقع تجريبي/مزيف."); return@requestFreshLocation }
+                    lat.setText(location.latitude.toString()); lon.setText(location.longitude.toString())
+                    info("تم التقاط الموقع", "تم التقاط موقع حديث بدقة ${location.accuracy.toInt()} متر. راجع نطاق التعرف ثم اضغط حفظ.")
+                }
+            }
+        })
+        val dialog = AlertDialog.Builder(this).setTitle("موقع المحل وGPS").setView(box).setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val la = lat.text.toString().toDoubleOrNull(); val lo = lon.text.toString().toDoubleOrNull(); val r = radius.text.toString().toIntOrNull()
+                if (la == null || la !in -90.0..90.0) { lat.error = "خط عرض غير صالح"; return@setOnClickListener }
+                if (lo == null || lo !in -180.0..180.0) { lon.error = "خط طول غير صالح"; return@setOnClickListener }
+                if (r == null || r !in 10..5000) { radius.error = "استخدم 10 إلى 5000 متر"; return@setOnClickListener }
+                repo.storeLatitude = la; repo.storeLongitude = lo; repo.gpsRadiusMeters = r
+                dialog.dismiss(); info("تم", "تم حفظ موقع المحل ونطاق التعرف GPS. تُزامن الإعدادات أيضًا عبر Bluetooth عند الاتصال، وGPS لن يسجل حضورًا بمفرده."); showDashboard()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun shiftSettings() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
+        val start = UiKit.field(this, p, "بداية الدوام").apply {
+            setText(String.format(java.util.Locale.getDefault(), "%02d:%02d", repo.shiftHour, repo.shiftMinute)); isFocusable = false; isClickable = true
+            setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftHour, repo.shiftMinute) }
+        }
+        val end = UiKit.field(this, p, "نهاية الدوام").apply {
+            setText(String.format(java.util.Locale.getDefault(), "%02d:%02d", repo.shiftEndHour, repo.shiftEndMinute)); isFocusable = false; isClickable = true
+            setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftEndHour, repo.shiftEndMinute) }
+        }
+        val grace = UiKit.field(this, p, "دقائق السماح").apply {
+            setText(repo.graceMinutes.toString()); isFocusable = false; isClickable = true
+            setOnClickListener { FormPickerHelper.pickNumber(this@StoreSettingsActivity, this, 0, 120, "دقائق السماح") }
+        }
+        box.addView(UiKit.subtitle(this, p, "حدد الوقت بالاختيار فقط؛ لا حاجة لكتابة الساعة يدويًا."))
+        listOf(start, end, grace).forEach { box.addView(it) }
+        val dialog = AlertDialog.Builder(this).setTitle("الدوام والسماح").setView(box).setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                fun parseTime(value: String): Pair<Int, Int>? { val parts = value.split(":"); if (parts.size != 2) return null; val h=parts[0].toIntOrNull()?:return null; val m=parts[1].toIntOrNull()?:return null; return if(h in 0..23 && m in 0..59) h to m else null }
+                val a = parseTime(start.text.toString()); val b = parseTime(end.text.toString()); val g = grace.text.toString().toIntOrNull()
+                if (a == null) { start.error = "اختر وقت البداية"; return@setOnClickListener }
+                if (b == null) { end.error = "اختر وقت النهاية"; return@setOnClickListener }
+                if (g == null || g !in 0..120) { grace.error = "اختر من 0 إلى 120"; return@setOnClickListener }
+                repo.shiftHour=a.first; repo.shiftMinute=a.second; repo.shiftEndHour=b.first; repo.shiftEndMinute=b.second; repo.graceMinutes=g
+                dialog.dismiss(); info("تم", "تم حفظ الدوام ودقائق السماح."); showDashboard()
+            }
+        }
+        dialog.show()
+}
+
+    private fun manageReportReceivers() {
+        val receivers = repo.authorizedReportReceivers()
+        val labels = mutableListOf("＋ إضافة هاتف استلام عبر QR")
+        labels.addAll(receivers.map { "${if (it.active) "●" else "○"} ${it.name} • ${it.receiverId}" })
+        AlertDialog.Builder(this).setTitle("هواتف استلام التقارير (${receivers.size})").setItems(labels.toTypedArray()) { _, which ->
+            if (which == 0) {
+                startActivityForResult(Intent(this, QrScannerActivity::class.java).putExtra(QrScannerActivity.EXTRA_PROMPT, "امسح QR هاتف استلام التقارير"), REQUEST_REPORT_RECEIVER_QR)
+            } else {
+                val r = receivers[which - 1]
+                AlertDialog.Builder(this).setTitle(r.name).setMessage("المعرف: ${r.receiverId}\nالحالة: ${if (r.active) "مسموح" else "موقوف"}\nالاستلام عن بُعد: ${if (repo.isCentralActivationActive()) "متاح عبر الخادم" else "يحتاج تفعيل مركزي"}")
+                    .setPositiveButton(if (r.active) "إيقاف الصلاحية" else "إعادة التفعيل") { _, _ ->
+                        val next = !r.active; repo.setReportReceiverActive(r.receiverId, next)
+                        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) Thread { CentralServerClient.setReceiverActive(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), r.receiverId, next) }.start()
+                        manageReportReceivers()
+                    }
+                    .setNeutralButton("حذف") { _, _ ->
+                        repo.setReportReceiverActive(r.receiverId, false)
+                        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) Thread { CentralServerClient.setReceiverActive(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), r.receiverId, false) }.start()
+                        repo.removeReportReceiver(r.receiverId); manageReportReceivers()
+                    }
+                    .setNegativeButton("إغلاق", null).show()
+            }
+        }.setNegativeButton("إغلاق", null).show()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQUEST_REPORT_RECEIVER_QR) return
+        if (resultCode != RESULT_OK) { info("هواتف التقارير", data?.getStringExtra(QrScannerActivity.EXTRA_ERROR) ?: "تم إلغاء المسح"); return }
+        val raw = data?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty()
+        val invite = ReportProtocol.decodeInvite(raw)
+        if (invite == null || invite.expiresAt < System.currentTimeMillis()) { info("QR غير صالح", "رمز هاتف الاستلام غير صالح أو انتهت مدته."); return }
+        if (!repo.authorizeReportReceiver(invite)) { info("تعذر منح الصلاحية", "لم يتم قبول رمز هاتف الاستلام."); return }
+        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+            info("جاري ربط الهاتف", "تمت الصلاحية محليًا، ويجري الآن تسجيل الهاتف في الخادم المركزي للاستلام عن بُعد.")
+            Thread {
+                val r = CentralServerClient.registerReceiver(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), invite.receiverId, invite.name, invite.secret)
+                runOnUiThread {
+                    if (r.isSuccess) showReceiverRemoteGrant(invite)
+                    else info("صلاحية محلية فقط", "تم حفظ الهاتف محليًا، لكن تعذر تسجيله في الخادم: ${r.exceptionOrNull()?.message ?: "خطأ"}")
+                }
+            }.apply { isDaemon = true }.start()
+        } else info("تم منح الصلاحية", "تم السماح للهاتف «${invite.name}» باستلام التقارير المشفرة محليًا. للاستلام عن بُعد فعّل المحل مركزيًا أولًا.")
+    }
+
+    private fun showReceiverRemoteGrant(invite: ReportProtocol.ReceiverInvite) {
+        val grant = ReportProtocol.RemoteReceiverGrant(invite.receiverId, repo.serverUrl, repo.storeName, repo.branchId, System.currentTimeMillis() + 10 * 60_000L)
+        val raw = ReportProtocol.encodeRemoteGrant(grant)
+        val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrElse { info("تم منح الصلاحية ✓", "تم تسجيل الهاتف على الخادم، لكن تعذر إنشاء QR الربط. يمكن إدخال رابط الخادم يدويًا في هاتف المراقبة."); return }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(20, 12, 20, 8) }
+        box.addView(UiKit.subtitle(this, p, "تم منح الصلاحية للهاتف «${invite.name}» محليًا وعبر الإنترنت. الآن من هاتف المالك: استلام التقارير ← مسح QR ربط الخادم.").apply { gravity = Gravity.CENTER })
+        box.addView(ImageView(this).apply { setImageBitmap(qr); adjustViewBounds = true; layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this@StoreSettingsActivity, 340)) })
+        AlertDialog.Builder(this).setTitle("✓ ربط هاتف المراقبة بالخادم").setView(box).setPositiveButton("إغلاق", null).show()
+    }
+
+    private fun fingerprintSettings() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
+        val host = UiKit.field(this, p, "IP جهاز البصمة").apply { setText(repo.fingerprintHost) }
+        val port = UiKit.field(this, p, "Port مثل 4370", true).apply { setText(repo.fingerprintPort.toString()) }
+        box.addView(UiKit.subtitle(this, p, "الاتصال الشبكي هنا يختبر الوصول فقط. جلب قوالب البصمة والسجلات تلقائيًا يحتاج موصلًا خاصًا بموديل جهاز البصمة."))
+        box.addView(host); box.addView(port)
+        AlertDialog.Builder(this).setTitle("قارئ البصمة الخارجي").setView(box).setPositiveButton("حفظ واختبار") { _, _ ->
+            repo.fingerprintHost = host.text.toString(); repo.fingerprintPort = port.text.toString().toIntOrNull() ?: 4370
+            Thread {
+                val result = NetworkTools.probeTcp(repo.fingerprintHost, repo.fingerprintPort)
+                runOnUiThread { info("نتيجة الاتصال", if (result.isSuccess) "✓ تم الوصول إلى الجهاز على الشبكة." else "تعذر الاتصال: ${result.exceptionOrNull()?.message ?: "خطأ"}") }
+            }.start()
+        }.setNegativeButton("إلغاء", null).show()
+    }
+
+    private fun changeStorePin() {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
+        val pin = UiKit.field(this, p, "رمز جديد من 4 إلى 8 أرقام", true).apply { inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD }
+        val confirm = UiKit.field(this, p, "تأكيد الرمز", true).apply { inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD }
+        box.addView(pin); box.addView(confirm)
+        val builder = AlertDialog.Builder(this).setTitle(if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز إدارة المحل").setView(box)
+            .setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null)
+        if (repo.hasStoreAdminPin) builder.setNeutralButton("إزالة الحماية") { _, _ -> repo.clearStoreAdminPin(); authenticated = true; info("تم", "تمت إزالة رمز الحماية."); showDashboard() }
+        val dialog = builder.create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val a = pin.text.toString(); val b = confirm.text.toString()
+                if (a.length !in 4..8 || a.any { !it.isDigit() }) { pin.error = "استخدم 4 إلى 8 أرقام"; return@setOnClickListener }
+                if (a != b) { confirm.error = "الرمزان غير متطابقين"; return@setOnClickListener }
+                repo.setStoreAdminPin(a); authenticated = true; sessionToken = repo.issueStoreAdminSession(); dialog.dismiss(); info("تم", "تم حفظ رمز إدارة المحل."); showDashboard()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun healthCheck() {
+        val bt = getSystemService(BluetoothManager::class.java)?.adapter
+        val bluetooth = when { bt == null -> "غير مدعوم"; !bt.isEnabled -> "متوقف"; else -> "يعمل" }
+        val employees = repo.employees()
+        val syncState = if (repo.serverUrl.isBlank()) "الخادم غير مربوط" else "الخادم مضبوط • ${repo.pendingEvents().size} عملية معلقة"
+        val active = employees.filter { it.active }
+        val customShiftCount = active.count { it.useCustomShift }
+        val faceReady = active.count { it.faceTemplate.isNotBlank() && it.faceQualityScore >= 45 }
+        val receivers = repo.authorizedReportReceivers()
+        val msg = "معلومات المحل: ${if (repo.isStoreProfileComplete) "مكتملة" else "تحتاج إكمال"}\n" +
+            "Bluetooth: $bluetooth\nGPS: ${if (repo.isGpsConfigured) "مضبوط • ${repo.gpsRadiusMeters}م" else "غير مضبوط"}\n" +
+            "الدوام العام: ${String.format(java.util.Locale.getDefault(), "%02d:%02d - %02d:%02d", repo.shiftHour, repo.shiftMinute, repo.shiftEndHour, repo.shiftEndMinute)} • سماح ${repo.graceMinutes} د\n" +
+            "الموظفون النشطون: ${active.size} • دوام خاص: $customShiftCount\n" +
+            "كلمة مرور: ${active.count { it.passwordHash.isNotBlank() }} • صوت: ${active.count { it.voicePhraseHash.isNotBlank() }} • وجه: ${active.count { it.faceTemplate.isNotBlank() }}\n" +
+            "تحقق صوتي: ${active.count { it.voicePhraseHash.isNotBlank() }} • قوالب وجه جاهزة: $faceReady • بصمة خارجية: ${active.count { it.externalFingerprintId.isNotBlank() }}\n" +
+            "هواتف التقارير: ${receivers.count { it.active }} مصرح / ${receivers.size} مسجل\n" +
+            "التفعيل: ${if (repo.isCentralActivationActive()) "مركزي نشط" else "موقوف • يتطلب اعتماد إدارة النظام عبر الخادم"}\n$syncState"
+        info("فحص جاهزية المحل", msg)
+    }
+
+    private fun isMockLocation(location: Location): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) location.isMock else @Suppress("DEPRECATION") location.isFromMockProvider
+
+    private fun bestLastLocation(manager: LocationManager): Location? {
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
+        return providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }.maxByOrNull { it.time }
+    }
+
+    @Suppress("MissingPermission")
+    private fun requestFreshLocation(manager: LocationManager, callback: (Location?) -> Unit) {
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+            .filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        if (providers.isEmpty()) { callback(null); return }
+        var finished = false
+        var best: Location? = bestLastLocation(manager)?.takeIf { System.currentTimeMillis() - it.time <= 5 * 60_000L }
+        lateinit var listener: LocationListener
+        fun finish(value: Location?) {
+            if (finished) return
+            finished = true
+            runCatching { manager.removeUpdates(listener) }
+            callback(value)
+        }
+        listener = object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                if (System.currentTimeMillis() - location.time > 2 * 60_000L) return
+                if (best == null || location.accuracy < best!!.accuracy) best = location
+                if (location.hasAccuracy() && location.accuracy <= 40f) finish(location)
+            }
+            @Deprecated("Deprecated in Android") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
+            override fun onProviderEnabled(provider: String) = Unit
+            override fun onProviderDisabled(provider: String) = Unit
+        }
+        providers.forEach { runCatching { manager.requestLocationUpdates(it, 0L, 0f, listener, Looper.getMainLooper()) } }
+        Handler(Looper.getMainLooper()).postDelayed({ finish(best) }, 30_000L)
+    }
+
+    private fun baseRoot() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        setPadding(UiKit.dp(this@StoreSettingsActivity, 16), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 16), UiKit.dp(this@StoreSettingsActivity, 28)); setBackgroundColor(p.bg)
+    }
+
+    private fun info(title: String, message: String) {
+        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("حسنًا", null).show()
+    }
+
+    override fun onBackPressed() {
+        if (advancedMode1977) showDashboard() else super.onBackPressed()
+    }
+
+    companion object { private const val REQUEST_REPORT_RECEIVER_QR = 9201 }
+
+}

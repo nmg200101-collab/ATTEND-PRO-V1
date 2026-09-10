@@ -1,0 +1,11 @@
+940105f5eec04d8319b28899b5ca68f680838c11c513024b26495612fabaebf8  core/src/main/java/com/attendpro/core/BleProtocol.kt
+ad12547de9d45935bec184aa7b7185d50ee31f2aac348019539e6d73ebf605d9  core/src/main/java/com/attendpro/core/BleDirectProtocol.kt
+306ec5ff77e9ed8e9fc12b9f35217a9344bed85d7863cd2f19037e7069e3028f  employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+ea0b9aba377f2a6e74bcfeab6f884220a1e09f64cc889a78afbe1b1874428b73  employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
+2b07a8f3f1c4ca776821f45e482b0370a13e7c44e36d0299bae3b2d54f679f8f  employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt
+670764b24cf557e89312aad98b32bd058df81007aee1846d6f8cd1e65d00b4b1  employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+93faf2340d1d53c2c6fccc864f51de88261b09cd4ba43ce4b4ea070bfe9f742e  employee-app/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt
+1b5cc19c6e2cae1592d16553f76c742c1bf9b1f8e0287080d120b5c346d8a1b2  store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt
+cce0ebeb297037668ea49fe5f3b6fe8324cfcfe579b8f5f3a25f081dcf5abbba  store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
+1b1a1586f9590daa8f8e09c168d295115e6af11862a3c9222e361fe602fe852e  store-app/src/main/java/com/attendpro/store/NetworkPresenceListener.kt
+44dabdfad5ff7b53bbaf072a2d1b98212087f936e890b02cd4905cc8eb54f50c  store-app/src/main/java/com/attendpro/store/PairingBeacon.kt

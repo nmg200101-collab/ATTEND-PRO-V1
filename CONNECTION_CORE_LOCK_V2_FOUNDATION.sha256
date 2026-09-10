@@ -1,0 +1,6 @@
+306ec5ff77e9ed8e9fc12b9f35217a9344bed85d7863cd2f19037e7069e3028f  buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt
+44dabdfad5ff7b53bbaf072a2d1b98212087f936e890b02cd4905cc8eb54f50c  buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt
+ad12547de9d45935bec184aa7b7185d50ee31f2aac348019539e6d73ebf605d9  buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt
+940105f5eec04d8319b28899b5ca68f680838c11c513024b26495612fabaebf8  buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt
+5a7753709653fe2ba3cc2c7010f5e066075b6a3833b03207047541eada0b92d2  buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt
+fb509472000295cc0c5d1b2455cd961dbeca350f3efb8d45c7191969fbf995c4  buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
