@@ -2732,7 +2732,11 @@ class MainActivity : Activity() {
                 authenticatedPresenceAt[employee.employeeId] = detectedAt
                 repo.markCompanionLinked(employee.employeeId, "$channel • HMAC", detectedAt)
             }
-            val resolvedDeviceName = if (channel == "Bluetooth" && device != null) runCatching { device.name.orEmpty() }.getOrDefault("") else previous?.deviceName.orEmpty()
+            val canReadBluetoothName = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+            val resolvedDeviceName = if (channel == "Bluetooth" && device != null && canReadBluetoothName) {
+                runCatching { device.name.orEmpty() }.getOrDefault("")
+            } else previous?.deviceName.orEmpty()
             val gpsInsideAt = previous?.gpsInsideAt ?: 0L
             nearby[employee.employeeId]=NearbyPhone(detectedAt,maxOf(rssi, previous?.rssi ?: -127),channels,resolvedDeviceName,gpsInsideAt)
 
