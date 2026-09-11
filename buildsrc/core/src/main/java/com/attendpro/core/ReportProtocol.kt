@@ -138,6 +138,11 @@ class ReportReceiverStore(context: Context) {
     var serverUrl: String get() = prefs.getString("serverUrl", "") ?: ""; set(value) = prefs.edit().putString("serverUrl", value.trim()).apply()
     var remoteDashboardText: String get() = prefs.getString("remoteDashboardText", "") ?: ""; set(value) = prefs.edit().putString("remoteDashboardText", value).apply()
     var remoteLastRefreshAt: Long get() = prefs.getLong("remoteLastRefreshAt", 0L); set(value) = prefs.edit().putLong("remoteLastRefreshAt", value).apply()
+    var canReceiveReports: Boolean get() = prefs.getBoolean("canReceiveReports", true); set(value) = prefs.edit().putBoolean("canReceiveReports", value).apply()
+    var canMessageEmployees: Boolean get() = prefs.getBoolean("canMessageEmployees", false); set(value) = prefs.edit().putBoolean("canMessageEmployees", value).apply()
+    var canManageStore: Boolean get() = prefs.getBoolean("canManageStore", false); set(value) = prefs.edit().putBoolean("canManageStore", value).apply()
+    var capabilityStoreName: String get() = prefs.getString("capabilityStoreName", "") ?: ""; set(value) = prefs.edit().putString("capabilityStoreName", value).apply()
+    var capabilityBranchId: String get() = prefs.getString("capabilityBranchId", "") ?: ""; set(value) = prefs.edit().putString("capabilityBranchId", value).apply()
 
     fun newInvite(): ReportProtocol.ReceiverInvite = ReportProtocol.ReceiverInvite(receiverId, receiverName, secret, System.currentTimeMillis() + 10 * 60_000L)
 
