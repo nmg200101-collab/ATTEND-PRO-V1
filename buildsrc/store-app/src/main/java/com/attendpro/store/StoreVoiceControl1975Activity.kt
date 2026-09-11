@@ -51,34 +51,34 @@ class StoreVoiceControl1975Activity : Activity() {
         root.addView(general)
 
         val employeeGeneral = UiKit.card(this, p)
-        employeeGeneral.addView(UiKit.sectionLabel(this, p, "التحكم العام في هاتف الموظف"))
-        val employeePrompts = check("السماح بالتنبيهات الصوتية المعتادة على هاتف الموظف", repo.employeeVoicePromptsEnabled)
-        val messageVoice = check("اجعل الرسائل الجديدة صوتية افتراضيًا", repo.employeeMessageVoiceDefaultEnabled)
+        employeeGeneral.addView(UiKit.sectionLabel(this, p, t("التحكم العام في هاتف الموظف", "Employee phone global controls")))
+        val employeePrompts = check(t("السماح بالتنبيهات الصوتية المعتادة على هاتف الموظف", "Allow normal voice alerts on the employee phone"), repo.employeeVoicePromptsEnabled)
+        val messageVoice = check(t("اجعل الرسائل الجديدة صوتية افتراضيًا", "Read new messages aloud by default"), repo.employeeMessageVoiceDefaultEnabled)
         employeeGeneral.addView(employeePrompts)
         employeeGeneral.addView(messageVoice)
-        employeeGeneral.addView(UiKit.subtitle(this, p, "يمكن تجاوز الإعداد العام لكل موظف من القسم التالي: يرث الإعداد العام، صوت + إشعار، إشعار فقط، أو صامت."))
+        employeeGeneral.addView(UiKit.subtitle(this, p, t("يمكن تجاوز الإعداد العام لكل موظف من القسم التالي: يرث الإعداد العام، صوت + إشعار، إشعار فقط، أو صامت.", "The global setting can be overridden per employee: inherit, voice + notification, notification only, or silent.")))
         root.addView(employeeGeneral)
 
         val tuning = UiKit.card(this, p)
-        tuning.addView(UiKit.sectionLabel(this, p, "الصوت والعبارات"))
-        val rate = numberField("سرعة النطق % (50–150)", repo.voiceRatePercent)
-        val volume = numberField("مستوى الصوت % (0–100)", repo.voiceVolumePercent)
-        val sentText = UiKit.field(this, p, "عبارة إرسال طلب الإثبات").apply { setText(repo.voiceRequestSentText) }
-        val lateText = UiKit.field(this, p, "عبارة التأخير").apply { setText(repo.voiceLateText) }
-        val missingText = UiKit.field(this, p, "عبارة عدم الإثبات").apply { setText(repo.voiceMissingProofText) }
+        tuning.addView(UiKit.sectionLabel(this, p, t("الصوت والعبارات", "Voice and phrases")))
+        val rate = numberField(t("سرعة النطق % (50–150)", "Speech rate % (50–150)"), repo.voiceRatePercent)
+        val volume = numberField(t("مستوى الصوت % (0–100)", "Volume % (0–100)"), repo.voiceVolumePercent)
+        val sentText = UiKit.field(this, p, t("عبارة إرسال طلب الإثبات", "Presence-request phrase")).apply { setText(repo.voiceRequestSentText) }
+        val lateText = UiKit.field(this, p, t("عبارة التأخير", "Late-alert phrase")).apply { setText(repo.voiceLateText) }
+        val missingText = UiKit.field(this, p, t("عبارة عدم الإثبات", "Missing-proof phrase")).apply { setText(repo.voiceMissingProofText) }
         listOf(rate, volume, sentText, lateText, missingText).forEach { tuning.addView(it) }
-        tuning.addView(UiKit.button(this, p, "تجربة النطق", false).apply {
+        tuning.addView(UiKit.button(this, p, t("تجربة النطق", "Test speech"), false).apply {
             setOnClickListener {
                 repo.attendanceVoiceAnnouncementEnabled = true
-                StoreVoiceAnnouncer(this@StoreVoiceControl1975Activity, repo).apply { speak("اختبار الصوت في إدارة المحل"); android.os.Handler(mainLooper).postDelayed({ shutdown() }, 3500) }
+                StoreVoiceAnnouncer(this@StoreVoiceControl1975Activity, repo).apply { speak(t("اختبار الصوت في إدارة المحل", "Store Management voice test")); android.os.Handler(mainLooper).postDelayed({ shutdown() }, 3500) }
             }
         })
         root.addView(tuning)
 
         val perEmployee = UiKit.card(this, p)
-        perEmployee.addView(UiKit.sectionLabel(this, p, "إعداد صوتي خاص لكل موظف"))
+        perEmployee.addView(UiKit.sectionLabel(this, p, t("إعداد صوتي خاص لكل موظف", "Per-employee voice settings")))
         val active = repo.employees().filter { it.active }
-        if (active.isEmpty()) perEmployee.addView(UiKit.subtitle(this, p, "لا يوجد موظفون نشطون حاليًا."))
+        if (active.isEmpty()) perEmployee.addView(UiKit.subtitle(this, p, t("لا يوجد موظفون نشطون حاليًا.", "There are no active employees.")))
         active.forEach { employee ->
             val label = TextView(this).apply {
                 text = "${employee.displayName} • ${voiceModeArabic(repo.employeeMessageVoiceMode(employee.employeeId))}"
@@ -86,14 +86,14 @@ class StoreVoiceControl1975Activity : Activity() {
                 setPadding(0, UiKit.dp(this@StoreVoiceControl1975Activity, 6), 0, UiKit.dp(this@StoreVoiceControl1975Activity, 3))
             }
             perEmployee.addView(label)
-            perEmployee.addView(UiKit.button(this, p, "تخصيص ${employee.displayName}", false).apply {
+            perEmployee.addView(UiKit.button(this, p, t("تخصيص ${employee.displayName}", "Customize ${employee.displayName}"), false).apply {
                 setOnClickListener { chooseEmployeeMode(employee.employeeId, employee.displayName) }
             })
         }
         root.addView(perEmployee)
 
         val save = UiKit.card(this, p)
-        save.addView(UiKit.button(this, p, "حفظ إعدادات الصوت").apply {
+        save.addView(UiKit.button(this, p, t("حفظ إعدادات الصوت", "Save voice settings")).apply {
             setOnClickListener {
                 repo.attendanceVoiceAnnouncementEnabled = enabled.isChecked
                 repo.storeVoiceAttendanceEnabled = attendance.isChecked
@@ -107,16 +107,16 @@ class StoreVoiceControl1975Activity : Activity() {
                 repo.voiceRequestSentText = sentText.text.toString().trim()
                 repo.voiceLateText = lateText.text.toString().trim()
                 repo.voiceMissingProofText = missingText.text.toString().trim()
-                AlertDialog.Builder(this@StoreVoiceControl1975Activity).setTitle("تم الحفظ").setMessage("تم تحديث إعدادات النطق والتنبيهات الصوتية دون تغيير إعدادات التحقق الصوتي أو الارتباط.").setPositiveButton("حسنًا", null).show()
+                AlertDialog.Builder(this@StoreVoiceControl1975Activity).setTitle(t("تم الحفظ", "Saved")).setMessage(t("تم تحديث إعدادات النطق والتنبيهات الصوتية دون تغيير إعدادات التحقق الصوتي أو الارتباط.", "Voice and audio-alert settings were updated without changing voice verification or pairing.")).setPositiveButton(t("حسنًا", "OK"), null).show()
             }
         })
-        save.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        save.addView(UiKit.button(this, p, t("رجوع", "Back"), false).apply { setOnClickListener { finish() } })
         root.addView(save)
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
     }
 
     private fun check(text: String, value: Boolean) = CheckBox(this).apply {
-        this.text = text; isChecked = value; textSize = 15f; gravity = Gravity.RIGHT
+        this.text = text; isChecked = value; textSize = 15f; gravity = if (AppLanguage.isEnglish(this@StoreVoiceControl1975Activity)) Gravity.LEFT else Gravity.RIGHT
         layoutDirection = View.LAYOUT_DIRECTION_RTL; setTextColor(p.text)
     }
 
@@ -126,17 +126,17 @@ class StoreVoiceControl1975Activity : Activity() {
 
     private fun chooseEmployeeMode(employeeId: String, name: String) {
         val values = arrayOf("INHERIT", "VOICE_NOTIFICATION", "NOTIFICATION_ONLY", "SILENT")
-        val labels = arrayOf("يتبع الإعداد العام", "صوت + إشعار", "إشعار فقط", "صامت")
+        val labels = arrayOf(t("يتبع الإعداد العام", "Inherit global setting"), t("صوت + إشعار", "Voice + notification"), t("إشعار فقط", "Notification only"), t("صامت", "Silent"))
         val current = values.indexOf(repo.employeeMessageVoiceMode(employeeId)).coerceAtLeast(0)
-        AlertDialog.Builder(this).setTitle("تنبيهات $name").setSingleChoiceItems(labels, current) { dialog, which ->
+        AlertDialog.Builder(this).setTitle(t("تنبيهات $name", "$name alerts")).setSingleChoiceItems(labels, current) { dialog, which ->
             repo.setEmployeeMessageVoiceMode(employeeId, values[which]); dialog.dismiss(); showPage()
-        }.setNegativeButton("إلغاء", null).show()
+        }.setNegativeButton(t("إلغاء", "Cancel"), null).show()
     }
 
     private fun voiceModeArabic(value: String) = when (value) {
-        "VOICE_NOTIFICATION" -> "صوت + إشعار"
-        "NOTIFICATION_ONLY" -> "إشعار فقط"
-        "SILENT" -> "صامت"
-        else -> "يتبع العام"
+        "VOICE_NOTIFICATION" -> t("صوت + إشعار", "Voice + notification")
+        "NOTIFICATION_ONLY" -> t("إشعار فقط", "Notification only")
+        "SILENT" -> t("صامت", "Silent")
+        else -> t("يتبع العام", "Inherit global")
     }
 }
