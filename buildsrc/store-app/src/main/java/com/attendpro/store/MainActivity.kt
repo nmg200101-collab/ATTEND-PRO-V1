@@ -61,6 +61,7 @@ import com.attendpro.core.PresenceEvent
 import com.attendpro.core.QrCodeTools
 import com.attendpro.core.SecretCodec
 import com.attendpro.core.ShiftWindow
+import com.attendpro.core.ShiftTimeCodec
 import com.attendpro.core.StoreRepository
 import com.attendpro.core.UiKit
 import java.io.File
@@ -1852,12 +1853,25 @@ class MainActivity : Activity() {
         val customShift = CheckBox(this).apply {
             text = "استخدام دوام مستقل لهذا الموظف"; setTextColor(p.text); isChecked = existing?.useCustomShift ?: false
         }
-        val startHour = UiKit.field(this, p, "ساعة بداية الدوام").apply { setText((existing?.shiftStartHour ?: repo.shiftHour).toString()); isFocusable = false; isClickable = true; setOnClickListener { FormPickerHelper.pickNumber(this@MainActivity, this, 0, 23, "ساعة بداية الدوام") } }
-        val startMinute = UiKit.field(this, p, "دقيقة البداية").apply { setText((existing?.shiftStartMinute ?: repo.shiftMinute).toString()); isFocusable = false; isClickable = true; setOnClickListener { FormPickerHelper.pickNumber(this@MainActivity, this, 0, 59, "دقيقة البداية") } }
-        val endHour = UiKit.field(this, p, "ساعة انتهاء الدوام").apply { setText((existing?.shiftEndHour ?: repo.shiftEndHour).toString()); isFocusable = false; isClickable = true; setOnClickListener { FormPickerHelper.pickNumber(this@MainActivity, this, 0, 23, "ساعة انتهاء الدوام") } }
-        val endMinute = UiKit.field(this, p, "دقيقة الانتهاء").apply { setText((existing?.shiftEndMinute ?: repo.shiftEndMinute).toString()); isFocusable = false; isClickable = true; setOnClickListener { FormPickerHelper.pickNumber(this@MainActivity, this, 0, 59, "دقيقة الانتهاء") } }
-        box.addView(customShift); listOf(startHour, startMinute, endHour, endMinute).forEach { box.addView(it) }
-        box.addView(UiKit.subtitle(this, p, "إذا لم تفعل الدوام المستقل سيستخدم الموظف وقت الدوام العام للمحل."))
+        val initialStartHour = existing?.shiftStartHour ?: repo.shiftHour
+        val initialStartMinute = existing?.shiftStartMinute ?: repo.shiftMinute
+        val initialEndHour = existing?.shiftEndHour ?: repo.shiftEndHour
+        val initialEndMinute = existing?.shiftEndMinute ?: repo.shiftEndMinute
+        val startTime = UiKit.field(this, p, t("بداية الدوام", "Shift start")).apply {
+            isFocusable = false; isClickable = true
+            FormPickerHelper.setTime(this, initialStartHour, initialStartMinute)
+            setOnClickListener { FormPickerHelper.pickTime(this@MainActivity, this, initialStartHour, initialStartMinute) }
+        }
+        val endTime = UiKit.field(this, p, t("نهاية الدوام", "Shift end")).apply {
+            isFocusable = false; isClickable = true
+            FormPickerHelper.setTime(this, initialEndHour, initialEndMinute)
+            setOnClickListener { FormPickerHelper.pickTime(this@MainActivity, this, initialEndHour, initialEndMinute) }
+        }
+        box.addView(customShift); listOf(startTime, endTime).forEach { box.addView(it) }
+        box.addView(UiKit.subtitle(this, p, t(
+            "يظهر الوقت بصيغة صباح/مساء. إذا لم تفعل الدوام المستقل سيستخدم الموظف وقت الدوام العام للمحل.",
+            "Time is shown in AM/PM format. If custom hours are disabled, the employee uses the Store's general shift."
+        )))
 
         box.addView(UiKit.sectionLabel(this, p, "التنبيه الذكي لهذا الموظف"))
         val lateEnabled = CheckBox(this).apply { text = "تفعيل تنبيه التأخر لهذا الموظف"; setTextColor(p.text); isChecked = existing?.lateAlertEnabled ?: true }
@@ -1945,12 +1959,14 @@ class MainActivity : Activity() {
                 if (existing == null && repo.employees().any { it.employeeId.equals(employeeId, true) }) { id.error = "رقم الموظف مستخدم بالفعل"; return@setOnClickListener }
                 val newPassword = password.text.toString()
                 if (newPassword.isNotBlank() && newPassword.length < 4) { password.error = "استخدم 4 أحرف/أرقام على الأقل"; return@setOnClickListener }
-                val sh = startHour.text.toString().toIntOrNull(); val sm = startMinute.text.toString().toIntOrNull()
-                val eh = endHour.text.toString().toIntOrNull(); val em = endMinute.text.toString().toIntOrNull()
-                if (sh == null || sh !in 0..23) { startHour.error = "0 إلى 23"; return@setOnClickListener }
-                if (sm == null || sm !in 0..59) { startMinute.error = "0 إلى 59"; return@setOnClickListener }
-                if (eh == null || eh !in 0..23) { endHour.error = "0 إلى 23"; return@setOnClickListener }
-                if (em == null || em !in 0..59) { endMinute.error = "0 إلى 59"; return@setOnClickListener }
+                val startClock = FormPickerHelper.selectedTime(startTime, initialStartHour, initialStartMinute)
+                val endClock = FormPickerHelper.selectedTime(endTime, initialEndHour, initialEndMinute)
+                if (ShiftTimeCodec.same(startClock, endClock)) {
+                    endTime.error = t("وقت نهاية الدوام يجب أن يختلف عن وقت البداية", "Shift end must differ from shift start")
+                    return@setOnClickListener
+                }
+                val sh = startClock.hour24; val sm = startClock.minute
+                val eh = endClock.hour24; val em = endClock.minute
                 val selectedMethods = buildSet {
                     addAll(methodChecks.filterValues { it.isChecked }.keys.map { it.name })
                     if (externalFingerprintMethod.isChecked) add(AttendanceMethod.EXTERNAL_FINGERPRINT.name)
@@ -3386,7 +3402,9 @@ class MainActivity : Activity() {
         val sm = if (employee.useCustomShift) employee.shiftStartMinute else repo.shiftMinute
         val eh = if (employee.useCustomShift) employee.shiftEndHour else repo.shiftEndHour
         val em = if (employee.useCustomShift) employee.shiftEndMinute else repo.shiftEndMinute
-        return String.format(Locale.getDefault(), "%02d:%02d - %02d:%02d%s", sh, sm, eh, em, if (employee.useCustomShift) " • خاص" else " • عام")
+        val range = ShiftTimeCodec.formatRange(sh, sm, eh, em, Locale.getDefault())
+        val overnight = if (ShiftTimeCodec.isOvernight(sh, sm, eh, em)) t(" • ليلي", " • overnight") else ""
+        return range + if (employee.useCustomShift) t(" • خاص", " • custom") + overnight else t(" • عام", " • general") + overnight
     }
     private fun deviceId():String{val prefs=getSharedPreferences("device",MODE_PRIVATE);val old=prefs.getString("id",null);if(old!=null)return old;val id="STORE-${UUID.randomUUID()}";prefs.edit().putString("id",id).apply();return id}
 
