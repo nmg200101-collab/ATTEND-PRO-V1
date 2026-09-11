@@ -1,6 +1,7 @@
 package com.attendpro.store
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
@@ -20,13 +21,16 @@ object BleChallengeBroadcaster {
     private val handler = Handler(Looper.getMainLooper())
     private var callback: AdvertiseCallback? = null
 
+    @SuppressLint("MissingPermission")
     fun broadcast(context: Context, employeeId: String, secret: ByteArray, method: AttendanceMethod, expiresAt: Long = System.currentTimeMillis() + 60_000L, requestToken: Int? = null, action: AttendanceAction = AttendanceAction.CHECK_IN): Boolean {
         if (employeeId.isBlank() || secret.isEmpty()) return false
         if (Build.VERSION.SDK_INT >= 31 && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_ADVERTISE) != PackageManager.PERMISSION_GRANTED) return false
         val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter ?: BluetoothAdapter.getDefaultAdapter() ?: return false
         if (!adapter.isEnabled || !adapter.isMultipleAdvertisementSupported) return false
         val advertiser = adapter.bluetoothLeAdvertiser ?: return false
-        callback?.let { runCatching { advertiser.stopAdvertising(it) } }
+        callback?.let {
+            try { advertiser.stopAdvertising(it) } catch (_: SecurityException) { return false }
+        }
         val payload = BleChallengeProtocol.encode(employeeId, secret, method, expiresAt, requestToken ?: java.security.SecureRandom().nextInt(), action)
         val data = AdvertiseData.Builder()
             .addManufacturerData(BleChallengeProtocol.MANUFACTURER_ID, payload)
@@ -44,7 +48,7 @@ object BleChallengeBroadcaster {
             callback = cb
             handler.postDelayed({
                 if (callback === cb) {
-                    runCatching { advertiser.stopAdvertising(cb) }
+                    try { advertiser.stopAdvertising(cb) } catch (_: SecurityException) { }
                     callback = null
                 }
             }, 15_000L)
