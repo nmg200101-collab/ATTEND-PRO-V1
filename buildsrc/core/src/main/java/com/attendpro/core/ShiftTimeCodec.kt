@@ -28,6 +28,20 @@ object ShiftTimeCodec {
         return String.format(Locale.US, "%d:%02d %s", hour12, time.minute, marker)
     }
 
+    fun formatRange(
+        startHour24: Int,
+        startMinute: Int,
+        endHour24: Int,
+        endMinute: Int,
+        locale: Locale = Locale.getDefault()
+    ): String = format(startHour24, startMinute, locale) + " - " + format(endHour24, endMinute, locale)
+
+    fun isOvernight(startHour24: Int, startMinute: Int, endHour24: Int, endMinute: Int): Boolean {
+        val start = startHour24 * 60 + startMinute
+        val end = endHour24 * 60 + endMinute
+        return end < start
+    }
+
     fun parseLegacy24(value: String): ClockTime? {
         val parts = value.trim().split(":")
         if (parts.size != 2) return null
