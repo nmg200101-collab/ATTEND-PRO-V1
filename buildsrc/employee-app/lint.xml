@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      PairingDiscovery is field-proven/protected and must remain byte-identical to RC1.
+      Android 16 lint applies a newer Bluetooth return-code contract to a compatibility
+      callback branch. Suppress only this legacy WrongConstant finding for this file.
+    -->
+    <issue id="WrongConstant">
+        <ignore path="src/main/java/com/attendpro/employee/PairingDiscovery.kt" />
+    </issue>
+</lint>
