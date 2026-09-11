@@ -2524,6 +2524,7 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    @Suppress("MissingPermission")
     private fun bestLastLocation(manager: LocationManager): Location? {
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
         return providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }.maxByOrNull { it.time }
