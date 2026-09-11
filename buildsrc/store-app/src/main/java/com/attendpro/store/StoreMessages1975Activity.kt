@@ -16,6 +16,7 @@ import android.widget.Spinner
 import android.widget.ArrayAdapter
 import android.widget.TextView
 import android.widget.Toast
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.DeviceIdentity
 import com.attendpro.core.StoreRepository
@@ -28,6 +29,7 @@ class StoreMessages1975Activity : Activity() {
     private lateinit var repo: StoreRepository
     private lateinit var identity: DeviceIdentity
     private val p by lazy { UiKit.palette(this) }
+    private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
     @Volatile private var inboxLoadInFlight1981 = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,10 +48,10 @@ class StoreMessages1975Activity : Activity() {
     }
 
     private fun showInbox() {
-        val root = base("الرسائل والإشعارات", "رسائل إدارة النظام وردود الموظفين ورسائل المحل")
+        val root = base(t("الرسائل والإشعارات", "Messages and notifications"), t("رسائل إدارة النظام وردود الموظفين ورسائل المحل", "System messages, employee replies and Store messages"))
         val actions = UiKit.card(this, p)
-        actions.addView(UiKit.button(this, p, "✉ إرسال رسالة لموظف").apply { setOnClickListener { composeEmployee() } })
-        actions.addView(UiKit.button(this, p, "↻ تحديث الوارد", false).apply { setOnClickListener { loadMessages(root) } })
+        actions.addView(UiKit.button(this, p, t("✉ إرسال رسالة لموظف", "✉ Send a message to an employee")).apply { setOnClickListener { composeEmployee() } })
+        actions.addView(UiKit.button(this, p, t("↻ تحديث الوارد", "↻ Refresh inbox"), false).apply { setOnClickListener { loadMessages(root) } })
         root.addView(actions)
         loadMessages(root)
     }
@@ -62,7 +64,7 @@ class StoreMessages1975Activity : Activity() {
                 val result = CentralServerClient.storeMessagesInbox(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, 100)
                 runOnUiThread {
                     result.onSuccess { messages -> renderMessages(root, messages) }
-                        .onFailure { toast("تعذر تحميل الرسائل: ${it.message}") }
+                        .onFailure { toast(t("تعذر تحميل الرسائل: ${it.message}", "Unable to load messages: ${it.message}")) }
                 }
             } finally {
                 inboxLoadInFlight1981 = false
@@ -73,13 +75,13 @@ class StoreMessages1975Activity : Activity() {
     private fun renderMessages(root: LinearLayout, messages: List<CentralServerClient.Message1975>) {
         while (root.childCount > 2) root.removeViewAt(2)
         val card = UiKit.card(this, p)
-        card.addView(UiKit.sectionLabel(this, p, "الوارد"))
-        if (messages.isEmpty()) card.addView(UiKit.subtitle(this, p, "لا توجد رسائل حاليًا."))
+        card.addView(UiKit.sectionLabel(this, p, t("الوارد", "Inbox")))
+        if (messages.isEmpty()) card.addView(UiKit.subtitle(this, p, t("لا توجد رسائل حاليًا.", "No messages right now.")))
         messages.forEach { message ->
             val unread = message.readAt <= 0L
-            val sender = when (message.senderType) { "SYSTEM_OWNER" -> "إدارة النظام"; "EMPLOYEE" -> "الموظف ${message.employeeId}"; else -> "إدارة المحل" }
+            val sender = when (message.senderType) { "SYSTEM_OWNER" -> t("إدارة النظام", "System administration"); "EMPLOYEE" -> t("الموظف ${message.employeeId}", "Employee ${message.employeeId}"); else -> t("إدارة المحل", "Store Management") }
             val title = TextView(this).apply {
-                text = "${if (unread) "● " else ""}${message.title.ifBlank { "رسالة" }} • $sender"
+                text = "${if (unread) "● " else ""}${message.title.ifBlank { t("رسالة", "Message") }} • $sender"
                 textSize = 16f; gravity = Gravity.RIGHT; setTextColor(p.text)
                 setTypeface(typeface, android.graphics.Typeface.BOLD)
                 setPadding(0, UiKit.dp(this@StoreMessages1975Activity, 8), 0, 2)
@@ -87,63 +89,63 @@ class StoreMessages1975Activity : Activity() {
             card.addView(title)
             card.addView(UiKit.subtitle(this, p, "${message.body}\n${time(message.createdAt)} • ${priorityArabic(message.priority)}"))
             if (message.senderType == "EMPLOYEE" && message.employeeId.isNotBlank()) {
-                card.addView(UiKit.button(this, p, "↩ رد على الموظف", false).apply {
+                card.addView(UiKit.button(this, p, t("↩ رد على الموظف", "↩ Reply to employee"), false).apply {
                     setOnClickListener {
                         val employeeName = repo.employees().firstOrNull { it.employeeId.equals(message.employeeId, true) }?.displayName ?: message.employeeId
                         composeFor(message.employeeId, employeeName)
                     }
                 })
             }
-            card.addView(UiKit.button(this, p, if (unread) "تعليم كمقروء" else "مقروء ✓", false).apply {
+            card.addView(UiKit.button(this, p, if (unread) t("تعليم كمقروء", "Mark as read") else t("مقروء ✓", "Read ✓"), false).apply {
                 isEnabled = unread
                 setOnClickListener { markRead(message.messageId) }
             })
         }
         root.addView(card)
         val back = UiKit.card(this, p)
-        back.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        back.addView(UiKit.button(this, p, t("رجوع", "Back"), false).apply { setOnClickListener { finish() } })
         root.addView(back)
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
     }
 
     private fun composeEmployee() {
         val employees = repo.employees().filter { it.active }
-        if (employees.isEmpty()) { toast("لا يوجد موظفون نشطون"); return }
+        if (employees.isEmpty()) { toast(t("لا يوجد موظفون نشطون", "There are no active employees")); return }
         val names = employees.map { "${it.displayName} • ${it.employeeId}" }.toTypedArray()
-        AlertDialog.Builder(this).setTitle("اختر الموظف").setItems(names) { _, index -> composeFor(employees[index].employeeId, employees[index].displayName) }.setNegativeButton("إلغاء", null).show()
+        AlertDialog.Builder(this).setTitle(t("اختر الموظف", "Choose employee")).setItems(names) { _, index -> composeFor(employees[index].employeeId, employees[index].displayName) }.setNegativeButton(t("إلغاء", "Cancel"), null).show()
     }
 
     private fun composeFor(employeeId: String, name: String) {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; setPadding(28, 8, 28, 0) }
-        val title = UiKit.field(this, p, "عنوان الرسالة").apply { setText("رسالة من إدارة المحل") }
-        val message = UiKit.field(this, p, "اكتب الرسالة التي تريد إرسالها").apply { minLines = 3 }
-        val priority = Spinner(this).apply { adapter = ArrayAdapter(this@StoreMessages1975Activity, android.R.layout.simple_spinner_dropdown_item, arrayOf("عادية", "مهمة", "عاجلة")) }
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@StoreMessages1975Activity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL; setPadding(28, 8, 28, 0) }
+        val title = UiKit.field(this, p, t("عنوان الرسالة", "Message title")).apply { setText(t("رسالة من إدارة المحل", "Message from Store Management")) }
+        val message = UiKit.field(this, p, t("اكتب الرسالة التي تريد إرسالها", "Write the message you want to send")).apply { minLines = 3 }
+        val priority = Spinner(this).apply { adapter = ArrayAdapter(this@StoreMessages1975Activity, android.R.layout.simple_spinner_dropdown_item, arrayOf(t("عادية", "Normal"), t("مهمة", "Important"), t("عاجلة", "Urgent"))) }
         val mode = repo.employeeMessageVoiceMode(employeeId)
         val defaultVoice = when (mode) { "VOICE_NOTIFICATION" -> true; "NOTIFICATION_ONLY", "SILENT" -> false; else -> repo.employeeMessageVoiceDefaultEnabled }
-        val voice = CheckBox(this).apply { text = "قراءة الرسالة بصوت على هاتف الموظف"; isChecked = defaultVoice; gravity = Gravity.RIGHT; layoutDirection = View.LAYOUT_DIRECTION_RTL }
+        val voice = CheckBox(this).apply { text = t("قراءة الرسالة بصوت على هاتف الموظف", "Read the message aloud on the employee phone"); isChecked = defaultVoice; gravity = if (AppLanguage.isEnglish(this@StoreMessages1975Activity)) Gravity.LEFT else Gravity.RIGHT; layoutDirection = if (AppLanguage.isEnglish(this@StoreMessages1975Activity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL }
         box.addView(title); box.addView(message); box.addView(priority); box.addView(voice)
         val directReady = StoreDirectLinkBridge1977.isConnected(employeeId)
-        box.addView(UiKit.subtitle(this, p, if (directReady) "● الهاتف متصل مباشرة الآن — ستُرسل الرسالة أولًا عبر Bluetooth الموثق بدون إنترنت." else "○ لا توجد قناة Bluetooth موثقة الآن — سيستخدم التطبيق الخادم عند توفره."))
-        if (mode == "SILENT") box.addView(UiKit.subtitle(this, p, "تنبيه: إعداد هذا الموظف مضبوط على صامت. يمكنك إرسال الرسالة، لكن لن يتم تشغيل النطق تلقائيًا."))
-        val d = AlertDialog.Builder(this).setTitle("رسالة إلى $name").setView(box).setPositiveButton("إرسال", null).setNegativeButton("إلغاء", null).create()
+        box.addView(UiKit.subtitle(this, p, if (directReady) t("● الهاتف متصل مباشرة الآن — ستُرسل الرسالة أولًا عبر Bluetooth الموثق بدون إنترنت.", "● The phone is directly connected — the message will be sent first over authenticated Bluetooth without Internet.") else t("○ لا توجد قناة Bluetooth موثقة الآن — سيستخدم التطبيق الخادم عند توفره.", "○ No authenticated Bluetooth channel is available — the server will be used when available.")))
+        if (mode == "SILENT") box.addView(UiKit.subtitle(this, p, t("تنبيه: إعداد هذا الموظف مضبوط على صامت. يمكنك إرسال الرسالة، لكن لن يتم تشغيل النطق تلقائيًا.", "Notice: this employee is set to Silent. You can send the message, but voice playback will not run automatically.")))
+        val d = AlertDialog.Builder(this).setTitle(t("رسالة إلى $name", "Message to $name")).setView(box).setPositiveButton(t("إرسال", "Send"), null).setNegativeButton(t("إلغاء", "Cancel"), null).create()
         d.setOnShowListener {
             d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val body = message.text.toString().trim()
-                if (body.isBlank()) { message.error = "اكتب الرسالة"; return@setOnClickListener }
+                if (body.isBlank()) { message.error = t("اكتب الرسالة", "Write a message"); return@setOnClickListener }
                 val pr = when (priority.selectedItemPosition) { 2 -> "URGENT"; 1 -> "IMPORTANT"; else -> "NORMAL" }
                 d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = false
                 val voiceEnabled = voice.isChecked && mode != "SILENT"
                 fun sendServerFallback(reason: String) {
-                    if (!repo.hasCentralCredentials()) { toast("$reason — ولا يوجد اتصال خادم مهيأ"); d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true; return }
+                    if (!repo.hasCentralCredentials()) { toast(t("$reason — ولا يوجد اتصال خادم مهيأ", "$reason — no configured server connection is available")); d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true; return }
                     Thread {
                         val r = CentralServerClient.sendStoreMessageToEmployee(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, employeeId, title.text.toString(), body, pr, voiceEnabled)
-                        runOnUiThread { r.onSuccess { toast("تم إرسال الرسالة عبر الخادم إلى $name"); d.dismiss(); showInbox() }.onFailure { toast("تعذر الإرسال: ${it.message}"); d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true } }
+                        runOnUiThread { r.onSuccess { toast(t("تم إرسال الرسالة عبر الخادم إلى $name", "Message sent to $name through the server")); d.dismiss(); showInbox() }.onFailure { toast(t("تعذر الإرسال: ${it.message}", "Send failed: ${it.message}")); d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled = true } }
                     }.start()
                 }
                 val localStarted = StoreDirectLinkBridge1977.sendMessage(employeeId, title.text.toString(), body, pr, voiceEnabled) { success, localStatus ->
                     runOnUiThread { if (success) { toast("✓ $localStatus — $name"); d.dismiss(); showInbox() } else sendServerFallback(localStatus) }
                 }
-                if (!localStarted) sendServerFallback("لا توجد قناة اتصال محلية موثقة مع هاتف $name")
+                if (!localStarted) sendServerFallback(t("لا توجد قناة اتصال محلية موثقة مع هاتف $name", "No authenticated local channel is available with the employee phone: $name"))
             }
         }
         d.show()
@@ -157,7 +159,7 @@ class StoreMessages1975Activity : Activity() {
     }
 
     private fun base(title: String, subtitle: String) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_HORIZONTAL
+        orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@StoreMessages1975Activity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_HORIZONTAL
         setPadding(UiKit.dp(this@StoreMessages1975Activity,16), UiKit.dp(this@StoreMessages1975Activity,18), UiKit.dp(this@StoreMessages1975Activity,16), UiKit.dp(this@StoreMessages1975Activity,30)); setBackgroundColor(p.bg)
         val hero = UiKit.heroCard(this@StoreMessages1975Activity, p)
         hero.addView(UiKit.title(this@StoreMessages1975Activity, p, title, 24f).apply { gravity=Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
@@ -165,7 +167,7 @@ class StoreMessages1975Activity : Activity() {
         addView(hero)
     }
 
-    private fun priorityArabic(v: String) = when(v) { "URGENT" -> "عاجلة"; "IMPORTANT" -> "مهمة"; else -> "عادية" }
+    private fun priorityArabic(v: String) = when(v) { "URGENT" -> t("عاجلة", "Urgent"); "IMPORTANT" -> t("مهمة", "Important"); else -> t("عادية", "Normal") }
     private fun time(ms: Long) = if (ms <= 0L) "" else SimpleDateFormat("dd/MM HH:mm", Locale.getDefault()).format(Date(ms))
     private fun toast(s: String) = Toast.makeText(this, s, Toast.LENGTH_LONG).show()
 }
