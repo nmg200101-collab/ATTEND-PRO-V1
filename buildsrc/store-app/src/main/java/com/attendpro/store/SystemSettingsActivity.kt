@@ -848,28 +848,51 @@ class SystemSettingsActivity : Activity() {
     private fun generateAgentCode(): String = "AP-" + UUID.randomUUID().toString().replace("-", "").take(8).uppercase(Locale.US)
 
     private fun showNewAgentCode(agent: AgentRecord, code: String) {
-        AlertDialog.Builder(this).setTitle("تم إنشاء الوكيل").setMessage("الوكيل: ${agent.name}\n\nرمز الوكيل:\n$code\n\nيظهر الرمز الكامل الآن فقط. أرسله للوكيل واحفظه في مكان آمن.")
-            .setPositiveButton("نسخ الرمز") { _, _ -> copyText(code) }
-            .setNegativeButton("إغلاق", null).show()
+        AlertDialog.Builder(this)
+            .setTitle(t("بيانات دخول الوكيل", "Agent Credentials"))
+            .setMessage(t(
+                "الوكيل: ${agent.name}\n\nرمز الدخول الجديد:\n$code\n\nيظهر الرمز الكامل الآن فقط. الرمز السابق أصبح غير صالح بعد التغيير. لا تُخزن رموز الوكلاء كنص مكشوف داخل النظام.",
+                "Agent: ${agent.name}\n\nNew sign-in code:\n$code\n\nThe full code is shown now only. The previous code is no longer valid after rotation. Agent codes are not stored as readable plaintext."
+            ))
+            .setPositiveButton(t("نسخ الرمز", "Copy code")) { _, _ -> copyText(code) }
+            .setNegativeButton(t("إغلاق", "Close"), null)
+            .show()
+    }
+
+    private fun showAgentCredentialInfo(agent: AgentRecord) {
+        AlertDialog.Builder(this)
+            .setTitle(t("بيانات دخول ${agent.name}", "${agent.name} credentials"))
+            .setMessage(t(
+                "حالة رمز الدخول: مضبوط ومحمي\nطريقة الحفظ: Hash غير قابل للاسترجاع كنص\n\nللحصول على رمز تستطيع معرفته وإرساله للوكيل، أنشئ رمزًا جديدًا. سيظهر لك كاملًا مرة واحدة ويمكن نسخه فورًا.",
+                "Sign-in code: configured and protected\nStorage: non-reversible hash\n\nTo obtain a code you can see and give to the agent, generate a new one. It will be shown once and can be copied immediately."
+            ))
+            .setPositiveButton(t("إنشاء رمز جديد وعرضه", "Generate and show new code")) { _, _ ->
+                val code = generateAgentCode()
+                val updated = agent.copy(codeHash = PairingProtocol.pinHash(code), active = true)
+                repo.upsertAgent(updated)
+                showNewAgentCode(updated, code)
+            }
+            .setNegativeButton(t("إغلاق", "Close"), null)
+            .show()
     }
 
     private fun agentDetails(agent: AgentRecord) {
         val assigned = repo.managedStores().count { it.agentId == agent.agentId }
         val items = arrayOf(
-            "الحالة: ${if (agent.active) "نشط" else "موقوف"}",
-            "المحلات المرتبطة: $assigned",
-            if (agent.active) "إيقاف الوكيل" else "إعادة تفعيل الوكيل",
-            "إنشاء رمز جديد للوكيل",
-            "حذف الوكيل"
+            t("الحالة: ${if (agent.active) "نشط" else "موقوف"}", "Status: ${if (agent.active) "Active" else "Disabled"}"),
+            t("المحلات المرتبطة: $assigned", "Assigned stores: $assigned"),
+            t("بيانات الدخول وإدارة الرمز", "Credentials and sign-in code"),
+            if (agent.active) t("إيقاف الوكيل", "Disable agent") else t("إعادة تفعيل الوكيل", "Enable agent"),
+            t("حذف الوكيل", "Delete agent")
         )
         AlertDialog.Builder(this).setTitle(agent.name).setItems(items) { _, which ->
             when (which) {
-                2 -> { repo.upsertAgent(agent.copy(active = !agent.active)); showAgents() }
-                3 -> {
-                    val code = generateAgentCode(); val updated = agent.copy(codeHash = PairingProtocol.pinHash(code), active = true)
-                    repo.upsertAgent(updated); showNewAgentCode(updated, code)
-                }
-                4 -> AlertDialog.Builder(this).setTitle("حذف الوكيل؟").setMessage("لن تُحذف سجلات المحلات، لكن سيُحذف حساب الوكيل.").setPositiveButton("حذف") { _, _ -> repo.removeAgent(agent.agentId); showAgents() }.setNegativeButton("إلغاء", null).show()
+                2 -> showAgentCredentialInfo(agent)
+                3 -> { repo.upsertAgent(agent.copy(active = !agent.active)); showAgents() }
+                4 -> AlertDialog.Builder(this).setTitle(t("حذف الوكيل؟", "Delete agent?"))
+                    .setMessage(t("لن تُحذف سجلات المحلات، لكن سيُحذف حساب الوكيل.", "Store records will remain, but the agent account will be deleted."))
+                    .setPositiveButton(t("حذف", "Delete")) { _, _ -> repo.removeAgent(agent.agentId); showAgents() }
+                    .setNegativeButton(t("إلغاء", "Cancel"), null).show()
             }
         }.setNegativeButton("إغلاق", null).show()
     }
