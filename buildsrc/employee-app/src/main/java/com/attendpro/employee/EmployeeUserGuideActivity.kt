@@ -22,6 +22,16 @@ class EmployeeUserGuideActivity : Activity() {
 
     private val scenarios by lazy {
         listOf(
+            Scenario("ما الجديد في هذا الإصدار", "What's new in this version",
+                "يتحدث هذا القسم مع كل إصدار للتطبيق.", "This section ships with and updates on every app release.",
+                listOf(
+                    Topic("الإصدار الحالي", "Current version",
+                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ". يتحدث هذا الدليل تلقائيًا مع كل تحديث للتطبيق ويشرح أي وظائف جديدة تخص الموظف.",
+                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ". This guide updates with every app release and explains new Employee features."),
+                    Topic("أهم التغييرات الحالية", "Current highlights",
+                        "عرض الدوام بصيغة صباح/مساء، الرد بدون إنترنت عبر Bluetooth الموثق، وتحسين واجهة الرسائل واللغة الإنجليزية.",
+                        "AM/PM shift display, offline replies over authenticated Bluetooth, and improved messaging and English UI.")
+                )),
             Scenario("أريد ربط هاتفي بالمحل", "I want to pair my phone with the Store",
                 "QR وBluetooth وكيف تعرف أن الربط نجح.", "QR, Bluetooth and how to confirm success.",
                 listOf(
