@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 91
-        versionName = "2.0.0-RC1"
+        versionCode = 92
+        versionName = "2.0.0-RC2"
     }
 
     compileOptions {
@@ -55,6 +55,7 @@ android {
 }
 
 dependencies {
+    add("playImplementation", "com.google.android.play:app-update:2.1.0")
     implementation(project(":core"))
     implementation(project(":foundation"))
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
