@@ -912,7 +912,9 @@ class StoreSettingsActivity : Activity() {
         val receivers = repo.authorizedReportReceivers()
         val msg = "معلومات المحل: ${if (repo.isStoreProfileComplete) "مكتملة" else "تحتاج إكمال"}\n" +
             "Bluetooth: $bluetooth\nGPS: ${if (repo.isGpsConfigured) "مضبوط • ${repo.gpsRadiusMeters}م" else "غير مضبوط"}\n" +
-            "الدوام العام: ${String.format(java.util.Locale.getDefault(), "%02d:%02d - %02d:%02d", repo.shiftHour, repo.shiftMinute, repo.shiftEndHour, repo.shiftEndMinute)} • سماح ${repo.graceMinutes} د\n" +
+            t("الدوام العام: ", "General shift: ") + ShiftTimeCodec.formatRange(repo.shiftHour, repo.shiftMinute, repo.shiftEndHour, repo.shiftEndMinute) +
+            (if (ShiftTimeCodec.isOvernight(repo.shiftHour, repo.shiftMinute, repo.shiftEndHour, repo.shiftEndMinute)) t(" • ليلي", " • overnight") else "") +
+            t(" • سماح ${repo.graceMinutes} د\n", " • ${repo.graceMinutes} min grace\n") +
             "الموظفون النشطون: ${active.size} • دوام خاص: $customShiftCount\n" +
             "كلمة مرور: ${active.count { it.passwordHash.isNotBlank() }} • صوت: ${active.count { it.voicePhraseHash.isNotBlank() }} • وجه: ${active.count { it.faceTemplate.isNotBlank() }}\n" +
             "تحقق صوتي: ${active.count { it.voicePhraseHash.isNotBlank() }} • قوالب وجه جاهزة: $faceReady • بصمة خارجية: ${active.count { it.externalFingerprintId.isNotBlank() }}\n" +
