@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ATTEND PRO - المحل</string>
+    <string name="language">اللغة</string>
+    <string name="user_guide">دليل المستخدم</string>
+    <string name="guide_title">دليل ATTEND PRO للمحل</string>
+    <string name="guide_search_hint">ابحث في الدليل…</string>
+    <string name="guide_no_results">لا توجد نتيجة مطابقة.</string>
+    <string name="guide_pairing_title">ربط هاتف الموظف</string>
+    <string name="guide_pairing_body">من إدارة المحل افتح الموظف ثم الربط. ابدأ بـ QR. إذا تعذر، استخدم Bluetooth المباشر. يجب تشغيل Bluetooth والموقع في الهاتفين أثناء الربط. لا تعتبر عبارة «جاري الارتباط» نجاحًا؛ النجاح يظهر فقط بعد ACK مؤكد وحفظ الهاتف المرتبط.</string>
+    <string name="guide_qr_title">الربط عبر QR</string>
+    <string name="guide_qr_body">اعرض QR من جهاز المحل ثم امسحه بتطبيق الموظف قبل انتهاء صلاحيته. حافظ على الشاشة مفتوحة حتى تظهر رسالة نجاح الربط. إذا انتهت الصلاحية أنشئ QR جديدًا ولا تستخدم صورة قديمة.</string>
+    <string name="guide_ble_title">Bluetooth و BLE/GATT</string>
+    <string name="guide_ble_body">فعّل Bluetooth والموقع، واسمح بصلاحيات الأجهزة القريبة. بعد الربط يستخدم النظام Heartbeat وACK للتأكد من الاتصال الحقيقي. ظهور الهاتف في المسح وحده لا يعني أنه متصل. عند الانقطاع يعيد النظام الاتصال تلقائيًا عند ظهور الهاتف من جديد.</string>
+    <string name="guide_wifi_title">Wi‑Fi و Hotspot</string>
+    <string name="guide_wifi_body">يمكن للهاتف وجهاز المحل العمل على نفس الشبكة المحلية أو نقطة اتصال. هذه القناة مستقلة عن Bluetooth، وتبقى طرق الحضور خاضعة للطريقة التي اعتمدها مدير المحل.</string>
+    <string name="guide_attendance_title">الحضور والانصراف</string>
+    <string name="guide_attendance_body">اختر حضورًا أو انصرافًا ثم نفّذ وسيلة التحقق المسموحة للموظف. اكتشاف الهاتف أو الموقع لا يسجل حضورًا تلقائيًا ما لم تكن سياسة المحل قد سمحت بطريقة تحقق صريحة.</string>
+    <string name="guide_shift_title">الدوام</string>
+    <string name="guide_shift_body">حدد بداية ونهاية الدوام بصيغة صباح/مساء. النظام يحفظ الوقت داخليًا بصيغة 24 ساعة ويدعم الدوام الذي يتجاوز منتصف الليل مثل 10:00 م إلى 6:00 ص. لا تجعل البداية والنهاية متساويتين.</string>
+    <string name="guide_presence_title">إثبات الوجود</string>
+    <string name="guide_presence_body">يمكن للمدير إرسال طلب إثبات وجود للموظف بالطريقة المحددة له. يجب على الموظف تنفيذ الطريقة المطلوبة؛ القرب عبر Bluetooth أو GPS وحده لا يستبدل التحقق المطلوب.</string>
+    <string name="guide_backup_title">النسخ الاحتياطي والاستعادة</string>
+    <string name="guide_backup_body">من إدارة المحل افتح النسخ الاحتياطي. يمكنك إنشاء نسخة مشفرة على الهاتف أو رفع نسخة مشفرة إلى الخادم. احتفظ بكلمة النسخة في مكان آمن؛ لا يمكن فتح النسخة بدونها. راجع ملخص النسخة قبل الاستعادة.</string>
+    <string name="guide_lock_title">قفل التطبيق والإدارة</string>
+    <string name="guide_lock_body">فعّل قفل التطبيق لحماية البيانات، واستخدم رمز إدارة المحل لحماية إعدادات المدير. بعد الانتهاء أغلق جلسة الإدارة حتى لا تبقى أدوات المدير ظاهرة للمستخدم العادي.</string>
+    <string name="guide_update_title">التحديث</string>
+    <string name="guide_update_body">نسخة Google Play تُحدّث عبر Google Play فقط. النسخة المباشرة تتحقق من التحديث عبر HTTPS ثم تتحقق من الحزمة والتوقيع وSHA‑256 قبل عرض التثبيت للمستخدم. لا يوجد تثبيت صامت.</string>
+    <string name="guide_troubleshoot_title">حل المشاكل الشائعة</string>
+    <string name="guide_troubleshoot_body">إذا بقي الربط على «جاري الارتباط»: تأكد من Bluetooth والموقع والصلاحيات ثم أعد إنشاء QR أو أعد المسح. إذا ظهر الهاتف دون اتصال انتظر ACK أو أعد فتح Bluetooth. إذا لم يعمل GPS فعّل الدقة العالية. لا تحذف بيانات التطبيق قبل أخذ نسخة احتياطية.</string>
+    <string name="store_dashboard_title">لوحة الحضور</string>
+    <string name="system_ready">النظام جاهز</string>
+    <string name="present_employees">الموظفون الحاضرون</string>
+    <string name="actual_attendance_now">الحضور الفعلي الآن</string>
+    <string name="connected_devices">الأجهزة المتصلة</string>
+    <string name="connection_channels">Bluetooth • Wi‑Fi • Server • الوقت</string>
+    <string name="attendance_checkout">الحضور والانصراف</string>
+    <string name="attendance_instruction">اختر العملية ثم استخدم إحدى طرق التحقق المعتمدة من إدارة المحل.</string>
+    <string name="check_in">تسجيل حضور</string>
+    <string name="check_out">تسجيل انصراف</string>
+    <string name="owner_settings">إعدادات مدير المحل</string>
+    <string name="owner_settings_subtitle">الموظفون • الربط • الدوام • التقارير • الإعدادات • اختصارات الشاشة الرئيسية</string>
+    <string name="last_movement">آخر حركة</string>
+    <string name="no_operation_today">لا توجد عملية اليوم</string>
+</resources>
