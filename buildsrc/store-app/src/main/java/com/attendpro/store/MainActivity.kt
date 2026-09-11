@@ -144,6 +144,8 @@ class MainActivity : Activity() {
     private val serverGpsSeenAt = ConcurrentHashMap<String, Long>()
     @Volatile private var serverPresencePollInFlight = false
     private var lastServerPresencePollAt = 0L
+    @Volatile private var remoteControlSyncInFlight = false
+    private var lastRemoteControlSyncAt = 0L
     private var activePairingBeacon: PairingBeacon? = null
     private var activePairingCode: String = ""
     private var activePairingProvision: String = ""
@@ -158,6 +160,7 @@ class MainActivity : Activity() {
             if (::counts.isInitialized || ::connectionSummaryView.isInitialized) refreshDashboard()
             ensurePresenceDiscoveryRunning()
             pollServerPresenceIfDue()
+            syncRemoteControlIfDue()
             autoSyncIfReady()
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
@@ -1065,6 +1068,69 @@ class MainActivity : Activity() {
         state.addView(UiKit.button(this, p, "رجوع إلى إعدادات المحل", false).apply { setOnClickListener { finish() } })
         root.addView(state)
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
+    }
+
+    private fun currentRemoteStoreSettings(): CentralServerClient.RemoteStoreSettings =
+        CentralServerClient.RemoteStoreSettings(
+            shiftStartHour = repo.shiftHour,
+            shiftStartMinute = repo.shiftMinute,
+            shiftEndHour = repo.shiftEndHour,
+            shiftEndMinute = repo.shiftEndMinute,
+            graceMinutes = repo.graceMinutes,
+            attendanceVoiceAnnouncementEnabled = repo.attendanceVoiceAnnouncementEnabled,
+            employeeVoicePromptsEnabled = repo.employeeVoicePromptsEnabled,
+            geoArrivalAlertsEnabled = repo.geoArrivalAlertsEnabled,
+            reportAutoSync = repo.reportAutoSync
+        )
+
+    private fun syncRemoteControlIfDue(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (remoteControlSyncInFlight || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
+        if (!force && now - lastRemoteControlSyncAt < 30_000L) return
+        remoteControlSyncInFlight = true
+        lastRemoteControlSyncAt = now
+        Thread {
+            val identity = DeviceIdentity(this)
+            val pull = CentralServerClient.pullRemoteStoreSettings(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity
+            )
+            var applied = false
+            var appliedRevision = repo.remoteSettingsRevisionApplied
+            pull.getOrNull()?.let { envelope ->
+                if (envelope.available && envelope.revision > repo.remoteSettingsRevisionApplied) {
+                    val settings = envelope.settings
+                    val sameTime = settings.shiftStartHour == settings.shiftEndHour &&
+                        settings.shiftStartMinute == settings.shiftEndMinute
+                    if (!sameTime && settings.graceMinutes in 0..120) {
+                        repo.shiftHour = settings.shiftStartHour
+                        repo.shiftMinute = settings.shiftStartMinute
+                        repo.shiftEndHour = settings.shiftEndHour
+                        repo.shiftEndMinute = settings.shiftEndMinute
+                        repo.graceMinutes = settings.graceMinutes
+                        repo.attendanceVoiceAnnouncementEnabled = settings.attendanceVoiceAnnouncementEnabled
+                        repo.employeeVoicePromptsEnabled = settings.employeeVoicePromptsEnabled
+                        repo.geoArrivalAlertsEnabled = settings.geoArrivalAlertsEnabled
+                        repo.reportAutoSync = settings.reportAutoSync
+                        repo.remoteSettingsRevisionApplied = envelope.revision
+                        appliedRevision = envelope.revision
+                        applied = true
+                    }
+                }
+            }
+            CentralServerClient.storeRemoteSettingsSnapshot(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
+                currentRemoteStoreSettings(), appliedRevision
+            )
+            runOnUiThread {
+                remoteControlSyncInFlight = false
+                if (applied) {
+                    if (::status.isInitialized) status.text =
+                        t("✓ تم تطبيق إعدادات مدير المحل القادمة من الهاتف المصرح", "✓ Authorized remote Store settings applied")
+                    buildElegantUi()
+                    refreshDashboard()
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun autoSyncIfReady() {
