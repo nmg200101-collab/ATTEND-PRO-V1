@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ATTEND PRO - الموظف</string>
+    <string name="language">اللغة</string>
+    <string name="user_guide">دليل المستخدم</string>
+    <string name="guide_title">دليل ATTEND PRO للموظف</string>
+    <string name="guide_search_hint">ابحث في الدليل…</string>
+    <string name="guide_no_results">لا توجد نتيجة مطابقة.</string>
+    <string name="guide_pairing_title">الربط بالمحل</string>
+    <string name="guide_pairing_body">يتم الربط مرة واحدة من إدارة المحل. امسح QR المعروض من جهاز المحل أو استخدم Bluetooth المباشر عند الحاجة. أبق Bluetooth والموقع والصلاحيات المطلوبة مفعلة حتى تظهر رسالة نجاح الربط.</string>
+    <string name="guide_qr_title">QR</string>
+    <string name="guide_qr_body">امسح QR قبل انتهاء صلاحيته. إذا انتهت الصلاحية اطلب من مدير المحل إنشاء رمز جديد. لا تعتمد على صورة قديمة للرمز.</string>
+    <string name="guide_ble_title">Bluetooth وBLE/GATT</string>
+    <string name="guide_ble_body">بعد نجاح الربط يستخدم التطبيق قناة Bluetooth موثقة مع Heartbeat وACK. ظهور الهاتف للمحل لا يسجل حضورًا تلقائيًا، لكنه يسمح للنظام بمعرفة أن الهاتف قريب ومربوط.</string>
+    <string name="guide_wifi_title">Wi‑Fi وHotspot</string>
+    <string name="guide_wifi_body">قد يعمل التطبيق عبر نفس شبكة المحل أو نقطة اتصال بالإضافة إلى Bluetooth. تغيير الشبكة لا يغيّر طرق التحقق المسموحة لك.</string>
+    <string name="guide_attendance_title">الحضور والانصراف</string>
+    <string name="guide_attendance_body">اختر حضورًا أو انصرافًا ثم نفّذ طريقة التحقق التي حددتها إدارة المحل، مثل بصمة الهاتف أو الوجه أو الصوت أو كلمة المرور حسب الإعداد.</string>
+    <string name="guide_presence_title">إثبات الوجود</string>
+    <string name="guide_presence_body">عند وصول طلب إثبات وجود نفّذ الطريقة المطلوبة في الإشعار. لا يكفي أن يكون الهاتف قريبًا إذا طلب المدير تحققًا حيويًا أو طريقة أخرى محددة.</string>
+    <string name="guide_location_title">الموقع في الخلفية</string>
+    <string name="guide_location_body">عند تفعيل نطاق المحل قد يستخدم ATTEND PRO الموقع حتى عندما يكون التطبيق مغلقًا أو غير مستخدم لقياس القرب وإرسال حالة القرب إلى إدارة المحل. الموقع وحده لا يسجل حضورًا تلقائيًا.</string>
+    <string name="guide_messages_title">الرسائل والإشعارات</string>
+    <string name="guide_messages_body">تظهر رسائل إدارة المحل والنظام في مركز الرسائل. عندما تكون قناة Bluetooth الموثقة متاحة يمكن استلام رسائل محلية من المحل حتى بدون إنترنت.</string>
+    <string name="guide_lock_title">قفل التطبيق</string>
+    <string name="guide_lock_body">يمكن حماية التطبيق برمز وبالتحقق الحيوي حسب إعداد الجهاز. لا تشارك رمز القفل مع الآخرين.</string>
+    <string name="guide_update_title">التحديث</string>
+    <string name="guide_update_body">نسخة Google Play تُحدّث عبر Google Play فقط. النسخة المباشرة لا تثبت تحديثًا بصمت؛ يجب أن يوافق المستخدم بعد تحقق التطبيق من الحزمة والتوقيع.</string>
+    <string name="guide_troubleshoot_title">حل المشاكل الشائعة</string>
+    <string name="guide_troubleshoot_body">إذا لم يكتمل الربط فتأكد من Bluetooth والموقع والأجهزة القريبة ثم أعد المسح. إذا توقف الظهور التلقائي افتح التطبيق وتحقق من الصلاحيات. لا تحذف بيانات التطبيق قبل الرجوع لإدارة المحل أو أخذ نسخة مناسبة.</string>
+</resources>
