@@ -203,6 +203,7 @@ class BleDirectLinkClient(
     private fun callbackIsCurrent(session: Session, generation: Int, gatt: BluetoothGatt): Boolean =
         sessions[session.employeeId] === session && session.generation == generation && session.gatt === gatt
 
+    @SuppressLint("MissingPermission")
     private fun callbackFor(session: Session, generation: Int) = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
