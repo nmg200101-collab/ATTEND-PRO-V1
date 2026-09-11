@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      PairingBeacon is the field-proven protected RC1 pairing implementation and must remain
+      byte-identical. Runtime BLE permission ownership is handled by the Activity before start().
+      Scope the legacy callback MissingPermission finding to this protected file only.
+    -->
+    <issue id="MissingPermission">
+        <ignore path="src/main/java/com/attendpro/store/PairingBeacon.kt" />
+    </issue>
+</lint>
