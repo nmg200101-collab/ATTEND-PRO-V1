@@ -28,4 +28,11 @@ class ShiftTimeCodecTest {
         assertEquals(ShiftTimeCodec.ClockTime(22, 15), ShiftTimeCodec.parseLegacy24("22:15"))
         assertNull(ShiftTimeCodec.parseLegacy24("24:00"))
     }
+
+    @Test fun formatsRangeWithAmPmAndDetectsOvernight() {
+        assertEquals("8:00 ص - 10:00 م", ShiftTimeCodec.formatRange(8, 0, 22, 0, java.util.Locale("ar")))
+        assertEquals("8:00 AM - 10:00 PM", ShiftTimeCodec.formatRange(8, 0, 22, 0, java.util.Locale.ENGLISH))
+        assertTrue(ShiftTimeCodec.isOvernight(22, 0, 6, 0))
+        assertFalse(ShiftTimeCodec.isOvernight(8, 0, 22, 0))
+    }
 }
