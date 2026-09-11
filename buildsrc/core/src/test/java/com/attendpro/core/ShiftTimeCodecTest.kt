@@ -32,7 +32,7 @@ class ShiftTimeCodecTest {
     @Test fun formatsRangeWithAmPmAndDetectsOvernight() {
         assertEquals("8:00 ص - 10:00 م", ShiftTimeCodec.formatRange(8, 0, 22, 0, java.util.Locale("ar")))
         assertEquals("8:00 AM - 10:00 PM", ShiftTimeCodec.formatRange(8, 0, 22, 0, java.util.Locale.ENGLISH))
-        assertTrue(ShiftTimeCodec.isOvernight(22, 0, 6, 0))
-        assertFalse(ShiftTimeCodec.isOvernight(8, 0, 22, 0))
+        org.junit.Assert.assertTrue(ShiftTimeCodec.isOvernight(22, 0, 6, 0))
+        org.junit.Assert.assertFalse(ShiftTimeCodec.isOvernight(8, 0, 22, 0))
     }
 }
