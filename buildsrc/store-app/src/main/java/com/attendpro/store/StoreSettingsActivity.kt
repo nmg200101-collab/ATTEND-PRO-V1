@@ -212,6 +212,7 @@ class StoreSettingsActivity : Activity() {
             t("الإشعارات", "Notifications") to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
             getString(R.string.user_guide) to { showStoreUserGuide1976() },
             getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
+            t("الخصوصية والبيانات", "Privacy and data") to { startActivity(Intent(this, com.attendpro.core.PrivacyDataActivity::class.java)) },
             t("الإعدادات المتقدمة", "Advanced settings") to { showAdvancedDashboard1975() }
         ))
     }
