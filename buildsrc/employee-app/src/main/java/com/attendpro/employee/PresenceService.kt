@@ -356,8 +356,8 @@ class PresenceService : Service() {
     private fun notification(): Notification {
         val open = PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_attend_pro)
-            .setContentTitle("ATTEND PRO — هاتف الموظف")
-            .setContentText(if(identity.autoPresence) "Bluetooth مباشر وBLE وWi‑Fi وGPS المحلي تعمل" else "طلبات إثبات الوجود مفعلة لهذا الهاتف")
+            .setContentTitle("ATTEND PRO — مراقبة الحضور نشطة")
+            .setContentText(if(identity.autoPresence) "يستخدم Bluetooth/Wi‑Fi وقد يستخدم الموقع في الخلفية لإثبات القرب؛ لا يسجل حضورًا تلقائيًا" else "طلبات إثبات الوجود مفعلة لهذا الهاتف")
             .setContentIntent(open).setOngoing(true).build()
     }
 
