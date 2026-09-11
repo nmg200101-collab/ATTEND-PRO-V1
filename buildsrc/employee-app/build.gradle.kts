@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.employee"
         minSdk = 26
         targetSdk = 36
-        versionCode = 92
-        versionName = "2.0.0-RC2"
+        versionCode = 93
+        versionName = "2.0.0-RC3"
     }
 
     compileOptions {
