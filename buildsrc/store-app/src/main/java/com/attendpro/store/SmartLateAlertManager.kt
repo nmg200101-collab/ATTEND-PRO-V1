@@ -1,6 +1,7 @@
 package com.attendpro.store
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -181,6 +182,7 @@ class SmartLateAlertManager(
         }.apply { isDaemon = true }.start()
     }
 
+    @SuppressLint("MissingPermission")
     private fun maybeAutoCall(employee: PairedEmployee, dayKey: String) {
         val calledKey = "called_${dayKey}_${employee.employeeId}"
         if (prefs.getBoolean(calledKey, false)) return
