@@ -964,7 +964,7 @@ class StoreSettingsActivity : Activity() {
     }
 
     private fun info(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("حسنًا", null).show()
+        AlertDialog.Builder(this).setTitle(AppLanguage.legacyUiText(this, title)).setMessage(AppLanguage.legacyUiText(this, message)).setPositiveButton(t("حسنًا", "OK"), null).show()
     }
 
     override fun onBackPressed() {
