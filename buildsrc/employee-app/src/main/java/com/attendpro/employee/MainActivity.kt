@@ -1234,6 +1234,7 @@ class MainActivity : Activity() {
     private fun isMockLocation(location: Location): Boolean =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) location.isMock else @Suppress("DEPRECATION") location.isFromMockProvider
 
+    @Suppress("MissingPermission")
     private fun bestLastLocation(manager: LocationManager): Location? {
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
         return providers.mapNotNull { provider -> runCatching { manager.getLastKnownLocation(provider) }.getOrNull() }.maxByOrNull { it.time }
