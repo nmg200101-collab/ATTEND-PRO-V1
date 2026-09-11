@@ -18,6 +18,10 @@ checks = {
     "Store guide tracks release": ("buildsrc/store-app/src/main/java/com/attendpro/store/StoreUserGuideActivity.kt", "BuildConfig.VERSION_NAME"),
     "Employee guide tracks release": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeUserGuideActivity.kt", "BuildConfig.VERSION_NAME"),
     "Agent credential reset UI": ("buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt", "showAgentCredentialInfo"),
+    "Central agent one-time credential UI": ("buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt", "بيانات الدخول — إنشاء وعرض رمز جديد"),
+    "Subscriber one-time recovery credential UI": ("buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt", "showSubscriberRecoveryCredential"),
+    "Store versionCode 93": ("buildsrc/store-app/build.gradle.kts", "versionCode = 93"),
+    "Employee versionCode 93": ("buildsrc/employee-app/build.gradle.kts", "versionCode = 93"),
 }
 
 failed = []
