@@ -11,12 +11,14 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.StoreRepository
 import com.attendpro.core.UiKit
 
 class StoreVoiceControl1975Activity : Activity() {
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
+    private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,23 +30,23 @@ class StoreVoiceControl1975Activity : Activity() {
         window.statusBarColor = p.bg
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@StoreVoiceControl1975Activity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(UiKit.dp(this@StoreVoiceControl1975Activity, 16), UiKit.dp(this@StoreVoiceControl1975Activity, 18), UiKit.dp(this@StoreVoiceControl1975Activity, 16), UiKit.dp(this@StoreVoiceControl1975Activity, 30))
             setBackgroundColor(p.bg)
         }
         val hero = UiKit.heroCard(this, p)
-        hero.addView(UiKit.title(this, p, "الصوت والتنبيهات", 24f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
-        hero.addView(UiKit.subtitle(this, p, "تحكم عام + إعداد مستقل لكل موظف. هذه الإعدادات لا تغيّر التحقق ببصمة الصوت ولا الاقتران.").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        hero.addView(UiKit.title(this, p, t("الصوت والتنبيهات", "Voice and alerts"), 24f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+        hero.addView(UiKit.subtitle(this, p, t("تحكم عام + إعداد مستقل لكل موظف. هذه الإعدادات لا تغيّر التحقق ببصمة الصوت ولا الاقتران.", "Global controls plus per-employee settings. These settings do not change voice verification or pairing.")).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         root.addView(hero)
 
         val general = UiKit.card(this, p)
-        general.addView(UiKit.sectionLabel(this, p, "التحكم العام في جهاز المحل"))
-        val attendance = check("نطق تسجيل الحضور والانصراف", repo.storeVoiceAttendanceEnabled)
-        val request = check("نطق إرسال طلب إثبات الوجود", repo.storeVoiceRequestEnabled)
-        val late = check("نطق تنبيه التأخير", repo.storeVoiceLateEnabled)
-        val missing = check("نطق عدم إثبات الوجود", repo.storeVoiceMissingProofEnabled)
-        val enabled = check("السماح بالنطق في جهاز المحل", repo.attendanceVoiceAnnouncementEnabled)
+        general.addView(UiKit.sectionLabel(this, p, t("التحكم العام في جهاز المحل", "Store device global controls")))
+        val attendance = check(t("نطق تسجيل الحضور والانصراف", "Announce check-in and check-out"), repo.storeVoiceAttendanceEnabled)
+        val request = check(t("نطق إرسال طلب إثبات الوجود", "Announce presence-proof requests"), repo.storeVoiceRequestEnabled)
+        val late = check(t("نطق تنبيه التأخير", "Announce late alerts"), repo.storeVoiceLateEnabled)
+        val missing = check(t("نطق عدم إثبات الوجود", "Announce missing presence proof"), repo.storeVoiceMissingProofEnabled)
+        val enabled = check(t("السماح بالنطق في جهاز المحل", "Enable speech on the Store device"), repo.attendanceVoiceAnnouncementEnabled)
         listOf(enabled, attendance, request, late, missing).forEach { general.addView(it) }
         root.addView(general)
 
