@@ -204,7 +204,7 @@ class StoreSettingsActivity : Activity() {
             setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
-        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton(t("رجوع", "Back"), null).show()
+        AlertDialog.Builder(this).setTitle(AppLanguage.legacyUiText(this, title)).setView(box).setNegativeButton(t("رجوع", "Back"), null).show()
     }
 
     private fun showStoreTopMenu1976() {
