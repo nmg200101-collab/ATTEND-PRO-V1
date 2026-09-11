@@ -26,8 +26,8 @@ class StoreUserGuideActivity : Activity() {
                 "يتحدث هذا القسم مع كل إصدار للتطبيق.", "This section ships with and updates on every app release.",
                 listOf(
                     Topic("version", "الإصدار الحالي", "Current version",
-                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nأبرز تحديثات هذا الإصدار: عرض الدوام بصيغة صباح/مساء في جميع المسارات، تكبير منطقة الحضور/الانصراف، تحسين إدارة بيانات دخول الوكلاء، الرد بدون إنترنت، صلاحيات هاتف الاستلام، وتحسين الإنجليزية والواجهة.",
-                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nHighlights: AM/PM shift display across the app, a larger attendance action area, improved agent credential management, offline replies, receiver-phone permissions, and improved English/UI coverage."),
+                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nأبرز تحديثات هذا الإصدار: عرض الدوام بصيغة صباح/مساء في جميع المسارات، تكبير منطقة الحضور/الانصراف، تحسين إدارة بيانات دخول الوكلاء والمشتركين بطريقة آمنة، الرد بدون إنترنت، صلاحيات هاتف الاستلام، وتحسين الإنجليزية والواجهة.",
+                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nHighlights: AM/PM shift display across the app, a larger attendance action area, safe agent/subscriber credential management, offline replies, receiver-phone permissions, and improved English/UI coverage."),
                     Topic("guide_policy", "كيف يتحدث الدليل؟", "How does the guide update?",
                         "الدليل جزء من نفس إصدار التطبيق. عند تثبيت تحديث جديد، تصل معه أقسام الشرح الجديدة والتغييرات المرتبطة بالميزات الجديدة تلقائيًا؛ لذلك لا يحتاج تنزيل دليل منفصل.",
                         "The guide is bundled with the app release. Installing a new app update automatically brings the matching feature instructions, so no separate guide download is required.")
