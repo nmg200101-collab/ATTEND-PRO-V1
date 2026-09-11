@@ -13,7 +13,7 @@ checks = {
     "Receiver messaging permission": ("buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt", "canMessageEmployees"),
     "Receiver Store-management permission": ("buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt", "canManageStore"),
     "Encrypted phone/server backups": ("buildsrc/foundation/src/main/java/com/attendpro/foundation/backup/EncryptedBackupCodec.kt", "AES/GCM/NoPadding"),
-    "App lock": ("buildsrc/core/src/main/java/com/attendpro/core/AppLockGateActivity.kt", "class AppLockGateActivity"),
+    "App lock": ("buildsrc/core/src/main/java/com/attendpro/core/AppLock.kt", "class AppLockManager"),
     "Direct update verification": ("buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt", "release.sha256"),
     "Store guide tracks release": ("buildsrc/store-app/src/main/java/com/attendpro/store/StoreUserGuideActivity.kt", "BuildConfig.VERSION_NAME"),
     "Employee guide tracks release": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeUserGuideActivity.kt", "BuildConfig.VERSION_NAME"),
