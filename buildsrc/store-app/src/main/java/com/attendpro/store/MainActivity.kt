@@ -43,6 +43,7 @@ import android.widget.ScrollView
 import android.widget.Spinner
 import android.widget.TextView
 import com.attendpro.core.AppIntegrity1982
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.AttendanceAction
 import com.attendpro.core.AttendanceEvent
 import com.attendpro.core.AttendanceMethod
@@ -169,6 +170,8 @@ class MainActivity : Activity() {
         }
     }
     private val p by lazy { UiKit.palette(this) }
+
+    private fun t(arabic: String, english: String): String = AppLanguage.text(this, arabic, english)
 
     private fun enforceOfficialBuild1982(): Boolean {
         if (!BuildConfig.ENFORCE_OFFICIAL_SIGNATURE) return true
@@ -794,7 +797,7 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(
                 UiKit.dp(this@MainActivity, 12),
                 UiKit.dp(this@MainActivity, 12),
@@ -832,7 +835,7 @@ class MainActivity : Activity() {
             textSize = 28f
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
-            contentDescription = "القائمة"
+            contentDescription = t("القائمة", "Menu")
             layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 48), UiKit.dp(this@MainActivity, 44)).apply { gravity = Gravity.END }
             setOnClickListener { showStoreMainMenu1976() }
         })
@@ -846,7 +849,7 @@ class MainActivity : Activity() {
             setTextColor(android.graphics.Color.WHITE)
         }
         header.addView(storeSummary)
-        header.addView(UiKit.subtitle(this, p, "لوحة الحضور • ${attendProVersionName()}").apply {
+        header.addView(UiKit.subtitle(this, p, "${getString(R.string.store_dashboard_title)} • ${attendProVersionName()}").apply {
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.argb(220, 255, 255, 255))
         })
@@ -854,7 +857,7 @@ class MainActivity : Activity() {
         addStoreTabs1978(root)
 
         status = TextView(this).apply {
-            text = "النظام جاهز"
+            text = getString(R.string.system_ready)
             textSize = 12.6f
             setTextColor(p.muted)
             gravity = Gravity.CENTER
@@ -868,13 +871,13 @@ class MainActivity : Activity() {
             gravity = Gravity.TOP
         }
         val presentPanel = compactPanel(
-            "الموظفون الحاضرون",
-            "الحضور الفعلي الآن",
+            getString(R.string.present_employees),
+            getString(R.string.actual_attendance_now),
             linkedEmployeesSummaryView
         ) { showLiveAttendanceNow() }
         val connectedPanel = compactPanel(
-            "الأجهزة المتصلة",
-            "Bluetooth • Wi‑Fi • Server • الوقت",
+            getString(R.string.connected_devices),
+            getString(R.string.connection_channels),
             connectionSummaryView
         ) { showConnectionCenter() }
         presentPanel.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
@@ -889,20 +892,20 @@ class MainActivity : Activity() {
 
         val attendanceCard = UiKit.card(this, p, 13).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            addView(UiKit.title(this@MainActivity, p, "الحضور والانصراف", 17.5f).apply {
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 17.5f).apply {
                 gravity = Gravity.CENTER
             })
-            addView(UiKit.subtitle(this@MainActivity, p, "اختر العملية ثم استخدم إحدى طرق التحقق المعتمدة من إدارة المحل.").apply {
+            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
                 gravity = Gravity.CENTER
                 textSize = 11.8f
             })
             val fingerView = FingerprintActionView(this@MainActivity, p.primary).apply {
-                contentDescription = "بصمة الحضور والانصراف"
+                contentDescription = getString(R.string.attendance_checkout)
                 layoutParams = LinearLayout.LayoutParams(
                     UiKit.dp(this@MainActivity, 132),
                     UiKit.dp(this@MainActivity, 142)
                 ).apply { gravity = Gravity.CENTER_HORIZONTAL }
-                setOnClickListener { showAttendanceMethods("اختر طريقة التحقق") }
+                setOnClickListener { showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method")) }
             }
             addView(fingerView)
 
@@ -911,20 +914,20 @@ class MainActivity : Activity() {
                 layoutDirection = View.LAYOUT_DIRECTION_RTL
                 gravity = Gravity.CENTER
             }
-            val checkIn = UiKit.button(this@MainActivity, p, "تسجيل حضور").apply {
+            val checkIn = UiKit.button(this@MainActivity, p, getString(R.string.check_in)).apply {
                 layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 52), 1f).apply {
                     marginEnd = UiKit.dp(this@MainActivity, 4)
                 }
                 setOnClickListener {
-                    showAttendanceMethods("تسجيل حضور — اختر طريقة التحقق", AttendanceAction.CHECK_IN)
+                    showAttendanceMethods(t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"), AttendanceAction.CHECK_IN)
                 }
             }
-            val checkOut = UiKit.button(this@MainActivity, p, "تسجيل انصراف", false).apply {
+            val checkOut = UiKit.button(this@MainActivity, p, getString(R.string.check_out), false).apply {
                 layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 52), 1f).apply {
                     marginStart = UiKit.dp(this@MainActivity, 4)
                 }
                 setOnClickListener {
-                    showAttendanceMethods("تسجيل انصراف — اختر طريقة التحقق", AttendanceAction.CHECK_OUT)
+                    showAttendanceMethods(t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"), AttendanceAction.CHECK_OUT)
                 }
             }
             attendanceActions.addView(checkIn)
@@ -944,7 +947,7 @@ class MainActivity : Activity() {
         summary.addView(counts)
         root.addView(summary)
 
-        recentAttendanceSummaryView = UiKit.subtitle(this, p, "لا توجد عملية اليوم").apply {
+        recentAttendanceSummaryView = UiKit.subtitle(this, p, getString(R.string.no_operation_today)).apply {
             gravity = Gravity.CENTER
             textSize = 12f
             maxLines = 3
@@ -952,29 +955,30 @@ class MainActivity : Activity() {
 
         val ownerCard = UiKit.card(this, p, 11).apply {
             gravity = Gravity.CENTER
-            addView(UiKit.title(this@MainActivity, p, "إدارة المحل", 16.5f).apply {
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 16.5f).apply {
                 gravity = Gravity.CENTER
             })
             addView(UiKit.subtitle(this@MainActivity, p,
-                "الموظفون • الربط • الدوام • التقارير • الإعدادات • اختصارات الشاشة الرئيسية").apply {
+                getString(R.string.owner_settings_subtitle)).apply {
                 gravity = Gravity.CENTER
                 textSize = 11.8f
                 maxLines = 2
             })
             UiKit.makeInteractive(this, this@MainActivity, p)
-            setOnClickListener { requireStoreOwner("إدارة المحل") { showStoreOwnerHub() } }
+            setOnClickListener { requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() } }
         }
-        root.addView(ownerCard)
-        addOwnerShortcutCard(root)
-
         val lastMovement = UiKit.card(this, p, 8).apply {
-            addView(UiKit.sectionLabel(this@MainActivity, p, "آخر حركة"))
+            addView(UiKit.sectionLabel(this@MainActivity, p, getString(R.string.last_movement)))
             addView(recentAttendanceSummaryView)
             UiKit.makeInteractive(this, this@MainActivity, p)
             setOnClickListener { showConnectionAttendanceHistory() }
         }
         root.addView(lastMovement)
 
+        if (!repo.hasStoreAdminPin || repo.hasActiveStoreAdminSession()) {
+            root.addView(ownerCard)
+            addOwnerShortcutCard(root)
+        }
 
         val footer = UiKit.card(this, p, 7)
         footer.addView(status)
@@ -989,29 +993,27 @@ class MainActivity : Activity() {
 
     private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
-        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("رجوع", null).show()
+        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton(t("رجوع", "Back"), null).show()
     }
 
     private fun showStoreMainMenu1976() {
-        showLayeredMenu1977("القائمة", listOf(
-            "الإشعارات" to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
-            "نمط الشاشة الرئيسية" to { showStoreHomeTemplatePicker1978() },
-            "دليل مستخدم إدارة المحل" to { showStoreUserGuide1976() },
-            "الإعدادات" to { startActivity(Intent(this, StoreSettingsActivity::class.java)) },
-            "منطقة إدارة النظام" to { startActivity(Intent(this, SystemSettingsActivity::class.java).putExtra("OWNER_ONLY_1978", true)) }
+        showLayeredMenu1977(t("القائمة", "Menu"), listOf(
+            t("الإشعارات", "Notifications") to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
+            t("نمط الشاشة الرئيسية", "Home layout") to { showStoreHomeTemplatePicker1978() },
+            getString(R.string.user_guide) to { showStoreUserGuide1976() },
+            getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
+            t("الإعدادات", "Settings") to { startActivity(Intent(this, StoreSettingsActivity::class.java)) },
+            t("منطقة إدارة النظام", "System administration") to { startActivity(Intent(this, SystemSettingsActivity::class.java).putExtra("OWNER_ONLY_1978", true)) }
         ))
     }
 
     private fun showStoreUserGuide1976() {
-        AlertDialog.Builder(this)
-            .setTitle("دليل مستخدم إدارة المحل")
-            .setMessage("• الشاشة الرئيسية: لمتابعة الحضور والأجهزة المتصلة فقط.\n\n• إدارة المحل: افتحها لإضافة الموظفين أو تعديل الدوام والصوت والتقارير.\n\n• الإشعارات: رسائل إدارة النظام وردود الموظفين تظهر في مركز الرسائل.\n\n• الربط: يتم من مركز الاتصال عند الحاجة، وبعد نجاحه لا تحتاج للدخول إليه يوميًا.\n\n• قائمة ⋮: منها الإشعارات والدليل والإعدادات.")
-            .setPositiveButton("حسنًا", null)
-            .show()
+        startActivity(Intent(this, StoreUserGuideActivity::class.java))
     }
 
     private fun buildEmployeeManagerUi() {
