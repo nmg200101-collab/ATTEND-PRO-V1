@@ -159,7 +159,7 @@ class MainActivity : Activity() {
     private fun buildUi() {
         window.statusBarColor = p.bg
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@MainActivity,18),UiKit.dp(this@MainActivity,22),UiKit.dp(this@MainActivity,18),UiKit.dp(this@MainActivity,30)); setBackgroundColor(p.bg)
         }
         val header = UiKit.heroCard(this,p).apply { gravity = Gravity.CENTER_HORIZONTAL }
@@ -306,7 +306,7 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 28))
             setBackgroundColor(p.bg)
         }
@@ -329,7 +329,7 @@ class MainActivity : Activity() {
                 val row = LinearLayout(this).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.TOP
-                    layoutDirection = View.LAYOUT_DIRECTION_RTL
+                    layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
                 }
                 first.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = UiKit.dp(this@MainActivity, 4) }
                 second.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = UiKit.dp(this@MainActivity, 4) }
@@ -361,7 +361,7 @@ class MainActivity : Activity() {
             textSize = 28f
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
-            contentDescription = "القائمة"
+            contentDescription = t("القائمة", "Menu")
             layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 48), UiKit.dp(this@MainActivity, 44)).apply { gravity = Gravity.END }
             setOnClickListener { showEmployeeMainMenu1976() }
         })
@@ -374,7 +374,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
         })
-        header.addView(UiKit.subtitle(this, p, "تطبيق الموظف • الإصدار ${attendProVersionName()}").apply {
+        header.addView(UiKit.subtitle(this, p, t("تطبيق الموظف • الإصدار ${attendProVersionName()}", "Employee app • version ${attendProVersionName()}")).apply {
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.argb(225, 255, 255, 255))
         })
@@ -382,7 +382,7 @@ class MainActivity : Activity() {
         addEmployeeTabs1978(root)
 
         status = TextView(this).apply {
-            text = "جاهز"
+            text = t("جاهز", "Ready")
             textSize = 13f
             setTextColor(p.muted)
             gravity = Gravity.CENTER
@@ -396,23 +396,23 @@ class MainActivity : Activity() {
         }
 
         val quick = UiKit.card(this, p, 10)
-        quick.addView(UiKit.sectionLabel(this, p, "حالتي"))
-        val profileTile = detailTile("بياناتي وجدولي", "المحل المرتبط ووقت الدوام", profile) { showEmployeeProfile() }
+        quick.addView(UiKit.sectionLabel(this, p, t("حالتي", "My status")))
+        val profileTile = detailTile(t("بياناتي وجدولي", "My profile and schedule"), t("المحل المرتبط ووقت الدوام", "Linked store and working hours"), profile) { showEmployeeProfile() }
         connectionSummary = TextView(this).apply {
             textSize = 12.8f
             setTextColor(p.text)
             gravity = Gravity.CENTER
             maxLines = 4
         }
-        val connectionTile = detailTile("حالة اتصالي", "القناة الفعلية وGPS", connectionSummary) { showConnectionStatus() }
+        val connectionTile = detailTile(t("حالة اتصالي", "My connection"), t("القناة الفعلية وGPS", "Active channel and GPS"), connectionSummary) { showConnectionStatus() }
         addPair(quick, profileTile, connectionTile)
         root.addView(quick)
 
         val attendance = UiKit.card(this, p, 14).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        attendance.addView(UiKit.title(this, p, "الحضور والانصراف", 19f).apply { gravity = Gravity.CENTER })
-        attendance.addView(UiKit.subtitle(this, p, "اختر الحركة وسيظهر فقط التحقق المسموح لك به").apply { gravity = Gravity.CENTER })
+        attendance.addView(UiKit.title(this, p, t("الحضور والانصراف", "Check-in and check-out"), 19f).apply { gravity = Gravity.CENTER })
+        attendance.addView(UiKit.subtitle(this, p, t("اختر الحركة وسيظهر فقط التحقق المسموح لك به", "Choose an action; only your allowed verification methods will appear")).apply { gravity = Gravity.CENTER })
         val finger = TextView(this).apply {
-            text = "◎\nحضور"
+            text = t("◎\nحضور", "◎\nAttend")
             textSize = 18f
             gravity = Gravity.CENTER
             setTypeface(typeface, Typeface.BOLD)
@@ -432,13 +432,13 @@ class MainActivity : Activity() {
         attendance.addView(finger)
         val inOut = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
         }
-        inOut.addView(UiKit.button(this, p, "تسجيل الحضور").apply {
+        inOut.addView(UiKit.button(this, p, t("تسجيل الحضور", "Check in")).apply {
             layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginEnd = UiKit.dp(this@MainActivity, 4) }
             setOnClickListener { chooseAttendanceMethod(AttendanceAction.CHECK_IN) }
         })
-        inOut.addView(UiKit.button(this, p, "تسجيل الانصراف", false).apply {
+        inOut.addView(UiKit.button(this, p, t("تسجيل الانصراف", "Check out"), false).apply {
             layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginStart = UiKit.dp(this@MainActivity, 4) }
             setOnClickListener { chooseAttendanceMethod(AttendanceAction.CHECK_OUT) }
         })
@@ -446,9 +446,9 @@ class MainActivity : Activity() {
         root.addView(attendance)
 
         val automatic = UiKit.card(this, p, 10)
-        automatic.addView(UiKit.sectionLabel(this, p, "الاتصال التلقائي"))
+        automatic.addView(UiKit.sectionLabel(this, p, t("الاتصال التلقائي", "Automatic connection")))
         presenceSwitch = Switch(this).apply {
-            text = "الظهور التلقائي لجهاز المحل"
+            text = t("الظهور التلقائي لجهاز المحل", "Automatic Store visibility")
             textSize = 14.5f
             setTextColor(p.text)
             isChecked = identity.autoPresence
@@ -462,25 +462,25 @@ class MainActivity : Activity() {
             }
         }
         automatic.addView(presenceSwitch)
-        automatic.addView(UiKit.subtitle(this, p, "يعمل عبر Bluetooth أو شبكة المحل حسب القناة المتاحة، ولا يسجل حضورًا بدون إثبات."))
-        automatic.addView(UiKit.button(this, p, "إدارة الاتصال", false).apply { setOnClickListener { showEmployeeConnectionControl1977() } })
+        automatic.addView(UiKit.subtitle(this, p, t("يعمل عبر Bluetooth أو شبكة المحل حسب القناة المتاحة، ولا يسجل حضورًا بدون إثبات.", "Uses Bluetooth or the Store network when available and never records attendance without verification.")))
+        automatic.addView(UiKit.button(this, p, t("إدارة الاتصال", "Connection management"), false).apply { setOnClickListener { showEmployeeConnectionControl1977() } })
         root.addView(automatic)
 
-        section("الاستخدام اليومي", "الأقسام الأساسية فقط؛ لا تحتاج للدخول إلى الإعدادات أثناء الدوام.") { box ->
+        section(t("الاستخدام اليومي", "Daily use"), t("الأقسام الأساسية فقط؛ لا تحتاج للدخول إلى الإعدادات أثناء الدوام.", "The essential sections only; you normally do not need Settings during a shift.")) { box ->
             addPair(
                 box,
-                tile("طرق التحقق", "بصمة/وجه الهاتف وكلمة المرور وQR") { showEmployeeVerificationCenter() },
-                tile("ربط الهاتف", "ربط هذا الهاتف بالمحل مرة واحدة") { showPairingCenter() }
+                tile(t("طرق التحقق", "Verification methods"), t("بصمة/وجه الهاتف وكلمة المرور وQR", "Device biometrics, face, password and QR")) { showEmployeeVerificationCenter() },
+                tile(t("ربط الهاتف", "Pair this phone"), t("ربط هذا الهاتف بالمحل مرة واحدة", "One-time pairing with the Store")) { showPairingCenter() }
             )
             addPair(
                 box,
-                tile("حالة الاتصال", "معرفة القناة الفعالة مع جهاز المحل") { showConnectionStatus() },
-                tile("فحص الجاهزية", "البصمة والموقع والاتصال والصلاحيات") { showReadinessCheck() }
+                tile(t("حالة الاتصال", "Connection status"), t("معرفة القناة الفعالة مع جهاز المحل", "See the active channel to the Store device")) { showConnectionStatus() },
+                tile(t("فحص الجاهزية", "Readiness check"), t("البصمة والموقع والاتصال والصلاحيات", "Biometrics, location, connection and permissions")) { showReadinessCheck() }
             )
         }
 
         val moreHint = UiKit.card(this, p, 8)
-        moreHint.addView(UiKit.subtitle(this, p, "الإشعارات ودليل المستخدم والإعدادات موجودة في قائمة ⋮ أعلى الشاشة.").apply { gravity = Gravity.CENTER })
+        moreHint.addView(UiKit.subtitle(this, p, t("الإشعارات ودليل المستخدم والإعدادات موجودة في قائمة ⋮ أعلى الشاشة.", "Notifications, the user guide and settings are in the ⋮ menu at the top.")).apply { gravity = Gravity.CENTER })
         root.addView(moreHint)
 
         val footer = UiKit.card(this, p, 9)
@@ -495,7 +495,7 @@ class MainActivity : Activity() {
 
     private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
