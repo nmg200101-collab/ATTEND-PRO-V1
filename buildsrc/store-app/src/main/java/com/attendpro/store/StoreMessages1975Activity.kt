@@ -28,6 +28,7 @@ import java.util.Locale
 class StoreMessages1975Activity : Activity() {
     private lateinit var repo: StoreRepository
     private lateinit var identity: DeviceIdentity
+    private lateinit var localReplies: StoreLocalReplyStore1977
     private val p by lazy { UiKit.palette(this) }
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
     @Volatile private var inboxLoadInFlight1981 = false
@@ -36,6 +37,7 @@ class StoreMessages1975Activity : Activity() {
         super.onCreate(savedInstanceState)
         repo = StoreRepository(this)
         identity = DeviceIdentity(this)
+        localReplies = StoreLocalReplyStore1977(this)
         showInbox()
         ensureNotificationPermission1980()
         StoreMessagePoll1975.schedule(this)
@@ -62,9 +64,16 @@ class StoreMessages1975Activity : Activity() {
         Thread {
             try {
                 val result = CentralServerClient.storeMessagesInbox(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, 100)
+                val local = localReplies.all()
                 runOnUiThread {
-                    result.onSuccess { messages -> renderMessages(root, messages) }
-                        .onFailure { toast(t("تعذر تحميل الرسائل: ${it.message}", "Unable to load messages: ${it.message}")) }
+                    val remote = result.getOrDefault(emptyList())
+                    val merged = (local + remote).distinctBy { it.messageId }.sortedByDescending { it.createdAt }
+                    renderMessages(root, merged)
+                    if (result.isFailure && local.isNotEmpty()) {
+                        toast(t("الخادم غير متاح؛ الردود المحلية ما زالت ظاهرة.", "Server unavailable; local replies are still available."))
+                    } else if (result.isFailure) {
+                        toast(t("تعذر تحميل الرسائل: ${result.exceptionOrNull()?.message}", "Unable to load messages: ${result.exceptionOrNull()?.message}"))
+                    }
                 }
             } finally {
                 inboxLoadInFlight1981 = false
@@ -152,6 +161,11 @@ class StoreMessages1975Activity : Activity() {
     }
 
     private fun markRead(messageId: String) {
+        if (localReplies.isLocal(messageId)) {
+            localReplies.markRead(messageId)
+            showInbox()
+            return
+        }
         Thread {
             CentralServerClient.markStoreMessageRead(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, messageId)
             runOnUiThread { showInbox() }
