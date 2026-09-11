@@ -163,7 +163,12 @@ class AttendProApplication : Application(), Application.ActivityLifecycleCallbac
 
     override fun onCreate() {
         super.onCreate()
+        AppLanguage.applyToResources(this)
         registerActivityLifecycleCallbacks(this)
+    }
+
+    override fun onActivityPreCreated(activity: Activity, state: Bundle?) {
+        AppLanguage.applyToResources(activity)
     }
 
     override fun onActivityStarted(activity: Activity) {
