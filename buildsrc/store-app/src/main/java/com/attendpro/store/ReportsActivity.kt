@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.AttendanceAction
 import com.attendpro.core.AttendanceEvent
 import com.attendpro.core.AuthorizedReportReceiver
@@ -27,6 +28,13 @@ class ReportsActivity : Activity() {
     companion object { const val EXTRA_STORE_ADMIN_SESSION = "store_admin_session" }
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
+    private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
+    private fun periodLabel(value: Period = period): String = when (value) {
+        Period.TODAY -> t("اليوم", "Today")
+        Period.WEEK -> t("آخر 7 أيام", "Last 7 days")
+        Period.MONTH -> t("هذا الشهر", "This month")
+        Period.ALL -> t("كل السجلات", "All records")
+    }
     private var period = Period.TODAY
     private var authorized = false
     @Volatile private var syncInProgress = false
@@ -47,13 +55,13 @@ class ReportsActivity : Activity() {
     }
 
     private fun showOwnerGate() {
-        val pin = UiKit.field(this, p, "رمز حماية إدارة المحل", true)
-        val dialog = AlertDialog.Builder(this).setTitle("التقارير محمية").setMessage("أدخل رمز مالك العمل لعرض التقارير والمشاركة.")
-            .setView(pin).setPositiveButton("دخول", null).setNegativeButton("إلغاء") { _, _ -> finish() }.create()
+        val pin = UiKit.field(this, p, t("رمز حماية إدارة المحل", "Store Management PIN"), true)
+        val dialog = AlertDialog.Builder(this).setTitle(t("التقارير محمية", "Reports are protected")).setMessage(t("أدخل رمز مالك العمل لعرض التقارير والمشاركة.", "Enter the Store owner PIN to view and share reports."))
+            .setView(pin).setPositiveButton(t("دخول", "Continue"), null).setNegativeButton(t("إلغاء", "Cancel")) { _, _ -> finish() }.create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (repo.verifyStoreAdminPin(pin.text.toString())) { authorized = true; repo.issueStoreAdminSession(); dialog.dismiss(); buildUi() }
-                else pin.error = if (repo.storeAdminLockUntil > System.currentTimeMillis()) "تم القفل مؤقتًا" else "الرمز غير صحيح"
+                else pin.error = if (repo.storeAdminLockUntil > System.currentTimeMillis()) t("تم القفل مؤقتًا", "Temporarily locked") else t("الرمز غير صحيح", "Incorrect PIN")
             }
         }
         dialog.setOnCancelListener { finish() }; dialog.show()
@@ -68,14 +76,14 @@ class ReportsActivity : Activity() {
     private fun showCentralActivationRequired() {
         window.statusBarColor = p.bg
         val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = if (AppLanguage.isEnglish(this@ReportsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 20), UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 28)); setBackgroundColor(p.bg)
         }
         val card = UiKit.card(this, p)
-        card.addView(UiKit.statusBadge(this, p, "التفعيل المركزي مطلوب", false))
-        card.addView(UiKit.title(this, p, "التقارير التشغيلية موقوفة", 23f).apply { gravity = Gravity.CENTER })
-        card.addView(UiKit.subtitle(this, p, "لا يمكن عرض أو مشاركة تقارير هذا المحل قبل وجود تفعيل مركزي صالح من إدارة النظام.").apply { gravity = Gravity.CENTER })
-        card.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        card.addView(UiKit.statusBadge(this, p, t("التفعيل المركزي مطلوب", "Central activation required"), false))
+        card.addView(UiKit.title(this, p, t("التقارير التشغيلية موقوفة", "Operational reports are unavailable"), 23f).apply { gravity = Gravity.CENTER })
+        card.addView(UiKit.subtitle(this, p, t("لا يمكن عرض أو مشاركة تقارير هذا المحل قبل وجود تفعيل مركزي صالح من إدارة النظام.", "Reports cannot be viewed or shared until this Store has valid central activation.")).apply { gravity = Gravity.CENTER })
+        card.addView(UiKit.button(this, p, t("رجوع", "Back"), false).apply { setOnClickListener { finish() } })
         root.addView(card)
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
     }
@@ -90,66 +98,66 @@ class ReportsActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@ReportsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 18), UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 28))
             setBackgroundColor(p.bg)
         }
 
         val header = UiKit.heroCard(this, p)
-        header.addView(UiKit.title(this, p, "تقارير ATTEND PRO", 25f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
-        header.addView(UiKit.subtitle(this, p, "${repo.storeName} • ${period.title} • الفرع ${repo.branchId}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        header.addView(UiKit.title(this, p, t("تقارير ATTEND PRO", "ATTEND PRO Reports"), 25f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
+        header.addView(UiKit.subtitle(this, p, "${repo.storeName} • ${periodLabel()} • ${t("الفرع", "Branch")} ${repo.branchId}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         root.addView(header)
 
         val filter = UiKit.card(this, p, 12)
-        filter.addView(UiKit.sectionLabel(this, p, "الفترة"))
-        filter.addView(UiKit.button(this, p, "تقرير اليوم", period == Period.TODAY).apply { setOnClickListener { period = Period.TODAY; buildUi() } })
-        filter.addView(UiKit.button(this, p, "آخر 7 أيام", period == Period.WEEK).apply { setOnClickListener { period = Period.WEEK; buildUi() } })
-        filter.addView(UiKit.button(this, p, "هذا الشهر", period == Period.MONTH).apply { setOnClickListener { period = Period.MONTH; buildUi() } })
-        filter.addView(UiKit.button(this, p, "كل السجلات", period == Period.ALL).apply { setOnClickListener { period = Period.ALL; buildUi() } })
+        filter.addView(UiKit.sectionLabel(this, p, t("الفترة", "Period")))
+        filter.addView(UiKit.button(this, p, t("تقرير اليوم", "Today"), period == Period.TODAY).apply { setOnClickListener { period = Period.TODAY; buildUi() } })
+        filter.addView(UiKit.button(this, p, t("آخر 7 أيام", "Last 7 days"), period == Period.WEEK).apply { setOnClickListener { period = Period.WEEK; buildUi() } })
+        filter.addView(UiKit.button(this, p, t("هذا الشهر", "This month"), period == Period.MONTH).apply { setOnClickListener { period = Period.MONTH; buildUi() } })
+        filter.addView(UiKit.button(this, p, t("كل السجلات", "All records"), period == Period.ALL).apply { setOnClickListener { period = Period.ALL; buildUi() } })
         root.addView(filter)
 
         val events = selectedEvents()
         val summary = summary(events)
         val stats = UiKit.card(this, p)
-        stats.addView(UiKit.sectionLabel(this, p, "الملخص"))
-        stats.addView(UiKit.title(this, p, "${summary.uniqueEmployees} موظف • ${events.size} حركة", 20f))
-        stats.addView(UiKit.subtitle(this, p, "حضور ${summary.checkIns} • انصراف ${summary.checkOuts} • حالات تأخير ${summary.lateEmployees} • انصراف مبكر ${summary.earlyDepartures}"))
+        stats.addView(UiKit.sectionLabel(this, p, t("الملخص", "Summary")))
+        stats.addView(UiKit.title(this, p, t("${summary.uniqueEmployees} موظف • ${events.size} حركة", "${summary.uniqueEmployees} employees • ${events.size} events"), 20f))
+        stats.addView(UiKit.subtitle(this, p, t("حضور ${summary.checkIns} • انصراف ${summary.checkOuts} • حالات تأخير ${summary.lateEmployees} • انصراف مبكر ${summary.earlyDepartures}", "Check-ins ${summary.checkIns} • check-outs ${summary.checkOuts} • late ${summary.lateEmployees} • early departures ${summary.earlyDepartures}")))
         root.addView(stats)
 
         val recent = UiKit.card(this, p)
-        recent.addView(UiKit.sectionLabel(this, p, "السجل"))
+        recent.addView(UiKit.sectionLabel(this, p, t("السجل", "Log")))
         recent.addView(UiKit.subtitle(this, p, reportPreview(events)))
         root.addView(recent)
 
         val share = UiKit.card(this, p)
-        share.addView(UiKit.sectionLabel(this, p, "المشاركة المؤكدة"))
-        share.addView(UiKit.subtitle(this, p, "يمكن لمالك العمل منح صلاحية لهواتف محددة. التقرير الموجه لهاتف مصرح يُشفّر بمفتاح ذلك الهاتف، ثم يظهر رمز تأكيد عند نجاح الاستلام."))
-        share.addView(UiKit.button(this, p, "إرسال لهاتف مصرح له").apply { setOnClickListener { chooseAuthorizedReceiver(events) } })
-        share.addView(UiKit.button(this, p, "تأكيد استلام مشاركة", false).apply { setOnClickListener { confirmReceiptDialog() } })
-        share.addView(UiKit.button(this, p, "مشاركة ملخص عادي", false).apply { setOnClickListener { shareSummary(events) } })
-        share.addView(UiKit.button(this, p, "مشاركة CSV", false).apply { setOnClickListener { shareCsv(events) } })
+        share.addView(UiKit.sectionLabel(this, p, t("المشاركة المؤكدة", "Verified sharing")))
+        share.addView(UiKit.subtitle(this, p, t("يمكن لمالك العمل منح صلاحية لهواتف محددة. التقرير الموجه لهاتف مصرح يُشفّر بمفتاح ذلك الهاتف، ثم يظهر رمز تأكيد عند نجاح الاستلام.", "The Store owner can authorize specific phones. A report sent to an authorized phone is encrypted for that phone and confirmed after successful receipt.")))
+        share.addView(UiKit.button(this, p, t("إرسال لهاتف مصرح له", "Send to authorized phone")).apply { setOnClickListener { chooseAuthorizedReceiver(events) } })
+        share.addView(UiKit.button(this, p, t("تأكيد استلام مشاركة", "Confirm receipt"), false).apply { setOnClickListener { confirmReceiptDialog() } })
+        share.addView(UiKit.button(this, p, t("مشاركة ملخص عادي", "Share summary"), false).apply { setOnClickListener { shareSummary(events) } })
+        share.addView(UiKit.button(this, p, t("مشاركة CSV", "Share CSV"), false).apply { setOnClickListener { shareCsv(events) } })
         share.addView(UiKit.subtitle(this, p, transferStatusText()))
         root.addView(share)
 
         val remote = UiKit.card(this, p)
-        remote.addView(UiKit.sectionLabel(this, p, "المراقبة عن بُعد"))
+        remote.addView(UiKit.sectionLabel(this, p, t("المراقبة عن بُعد", "Remote monitoring")))
         remote.addView(UiKit.subtitle(this, p, remoteStatusText()))
         val auto = CheckBox(this).apply {
-            text = "المزامنة التلقائية عند توفر الخادم والإنترنت"
+            text = t("المزامنة التلقائية عند توفر الخادم والإنترنت", "Automatic sync when server and Internet are available")
             setTextColor(p.text)
             isChecked = repo.reportAutoSync
             setOnCheckedChangeListener { _, checked -> repo.reportAutoSync = checked }
         }
         remote.addView(auto)
-        remote.addView(UiKit.button(this, p, if (syncInProgress) "جاري المزامنة..." else "مزامنة الآن", false).apply {
+        remote.addView(UiKit.button(this, p, if (syncInProgress) t("جاري المزامنة...", "Syncing...") else t("مزامنة الآن", "Sync now"), false).apply {
             isEnabled = !syncInProgress
             setOnClickListener { syncNow() }
         })
-        remote.addView(UiKit.subtitle(this, p, "المشاركة تعمل فورًا. أما مشاهدة صاحب المحل للبيانات تلقائيًا من هاتف آخر فتحتاج خادم ATTEND PRO مركزيًا؛ عند ربط الخادم ستنتقل أحداث الحضور إليه تلقائيًا حسب هذا الخيار."))
+        remote.addView(UiKit.subtitle(this, p, t("المشاركة تعمل فورًا. أما مشاهدة صاحب المحل للبيانات تلقائيًا من هاتف آخر فتحتاج خادم ATTEND PRO مركزيًا؛ عند ربط الخادم ستنتقل أحداث الحضور إليه تلقائيًا حسب هذا الخيار.", "Sharing works immediately. Automatic remote viewing from another phone requires the ATTEND PRO central server; attendance events sync automatically when enabled.")))
         root.addView(remote)
 
         val bottom = UiKit.card(this, p, 10)
-        bottom.addView(UiKit.button(this, p, "رجوع", false).apply { setOnClickListener { finish() } })
+        bottom.addView(UiKit.button(this, p, t("رجوع", "Back"), false).apply { setOnClickListener { finish() } })
         root.addView(bottom)
 
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
@@ -190,14 +198,14 @@ class ReportsActivity : Activity() {
     }
 
     private fun reportPreview(events: List<AttendanceEvent>): String {
-        if (events.isEmpty()) return "لا توجد عمليات في الفترة المحددة."
+        if (events.isEmpty()) return t("لا توجد عمليات في الفترة المحددة.", "No events in the selected period.")
         val fmt = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
         val rows = events.takeLast(80).reversed().joinToString("\n") { e ->
-            val action = if (e.action == AttendanceAction.CHECK_IN) "حضور" else "انصراف"
+            val action = if (e.action == AttendanceAction.CHECK_IN) t("حضور", "Check-in") else t("انصراف", "Check-out")
             "• ${e.employeeName.ifBlank { e.employeeId }} — $action — ${fmt.format(Date(e.timestampEpochMillis))} — ${methodAr(e.method.name)}${if (e.evidence.isNotBlank()) " — ${e.evidence}" else ""}"
         }
         val more = (events.size - 80).coerceAtLeast(0)
-        return if (more > 0) "$rows\n… و $more حركة أقدم" else rows
+        return if (more > 0) t("$rows\n… و $more حركة أقدم", "$rows\n… and $more older events") else rows
     }
 
     private fun methodAr(name: String): String = when (name) {
@@ -332,7 +340,7 @@ class ReportsActivity : Activity() {
             type = "text/csv"
             putExtra(Intent.EXTRA_SUBJECT, "ATTEND PRO - ${repo.storeName} - ${period.title}")
             putExtra(Intent.EXTRA_TEXT, csv)
-        }, "مشاركة CSV"))
+        }, t("مشاركة CSV", "Share CSV")))
     }
 
     private fun csvCell(value: String): String = "\"${value.replace("\"", "\"\"")}\""
