@@ -16,6 +16,7 @@ import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.AppIntegrity1982
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.DeviceIdentity
@@ -58,7 +59,7 @@ class SystemSettingsActivity : Activity() {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
+            layoutDirection = if (AppLanguage.isEnglish(this@SystemSettingsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@SystemSettingsActivity, 18), UiKit.dp(this@SystemSettingsActivity, 20), UiKit.dp(this@SystemSettingsActivity, 18), UiKit.dp(this@SystemSettingsActivity, 34))
             setBackgroundColor(p.bg)
             addView(UiKit.title(this@SystemSettingsActivity, p, title, 25f).apply { gravity = Gravity.CENTER })
@@ -1131,7 +1132,7 @@ class SystemSettingsActivity : Activity() {
     }
 
     private fun toastDialog(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("حسنًا", null).show()
+        AlertDialog.Builder(this).setTitle(AppLanguage.legacyUiText(this, title)).setMessage(AppLanguage.legacyUiText(this, message)).setPositiveButton(AppLanguage.text(this, "حسنًا", "OK"), null).show()
     }
 
     override fun onBackPressed() {
