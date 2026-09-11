@@ -6,6 +6,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.widget.EditText
 import android.widget.NumberPicker
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.ShiftTimeCodec
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -55,8 +56,8 @@ object FormPickerHelper {
         AlertDialog.Builder(activity)
             .setTitle(title)
             .setView(picker)
-            .setPositiveButton("اختيار") { _, _ -> target.setText(picker.value.toString()) }
-            .setNegativeButton("إلغاء", null)
+            .setPositiveButton(AppLanguage.text(activity, "اختيار", "Select")) { _, _ -> target.setText(picker.value.toString()) }
+            .setNegativeButton(AppLanguage.text(activity, "إلغاء", "Cancel"), null)
             .show()
     }
 }
