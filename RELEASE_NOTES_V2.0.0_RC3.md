@@ -8,7 +8,7 @@ RC3 is the update candidate intended to be discoverable by installed versionCode
 - Overnight shifts are labeled and remain stored internally as 24-hour values.
 - The main attendance/fingerprint action area is wider, taller and visually clearer while preserving the compact dashboard.
 - System-owner agent credential management now clearly exposes credential status and lets the owner generate a replacement sign-in code that is shown once and can be copied.
-- Subscriber authentication is documented accurately as device activation / protected access token rather than a recoverable plaintext password.
+- Subscriber authentication is documented accurately as device activation / protected access token rather than a recoverable plaintext password. The system owner can generate a one-time 30-minute recovery credential, view it in full and copy it when a known recovery code is needed.
 - Store and Employee user guides include a release-aware “What’s new” section using BuildConfig.VERSION_NAME, so guide content ships with every app update.
 
 ## Existing RC2 capabilities retained
