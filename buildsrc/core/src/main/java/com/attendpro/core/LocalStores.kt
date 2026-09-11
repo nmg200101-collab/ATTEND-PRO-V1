@@ -930,6 +930,9 @@ class StoreRepository(context: Context) {
     var lastSyncMessage: String
         get() = prefs.getString("lastSyncMessage", "") ?: ""
         set(value) = prefs.edit().putString("lastSyncMessage", value.take(300)).apply()
+    var remoteSettingsRevisionApplied: Long
+        get() = prefs.getLong("remoteSettingsRevisionApplied", 0L)
+        set(value) = prefs.edit().putLong("remoteSettingsRevisionApplied", value.coerceAtLeast(0L)).apply()
     fun isActivationActive(now: Long = System.currentTimeMillis()): Boolean = isCentralActivationActive(now)
     fun effectiveEmployeeLimit(now: Long = System.currentTimeMillis()): Int =
         if (isCentralActivationActive(now)) centralMaxEmployees else 0
