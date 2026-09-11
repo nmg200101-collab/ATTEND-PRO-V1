@@ -82,6 +82,7 @@ jobs:
           gradle -p buildsrc \
             :employee-app:assembleDirectDebug :store-app:assembleDirectDebug \
             :employee-app:assembleDirectRelease :store-app:assembleDirectRelease \
+            :employee-app:assemblePlayRelease :store-app:assemblePlayRelease \
             :employee-app:bundlePlayRelease :store-app:bundlePlayRelease --stacktrace
           test -s buildsrc/employee-app/build/outputs/mapping/directRelease/mapping.txt
           test -s buildsrc/store-app/build/outputs/mapping/directRelease/mapping.txt
@@ -143,11 +144,13 @@ jobs:
             grep -q 'jar verified' /tmp/$APP-aab-verify.txt
             AAB_CERT=$(keytool -printcert -jarfile "signed/$AAB_OUT" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr A-F a-f)
             test "$AAB_CERT" = "$EXPECTED_CERT"
+            PLAY_APK=$(find "buildsrc/$MOD/build/outputs/apk/play/release" -name '*-unsigned.apk' -print -quit)
+            test -s "$PLAY_APK"
             APKA="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
             test -x "$APKA"
-            test "$("$APKA" manifest application-id "signed/$AAB_OUT")" = "$PACKAGE"
-            test "$("$APKA" manifest version-code "signed/$AAB_OUT")" = "91"
-            if "$APKA" manifest permissions "signed/$AAB_OUT" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
+            test "$("$APKA" manifest application-id "$PLAY_APK")" = "$PACKAGE"
+            test "$("$APKA" manifest version-code "$PLAY_APK")" = "91"
+            if "$APKA" manifest permissions "$PLAY_APK" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
               echo "Play AAB must not request package installation permission" >&2
               exit 1
             fi
