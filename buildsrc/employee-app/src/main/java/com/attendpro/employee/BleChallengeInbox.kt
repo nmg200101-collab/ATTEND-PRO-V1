@@ -1,6 +1,7 @@
 package com.attendpro.employee
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.ScanCallback
@@ -19,6 +20,7 @@ object BleChallengeInbox {
     private var lastChallenge = ""
     private var lastSeenAt = 0L
 
+    @SuppressLint("MissingPermission")
     fun start(
         context: Context,
         employeeId: String,
@@ -58,7 +60,11 @@ object BleChallengeInbox {
 
     fun stop() {
         val cb = callback ?: return
-        runCatching { scanner?.stopScan(cb) }
+        try {
+            scanner?.stopScan(cb)
+        } catch (_: SecurityException) {
+            // Permission may be revoked between start and stop; clearing local state is still safe.
+        }
         callback = null
         scanner = null
     }
