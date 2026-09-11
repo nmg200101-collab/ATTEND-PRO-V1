@@ -474,27 +474,110 @@ class StoreSettingsActivity : Activity() {
 
     private fun manageReportReceivers() {
         val receivers = repo.authorizedReportReceivers()
-        val labels = mutableListOf("＋ إضافة هاتف استلام عبر QR")
-        labels.addAll(receivers.map { "${if (it.active) "●" else "○"} ${it.name} • ${it.receiverId}" })
-        AlertDialog.Builder(this).setTitle("هواتف استلام التقارير (${receivers.size})").setItems(labels.toTypedArray()) { _, which ->
-            if (which == 0) {
-                startActivityForResult(Intent(this, QrScannerActivity::class.java).putExtra(QrScannerActivity.EXTRA_PROMPT, "امسح QR هاتف استلام التقارير"), REQUEST_REPORT_RECEIVER_QR)
-            } else {
-                val r = receivers[which - 1]
-                AlertDialog.Builder(this).setTitle(r.name).setMessage("المعرف: ${r.receiverId}\nالحالة: ${if (r.active) "مسموح" else "موقوف"}\nالاستلام عن بُعد: ${if (repo.isCentralActivationActive()) "متاح عبر الخادم" else "يحتاج تفعيل مركزي"}")
-                    .setPositiveButton(if (r.active) "إيقاف الصلاحية" else "إعادة التفعيل") { _, _ ->
-                        val next = !r.active; repo.setReportReceiverActive(r.receiverId, next)
-                        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) Thread { CentralServerClient.setReceiverActive(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), r.receiverId, next) }.start()
-                        manageReportReceivers()
-                    }
-                    .setNeutralButton("حذف") { _, _ ->
-                        repo.setReportReceiverActive(r.receiverId, false)
-                        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) Thread { CentralServerClient.setReceiverActive(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), r.receiverId, false) }.start()
-                        repo.removeReportReceiver(r.receiverId); manageReportReceivers()
-                    }
-                    .setNegativeButton("إغلاق", null).show()
+        val labels = mutableListOf(t("＋ إضافة هاتف استلام عبر QR", "＋ Add receiver phone by QR"))
+        labels.addAll(receivers.map {
+            val permissions = buildList {
+                if (it.canReceiveReports) add(t("تقارير", "Reports"))
+                if (it.canMessageEmployees) add(t("رسائل", "Messages"))
+                if (it.canManageStore) add(t("إدارة", "Management"))
+            }.joinToString(" + ").ifBlank { t("بدون صلاحيات", "No permissions") }
+            "${if (it.active) "●" else "○"} ${it.name} • $permissions"
+        })
+        AlertDialog.Builder(this)
+            .setTitle(t("هواتف الاستلام والصلاحيات (${receivers.size})", "Receiver phones and permissions (${receivers.size})"))
+            .setItems(labels.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    startActivityForResult(
+                        Intent(this, QrScannerActivity::class.java)
+                            .putExtra(QrScannerActivity.EXTRA_PROMPT, t("امسح QR هاتف استلام التقارير", "Scan the receiver phone QR")),
+                        REQUEST_REPORT_RECEIVER_QR
+                    )
+                } else {
+                    showReceiverControl(receivers[which - 1])
+                }
             }
-        }.setNegativeButton("إغلاق", null).show()
+            .setNegativeButton(t("إغلاق", "Close"), null)
+            .show()
+    }
+
+    private fun showReceiverControl(receiver: com.attendpro.core.AuthorizedReportReceiver) {
+        val permissionsText = listOf(
+            t("استلام التقارير", "Receive reports") to receiver.canReceiveReports,
+            t("مراسلة الموظفين", "Message employees") to receiver.canMessageEmployees,
+            t("إعدادات مدير المحل", "Store Manager settings") to receiver.canManageStore
+        ).joinToString("\n") { (name, enabled) -> "${if (enabled) "✓" else "○"} $name" }
+        AlertDialog.Builder(this)
+            .setTitle(receiver.name)
+            .setMessage(
+                t("المعرف: ${receiver.receiverId}\nالحالة: ${if (receiver.active) "مسموح" else "موقوف"}\n\nالصلاحيات:\n$permissionsText",
+                  "ID: ${receiver.receiverId}\nStatus: ${if (receiver.active) "Enabled" else "Disabled"}\n\nPermissions:\n$permissionsText")
+            )
+            .setPositiveButton(t("تعديل الصلاحيات", "Edit permissions")) { _, _ -> editReceiverPermissions(receiver) }
+            .setNeutralButton(if (receiver.active) t("إيقاف الهاتف", "Disable phone") else t("إعادة التفعيل", "Enable phone")) { _, _ ->
+                val next = !receiver.active
+                repo.setReportReceiverActive(receiver.receiverId, next)
+                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                    Thread {
+                        CentralServerClient.setReceiverActive(
+                            repo.serverUrl, repo.centralAccessToken, repo.storeId,
+                            DeviceIdentity(this), receiver.receiverId, next
+                        )
+                    }.start()
+                }
+                manageReportReceivers()
+            }
+            .setNegativeButton(t("إغلاق", "Close"), null)
+            .show()
+    }
+
+    private fun editReceiverPermissions(receiver: com.attendpro.core.AuthorizedReportReceiver) {
+        val labels = arrayOf(
+            t("استلام التقارير", "Receive reports"),
+            t("مراسلة الموظفين عبر الخادم", "Message employees through server"),
+            t("تعديل إعدادات مدير المحل عن بُعد", "Manage Store settings remotely")
+        )
+        val checked = booleanArrayOf(
+            receiver.canReceiveReports,
+            receiver.canMessageEmployees,
+            receiver.canManageStore
+        )
+        AlertDialog.Builder(this)
+            .setTitle(t("صلاحيات ${receiver.name}", "${receiver.name} permissions"))
+            .setMultiChoiceItems(labels, checked) { _, which, value -> checked[which] = value }
+            .setPositiveButton(t("حفظ الصلاحيات", "Save permissions")) { _, _ ->
+                repo.setReportReceiverPermissions(receiver.receiverId, checked[0], checked[1], checked[2])
+                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                    Thread {
+                        val result = CentralServerClient.setReceiverPermissions(
+                            repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                            receiver.receiverId, checked[0], checked[1], checked[2]
+                        )
+                        runOnUiThread {
+                            if (result.isFailure) info(
+                                t("تم الحفظ محليًا فقط", "Saved locally only"),
+                                t("تعذر تحديث صلاحيات الخادم: ${result.exceptionOrNull()?.message ?: "خطأ"}",
+                                  "Unable to update server permissions: ${result.exceptionOrNull()?.message ?: "Error"}")
+                            )
+                        }
+                    }.start()
+                }
+                manageReportReceivers()
+            }
+            .setNeutralButton(t("حذف الهاتف", "Remove phone")) { _, _ ->
+                repo.setReportReceiverActive(receiver.receiverId, false)
+                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                    Thread {
+                        CentralServerClient.setReceiverActive(
+                            repo.serverUrl, repo.centralAccessToken, repo.storeId,
+                            DeviceIdentity(this), receiver.receiverId, false
+                        )
+                    }.start()
+                }
+                repo.removeReportReceiver(receiver.receiverId)
+                manageReportReceivers()
+            }
+            .setNegativeButton(t("إلغاء", "Cancel"), null)
+            .show()
     }
 
     @Deprecated("Deprecated in Java")
@@ -533,6 +616,12 @@ class StoreSettingsActivity : Activity() {
             info("جاري ربط الهاتف", "تمت الصلاحية محليًا، ويجري الآن تسجيل الهاتف في الخادم المركزي للاستلام عن بُعد.")
             Thread {
                 val r = CentralServerClient.registerReceiver(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), invite.receiverId, invite.name, invite.secret)
+                if (r.isSuccess) {
+                    CentralServerClient.setReceiverPermissions(
+                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                        invite.receiverId, true, false, false
+                    )
+                }
                 runOnUiThread {
                     if (r.isSuccess) showReceiverRemoteGrant(invite)
                     else info("صلاحية محلية فقط", "تم حفظ الهاتف محليًا، لكن تعذر تسجيله في الخادم: ${r.exceptionOrNull()?.message ?: "خطأ"}")
