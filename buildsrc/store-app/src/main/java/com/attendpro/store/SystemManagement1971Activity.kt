@@ -790,9 +790,12 @@ class SystemManagement1971Activity : Activity() {
 
         card(root, "بيانات الدخول", "حالة الاعتماد والحماية") {
             addView(TextView(this@SystemManagement1971Activity).apply {
-                text = "هذا المشترك لا يملك كلمة مرور نصية محفوظة في النظام. الدخول والتشغيل يعتمدان على تفعيل الجهاز وAccess Token محمي. عند نقل الجهاز استخدم الاستعادة أو إعادة التفعيل المعتمدة من مالك النظام."
+                text = "هذا المشترك لا يملك كلمة مرور نصية محفوظة يمكن كشفها. اعتماد التشغيل محفوظ بصورة آمنة. لمالك النظام يمكن إنشاء رمز استعادة مؤقت يظهر كاملًا مرة واحدة ويُستخدم لنقل التفعيل أو استعادته."
                 textSize = 13f; setTextColor(muted); gravity = Gravity.RIGHT
             })
+            if (owner) {
+                addView(action("🔑 إنشاء رمز استعادة وعرضه") { showSubscriberRecoveryCredential(store) })
+            }
         }
 
         card(root, "إدارة الحالة والاشتراك", "إجراءات يومية سريعة") {
@@ -820,6 +823,41 @@ class SystemManagement1971Activity : Activity() {
 
         AlertDialog.Builder(this).setTitle("إدارة المشترك").setView(ScrollView(this).apply { addView(root) })
             .setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun showSubscriberRecoveryCredential(store: JSONObject) {
+        if (mode != "OWNER") {
+            toast("هذه العملية متاحة لمالك النظام فقط")
+            return
+        }
+        val storeId = store.optString("storeId")
+        val storeName = store.optString("storeName").ifBlank { storeId }
+        if (storeId.isBlank()) {
+            toast("معرّف المشترك غير متاح")
+            return
+        }
+        request("POST", "/api/v1/admin/stores/recovery-grant", JSONObject().put("storeId", storeId)) { result ->
+            result.onSuccess { data ->
+                val code = data.optString("code")
+                val expiresAt = data.optLong("expiresAt", 0L)
+                val expiry = if (expiresAt > 0L) time(expiresAt) else "-"
+                AlertDialog.Builder(this)
+                    .setTitle("بيانات دخول / استعادة المشترك")
+                    .setMessage(
+                        "المشترك: $storeName\n\nرمز الاستعادة المؤقت:\n$code\n\nصالح حتى: $expiry\n\n" +
+                        "الرمز يظهر كاملًا الآن فقط، ولا يتم حفظه كنص مكشوف."
+                    )
+                    .setPositiveButton("نسخ الرمز") { _, _ ->
+                        if (code.isNotBlank()) {
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("ATTEND-PRO subscriber recovery", code))
+                            toast("تم نسخ رمز الاستعادة")
+                        }
+                    }
+                    .setNegativeButton("إغلاق", null)
+                    .show()
+            }.onFailure { toast("تعذر إنشاء رمز الاستعادة: ${it.message}") }
+        }
     }
 
     private fun storeAction(storeId: String, action: String, extra: JSONObject = JSONObject()) {
