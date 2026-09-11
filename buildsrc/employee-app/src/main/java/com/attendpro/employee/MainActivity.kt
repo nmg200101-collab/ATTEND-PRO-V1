@@ -43,6 +43,7 @@ import com.attendpro.core.EmployeeIdentityStore
 import com.attendpro.core.PairingProtocol
 import com.attendpro.core.QrScannerActivity
 import com.attendpro.core.SecretCodec
+import com.attendpro.core.ShiftTimeCodec
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.ServerDiagnostics
 import com.attendpro.core.UiKit
@@ -689,7 +690,9 @@ class MainActivity : Activity() {
             append(identity.displayName).append(" • ").append(identity.employeeId).append("\n")
             if(identity.jobTitle.isNotBlank()) append(identity.jobTitle).append(" • ")
             append(identity.trustedStoreName.ifBlank { "جهاز المحل" }).append(" / ").append(identity.branchId).append("\n")
-            append(String.format(Locale.getDefault(), "الدوام %02d:%02d - %02d:%02d", identity.shiftStartHour, identity.shiftStartMinute, identity.shiftEndHour, identity.shiftEndMinute))
+            append(t("الدوام ", "Shift "))
+            append(ShiftTimeCodec.formatRange(identity.shiftStartHour, identity.shiftStartMinute, identity.shiftEndHour, identity.shiftEndMinute))
+            if (ShiftTimeCodec.isOvernight(identity.shiftStartHour, identity.shiftStartMinute, identity.shiftEndHour, identity.shiftEndMinute)) append(t(" • ليلي", " • overnight"))
         }
     }
 
