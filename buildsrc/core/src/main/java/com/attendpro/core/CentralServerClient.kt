@@ -88,6 +88,31 @@ object CentralServerClient {
     data class AuditRecord(val id: Long, val action: String, val storeId: String, val details: String, val createdAt: Long)
     data class RemoteInboxItem(val transferId: String, val packageText: String)
     data class RemoteDashboard(val storeName: String, val branchId: String, val text: String)
+    data class ReceiverCapabilities(
+        val canReceiveReports: Boolean,
+        val canMessageEmployees: Boolean,
+        val canManageStore: Boolean,
+        val storeName: String,
+        val branchId: String
+    )
+    data class ReceiverEmployee(val employeeId: String, val employeeName: String, val branchId: String, val lastSeenAt: Long)
+    data class RemoteStoreSettings(
+        val shiftStartHour: Int = 8,
+        val shiftStartMinute: Int = 0,
+        val shiftEndHour: Int = 17,
+        val shiftEndMinute: Int = 0,
+        val graceMinutes: Int = 0,
+        val attendanceVoiceAnnouncementEnabled: Boolean = true,
+        val employeeVoicePromptsEnabled: Boolean = true,
+        val geoArrivalAlertsEnabled: Boolean = false,
+        val reportAutoSync: Boolean = true
+    )
+    data class RemoteStoreSettingsEnvelope(
+        val available: Boolean,
+        val settings: RemoteStoreSettings,
+        val revision: Long,
+        val appliedRevision: Long
+    )
     data class EmployeeLinkResult(
         val linked: Boolean,
         val linkedAt: Long,
@@ -643,6 +668,125 @@ object CentralServerClient {
         requireHttps(serverUrl)
         request(serverUrl, "/api/v1/report-receivers/status", "POST", JSONObject().apply { put("receiverId", receiverId); put("active", active) }, bearer = storeToken, deviceIdentity = identity, storeId = storeId)
         Unit
+    }
+
+    fun setReceiverPermissions(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, receiverId: String,
+        canReceiveReports: Boolean, canMessageEmployees: Boolean, canManageStore: Boolean
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        request(serverUrl, "/api/v1/report-receivers/permissions", "POST", JSONObject().apply {
+            put("receiverId", receiverId)
+            put("canReceiveReports", canReceiveReports)
+            put("canMessageEmployees", canMessageEmployees)
+            put("canManageStore", canManageStore)
+        }, bearer = storeToken, deviceIdentity = identity, storeId = storeId)
+        Unit
+    }
+
+    fun receiverCapabilities(serverUrl: String, receiverId: String, secret: String): Result<ReceiverCapabilities> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/capabilities", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret)
+        })
+        ReceiverCapabilities(
+            o.optBoolean("canReceiveReports", false),
+            o.optBoolean("canMessageEmployees", false),
+            o.optBoolean("canManageStore", false),
+            o.optString("storeName", "ATTEND PRO"),
+            o.optString("branchId", "MAIN")
+        )
+    }
+
+    fun receiverEmployees(serverUrl: String, receiverId: String, secret: String): Result<List<ReceiverEmployee>> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/employees", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret)
+        })
+        val a = o.optJSONArray("employees") ?: JSONArray()
+        (0 until a.length()).map { i ->
+            val x = a.getJSONObject(i)
+            ReceiverEmployee(x.optString("employeeId"), x.optString("employeeName"), x.optString("branchId", "MAIN"), x.optLong("lastSeenAt", 0L))
+        }
+    }
+
+    fun receiverSendEmployeeMessage(
+        serverUrl: String, receiverId: String, secret: String, employeeId: String,
+        title: String, message: String, priority: String = "NORMAL", voiceEnabled: Boolean = false
+    ): Result<String> = runCatching {
+        requireHttps(serverUrl)
+        request(serverUrl, "/api/v1/monitor/messages/send", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); put("employeeId", employeeId)
+            put("title", title); put("message", message); put("priority", priority); put("voiceEnabled", voiceEnabled)
+        }).optString("messageId")
+    }
+
+    fun receiverMessagesInbox(serverUrl: String, receiverId: String, secret: String): Result<List<Message1975>> = runCatching {
+        requireHttps(serverUrl)
+        parseMessages1975(request(serverUrl, "/api/v1/monitor/messages/inbox", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret)
+        }))
+    }
+
+    private fun parseRemoteStoreSettings(o: JSONObject): RemoteStoreSettings = RemoteStoreSettings(
+        shiftStartHour = o.optInt("shiftStartHour", 8),
+        shiftStartMinute = o.optInt("shiftStartMinute", 0),
+        shiftEndHour = o.optInt("shiftEndHour", 17),
+        shiftEndMinute = o.optInt("shiftEndMinute", 0),
+        graceMinutes = o.optInt("graceMinutes", 0),
+        attendanceVoiceAnnouncementEnabled = o.optBoolean("attendanceVoiceAnnouncementEnabled", true),
+        employeeVoicePromptsEnabled = o.optBoolean("employeeVoicePromptsEnabled", true),
+        geoArrivalAlertsEnabled = o.optBoolean("geoArrivalAlertsEnabled", false),
+        reportAutoSync = o.optBoolean("reportAutoSync", true)
+    )
+
+    private fun remoteStoreSettingsJson(v: RemoteStoreSettings) = JSONObject().apply {
+        put("shiftStartHour", v.shiftStartHour); put("shiftStartMinute", v.shiftStartMinute)
+        put("shiftEndHour", v.shiftEndHour); put("shiftEndMinute", v.shiftEndMinute)
+        put("graceMinutes", v.graceMinutes)
+        put("attendanceVoiceAnnouncementEnabled", v.attendanceVoiceAnnouncementEnabled)
+        put("employeeVoicePromptsEnabled", v.employeeVoicePromptsEnabled)
+        put("geoArrivalAlertsEnabled", v.geoArrivalAlertsEnabled)
+        put("reportAutoSync", v.reportAutoSync)
+    }
+
+    fun receiverStoreSettings(serverUrl: String, receiverId: String, secret: String): Result<RemoteStoreSettingsEnvelope> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/store-settings", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret)
+        })
+        val desired = o.optJSONObject("desired") ?: o.optJSONObject("current") ?: JSONObject()
+        RemoteStoreSettingsEnvelope(true, parseRemoteStoreSettings(desired), o.optLong("revision", 0L), o.optLong("appliedRevision", 0L))
+    }
+
+    fun receiverUpdateStoreSettings(
+        serverUrl: String, receiverId: String, secret: String, settings: RemoteStoreSettings
+    ): Result<Long> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/store-settings/update", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); put("settings", remoteStoreSettingsJson(settings))
+        })
+        o.optLong("revision", 0L)
+    }
+
+    fun storeRemoteSettingsSnapshot(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity,
+        settings: RemoteStoreSettings, appliedRevision: Long
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        request(serverUrl, "/api/v1/store/remote-settings/snapshot", "POST", JSONObject().apply {
+            put("settings", remoteStoreSettingsJson(settings)); put("appliedRevision", appliedRevision)
+        }, bearer = storeToken, deviceIdentity = identity, storeId = storeId)
+        Unit
+    }
+
+    fun pullRemoteStoreSettings(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity
+    ): Result<RemoteStoreSettingsEnvelope> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/store/remote-settings/pull", "POST", JSONObject(), bearer = storeToken, deviceIdentity = identity, storeId = storeId)
+        val desired = o.optJSONObject("desired") ?: JSONObject()
+        RemoteStoreSettingsEnvelope(o.optBoolean("available", false), parseRemoteStoreSettings(desired), o.optLong("revision", 0L), o.optLong("appliedRevision", 0L))
     }
 
     fun pushReport(serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, receiverId: String, transferId: String, packageText: String, confirmationHash: String): Result<Unit> = runCatching {
