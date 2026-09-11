@@ -1079,7 +1079,7 @@ class MainActivity : Activity() {
             graceMinutes = repo.graceMinutes,
             attendanceVoiceAnnouncementEnabled = repo.attendanceVoiceAnnouncementEnabled,
             employeeVoicePromptsEnabled = repo.employeeVoicePromptsEnabled,
-            geoArrivalAlertsEnabled = repo.geoArrivalAlertsEnabled,
+            geoArrivalAlertsEnabled = repo.employeeGeoArrivalAlertsEnabled,
             reportAutoSync = repo.reportAutoSync
         )
 
@@ -1109,7 +1109,7 @@ class MainActivity : Activity() {
                         repo.graceMinutes = settings.graceMinutes
                         repo.attendanceVoiceAnnouncementEnabled = settings.attendanceVoiceAnnouncementEnabled
                         repo.employeeVoicePromptsEnabled = settings.employeeVoicePromptsEnabled
-                        repo.geoArrivalAlertsEnabled = settings.geoArrivalAlertsEnabled
+                        repo.employeeGeoArrivalAlertsEnabled = settings.geoArrivalAlertsEnabled
                         repo.reportAutoSync = settings.reportAutoSync
                         repo.remoteSettingsRevisionApplied = envelope.revision
                         appliedRevision = envelope.revision
