@@ -248,5 +248,9 @@ jobs:
             buildsrc/core/build/reports/tests/
             buildsrc/foundation/build/reports/tests/
             buildsrc/foundation/build/reports/lint-results-debug.html
+            buildsrc/employee-app/build/reports/lint-results-*.html
+            buildsrc/store-app/build/reports/lint-results-*.html
+            buildsrc/employee-app/build/intermediates/lint_intermediate_text_report/
+            buildsrc/store-app/build/intermediates/lint_intermediate_text_report/
           if-no-files-found: warn
           retention-days: 30
