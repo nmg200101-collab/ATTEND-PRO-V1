@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ATTEND PRO - Employee</string>
+    <string name="language">Language</string>
+    <string name="user_guide">User guide</string>
+    <string name="guide_title">ATTEND PRO Employee Guide</string>
+    <string name="guide_search_hint">Search the guide…</string>
+    <string name="guide_no_results">No matching result.</string>
+    <string name="guide_pairing_title">Pair with the Store</string>
+    <string name="guide_pairing_body">Pairing is normally done once from Store Management. Scan the QR shown by the Store device or use direct Bluetooth when required. Keep Bluetooth, Location and the required permissions enabled until pairing success is confirmed.</string>
+    <string name="guide_qr_title">QR</string>
+    <string name="guide_qr_body">Scan the QR before it expires. If it expires, ask Store Management to generate a new code. Do not rely on an old screenshot.</string>
+    <string name="guide_ble_title">Bluetooth and BLE/GATT</string>
+    <string name="guide_ble_body">After pairing, the app uses an authenticated Bluetooth channel with Heartbeat and ACK. Being visible to the Store does not record attendance automatically; it only allows ATTEND PRO to know that the linked phone is nearby.</string>
+    <string name="guide_wifi_title">Wi‑Fi and Hotspot</string>
+    <string name="guide_wifi_body">The app can also communicate over the Store LAN or hotspot. Changing networks does not change the verification methods you are allowed to use.</string>
+    <string name="guide_attendance_title">Check-in and check-out</string>
+    <string name="guide_attendance_body">Choose check-in or check-out and complete the method assigned by Store Management, such as device biometrics, face, voice or password depending on policy.</string>
+    <string name="guide_presence_title">Presence proof</string>
+    <string name="guide_presence_body">When a presence-proof request arrives, complete the exact method requested in the notification. Phone proximity is not enough when the manager requests biometric or another specific verification.</string>
+    <string name="guide_location_title">Background location</string>
+    <string name="guide_location_body">When store geofencing is enabled, ATTEND PRO may use location while the app is closed or not in use to measure proximity and send proximity status to Store Management. Location alone never records attendance automatically.</string>
+    <string name="guide_messages_title">Messages and notifications</string>
+    <string name="guide_messages_body">Store and system messages appear in the message center. When the authenticated Bluetooth channel is available, local Store messages can also be delivered without Internet.</string>
+    <string name="guide_lock_title">App lock</string>
+    <string name="guide_lock_body">The app can be protected by a PIN and device biometrics where supported. Do not share your app-lock PIN.</string>
+    <string name="guide_update_title">Updates</string>
+    <string name="guide_update_body">The Google Play build updates only through Google Play. The Direct build never installs silently; the user must approve installation after package and signature validation.</string>
+    <string name="guide_troubleshoot_title">Common troubleshooting</string>
+    <string name="guide_troubleshoot_body">If pairing does not complete, verify Bluetooth, Location and Nearby Devices permissions, then scan again. If automatic presence stops, open the app and review permissions. Do not clear app data before contacting Store Management or taking the appropriate backup.</string>
+</resources>
