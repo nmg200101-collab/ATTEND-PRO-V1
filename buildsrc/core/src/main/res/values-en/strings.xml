@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_center_title">Privacy and data</string>
+    <string name="privacy_center_summary">This section explains how ATTEND PRO handles Store and Employee data and provides links to the privacy policy and data deletion request.</string>
+    <string name="privacy_location_title">Background location</string>
+    <string name="privacy_location_body">When Store geofencing is enabled, the Employee app may collect location data to enable phone-proximity detection and geofence alerts even when the app is closed or not in use. Proximity state, distance, accuracy and observation time may be sent to the Store Management server. Location alone never records check-in or check-out automatically.</string>
+    <string name="privacy_security_title">Security and backups</string>
+    <string name="privacy_security_body">ATTEND PRO verifies connections and app identity using its security controls. Server backups are encrypted by the app before upload.</string>
+    <string name="privacy_delete_title">Data deletion</string>
+    <string name="privacy_delete_body">A deletion request for Store or Employee data can be started from the deletion page. Final destructive deletion is not performed until ownership and authority are verified.</string>
+    <string name="privacy_open_policy">Open web privacy policy</string>
+    <string name="privacy_open_deletion">Request data deletion</string>
+    <string name="privacy_browser_error">No browser is available on this device.</string>
+</resources>
