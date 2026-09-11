@@ -18,8 +18,11 @@ import android.os.Looper
 import com.attendpro.core.AttendanceMethod
 import com.attendpro.core.AttendanceAction
 import com.attendpro.core.BleDirectProtocol
+import com.attendpro.core.BleLocalMessageProtocol1977
+import com.attendpro.core.BleLocalReplyChannel1977
 import com.attendpro.core.EmployeeIdentityStore
 import com.attendpro.core.SecretCodec
+import java.util.ArrayDeque
 
 /** Employee-side GATT endpoint. Presence is confirmed only after signed PING -> ACK -> ACK-confirm. */
 class BleDirectLinkServer(
@@ -34,6 +37,8 @@ class BleDirectLinkServer(
     @Volatile private var serviceReady = false
     private val authenticatedDevices = mutableMapOf<String, AuthState>()
     private val localMessageReceiver = EmployeeLocalMessageReceiver1977(context, identity)
+    private val localReplyFrames = ArrayDeque<ByteArray>()
+    init { EmployeeDirectReplyBridge1977.bind(this) }
     private val handler = Handler(Looper.getMainLooper())
     private val retryStart = Runnable { if (!running && identity.isConfigured && hasConnectPermission()) start() }
     private val staleTask = object : Runnable {
@@ -75,6 +80,11 @@ class BleDirectLinkServer(
             BluetoothGattCharacteristic.PERMISSION_WRITE or BluetoothGattCharacteristic.PERMISSION_READ
         )
         service.addCharacteristic(command)
+        service.addCharacteristic(BluetoothGattCharacteristic(
+            BleLocalReplyChannel1977.REPLY_UUID,
+            BluetoothGattCharacteristic.PROPERTY_READ,
+            BluetoothGattCharacteristic.PERMISSION_READ
+        ))
         if (!gatt.addService(service)) {
             gatt.close()
             handler.removeCallbacks(retryStart)
@@ -90,11 +100,35 @@ class BleDirectLinkServer(
     @SuppressLint("MissingPermission")
     fun stop() {
         running = false; serviceReady = false; handler.removeCallbacks(staleTask); handler.removeCallbacks(retryStart); authenticatedDevices.clear()
+        EmployeeDirectReplyBridge1977.unbind(this)
         runCatching { server?.close() }; server = null
     }
 
     fun isRunning(): Boolean = running
     fun isServiceReady(): Boolean = running && serviceReady
+
+    fun hasAuthenticatedStore(): Boolean {
+        val now = System.currentTimeMillis()
+        return running && serviceReady && authenticatedDevices.values.any {
+            it.confirmed && now - it.lastProtocolAt <= AUTH_SESSION_MILLIS
+        }
+    }
+
+    fun queueLocalReply(parentMessageId: String, message: String): Boolean {
+        if (!hasAuthenticatedStore()) return false
+        val secret = SecretCodec.decode(identity.pairingSecret) ?: return false
+        val body = message.trim().take(500)
+        if (body.isBlank()) return false
+        val title = if (parentMessageId.isBlank()) "رسالة من الموظف" else "رد من الموظف"
+        val encoded = runCatching {
+            BleLocalMessageProtocol1977.encodeMessage(secret, title, body, "NORMAL", false)
+        }.getOrNull() ?: return false
+        synchronized(localReplyFrames) {
+            if (localReplyFrames.size + encoded.frames.size > 720) return false
+            encoded.frames.forEach { localReplyFrames.addLast(it) }
+        }
+        return true
+    }
 
     @SuppressLint("MissingPermission")
     private fun authFor(device: BluetoothDevice?): AuthState? {
@@ -205,6 +239,18 @@ class BleDirectLinkServer(
         override fun onCharacteristicReadRequest(device: BluetoothDevice?, requestId: Int, offset: Int, characteristic: BluetoothGattCharacteristic?) {
             val secret = SecretCodec.decode(identity.pairingSecret) ?: ByteArray(0)
             val auth = authFor(device)
+            if (characteristic?.uuid == BleLocalReplyChannel1977.REPLY_UUID) {
+                if (offset != 0 || auth?.confirmed != true || secret.isEmpty()) {
+                    runCatching { server?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null) }
+                    return
+                }
+                val payload = synchronized(localReplyFrames) {
+                    if (localReplyFrames.isEmpty()) ByteArray(0) else localReplyFrames.removeFirst()
+                }
+                auth.lastProtocolAt = System.currentTimeMillis()
+                runCatching { server?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, payload) }
+                return
+            }
             val payload = if (characteristic?.uuid == BleDirectProtocol.COMMAND_UUID && secret.isNotEmpty() && auth != null) {
                 BleDirectProtocol.encodeAck(secret, auth.lastPingNonce)
             } else ByteArray(0)
