@@ -22,6 +22,20 @@ checks = {
     "Subscriber one-time recovery credential UI": ("buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt", "showSubscriberRecoveryCredential"),
     "Store versionCode 93": ("buildsrc/store-app/build.gradle.kts", "versionCode = 93"),
     "Employee versionCode 93": ("buildsrc/employee-app/build.gradle.kts", "versionCode = 93"),
+    "Central activation/server client": ("buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt", "object CentralServerClient"),
+    "Reports activity": ("buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt", "class ReportsActivity"),
+    "Report receiver phone": ("buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt", "class ReportReceiverActivity"),
+    "Store messages": ("buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt", "class StoreMessages1975Activity"),
+    "Employee messages": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessages1975Activity.kt", "class EmployeeMessages1975Activity"),
+    "Employee background presence service": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt", "class PresenceService"),
+    "BLE presence advertiser": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt", "class BlePresenceAdvertiser"),
+    "LAN presence broadcaster": ("buildsrc/employee-app/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt", "class NetworkPresenceBroadcaster"),
+    "Face verification engine": ("buildsrc/store-app/src/main/java/com/attendpro/store/FaceSignatureEngine.kt", "class FaceSignatureEngine"),
+    "Voice verification engine": ("buildsrc/store-app/src/main/java/com/attendpro/store/VoiceSignatureEngine.kt", "class VoiceSignatureEngine"),
+    "QR attendance protocol": ("buildsrc/core/src/main/java/com/attendpro/core/AttendanceQrProtocol.kt", "object AttendanceQrProtocol"),
+    "Fingerprint attendance action": ("buildsrc/store-app/src/main/java/com/attendpro/store/FingerprintActionView.kt", "class FingerprintActionView"),
+    "System management center": ("buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt", "class SystemManagement1971Activity"),
+    "Privacy/data center": ("buildsrc/core/src/main/java/com/attendpro/core/PrivacyDataActivity.kt", "class PrivacyDataActivity"),
 }
 
 failed = []
