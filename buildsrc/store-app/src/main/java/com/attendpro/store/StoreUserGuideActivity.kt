@@ -22,6 +22,16 @@ class StoreUserGuideActivity : Activity() {
 
     private val scenarios by lazy {
         listOf(
+            Scenario("release", "ما الجديد في هذا الإصدار", "What's new in this version",
+                "يتحدث هذا القسم مع كل إصدار للتطبيق.", "This section ships with and updates on every app release.",
+                listOf(
+                    Topic("version", "الإصدار الحالي", "Current version",
+                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nأبرز تحديثات هذا الإصدار: عرض الدوام بصيغة صباح/مساء في جميع المسارات، تكبير منطقة الحضور/الانصراف، تحسين إدارة بيانات دخول الوكلاء، الرد بدون إنترنت، صلاحيات هاتف الاستلام، وتحسين الإنجليزية والواجهة.",
+                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nHighlights: AM/PM shift display across the app, a larger attendance action area, improved agent credential management, offline replies, receiver-phone permissions, and improved English/UI coverage."),
+                    Topic("guide_policy", "كيف يتحدث الدليل؟", "How does the guide update?",
+                        "الدليل جزء من نفس إصدار التطبيق. عند تثبيت تحديث جديد، تصل معه أقسام الشرح الجديدة والتغييرات المرتبطة بالميزات الجديدة تلقائيًا؛ لذلك لا يحتاج تنزيل دليل منفصل.",
+                        "The guide is bundled with the app release. Installing a new app update automatically brings the matching feature instructions, so no separate guide download is required.")
+                )),
             Scenario("pair", "أريد إضافة موظف وربط هاتفه", "I want to add and pair an employee",
                 "من إنشاء الموظف حتى ظهور «تم الارتباط» الحقيقي.", "From creating the employee to confirmed pairing.",
                 listOf(
