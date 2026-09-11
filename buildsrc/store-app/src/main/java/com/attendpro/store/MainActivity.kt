@@ -732,7 +732,7 @@ class MainActivity : Activity() {
             setTextColor(if (selected) android.graphics.Color.WHITE else p.text)
             setPadding(UiKit.dp(this@MainActivity, 5), UiKit.dp(this@MainActivity, 10), UiKit.dp(this@MainActivity, 5), UiKit.dp(this@MainActivity, 10))
             background = GradientDrawable().apply { cornerRadius=UiKit.dp(this@MainActivity,14).toFloat(); setColor(if(selected) p.primary else p.surface2) }
-            layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply { marginStart=UiKit.dp(this@MainActivity,2); marginEnd=UiKit.dp(this@MainActivity,2) }
+            layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginStart=UiKit.dp(this@MainActivity,2); marginEnd=UiKit.dp(this@MainActivity,2) }
             setOnClickListener { action() }
         }
         row.addView(tab("الرئيسية", true) { })
@@ -921,7 +921,10 @@ class MainActivity : Activity() {
         liveRow.addView(connectPanel)
         root.addView(liveRow)
 
-        val attendanceCard = UiKit.card(this, p, 7).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        val attendanceCard = UiKit.card(this, p, 10).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            minimumHeight = UiKit.dp(this@MainActivity, 132)
+        }
         val attendanceRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutDirection = dir
@@ -929,8 +932,13 @@ class MainActivity : Activity() {
         }
         val fingerView = FingerprintActionView(this, p.primary).apply {
             contentDescription = getString(R.string.attendance_checkout)
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, if (classic) 92 else 82), UiKit.dp(this@MainActivity, if (classic) 98 else 88)).apply {
-                marginEnd = UiKit.dp(this@MainActivity, 8)
+            background = UiKit.round(p.surface2, 18, this@MainActivity, p.divider)
+            elevation = UiKit.dp(this@MainActivity, 1).toFloat()
+            layoutParams = LinearLayout.LayoutParams(
+                UiKit.dp(this@MainActivity, if (classic) 132 else 122),
+                UiKit.dp(this@MainActivity, if (classic) 122 else 112)
+            ).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 10)
             }
             setOnClickListener { showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method")) }
         }
@@ -939,11 +947,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             layoutDirection = dir
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 15f).apply {
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 17.5f).apply {
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
-                textSize = 10.5f
+                textSize = 11.5f
                 maxLines = 2
             })
             val actions = LinearLayout(this@MainActivity).apply {
@@ -951,13 +959,13 @@ class MainActivity : Activity() {
                 layoutDirection = dir
             }
             actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_in)).apply {
-                textSize = 11.5f
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply { marginEnd = 3 }
+                textSize = 13.2f
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginEnd = 3 }
                 setOnClickListener { showAttendanceMethods(t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"), AttendanceAction.CHECK_IN) }
             })
             actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_out), false).apply {
-                textSize = 11.5f
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply { marginStart = 3 }
+                textSize = 13.2f
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginStart = 3 }
                 setOnClickListener { showAttendanceMethods(t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"), AttendanceAction.CHECK_OUT) }
             })
             addView(actions)
