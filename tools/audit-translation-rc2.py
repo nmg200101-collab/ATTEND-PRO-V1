@@ -19,6 +19,10 @@ for root in ROOTS:
             continue
         text = path.read_text(encoding="utf-8")
         for lineno, line in enumerate(text.splitlines(), 1):
+            # Lines already routed through the bilingual helper are intentionally Arabic+English.
+            # Do not count the Arabic source argument as an untranslated hard-coded string.
+            if "t(" in line or "AppLanguage.text(" in line:
+                continue
             for m in STRING.finditer(line):
                 literal = m.group(0)
                 if AR.search(literal):
