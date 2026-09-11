@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ATTEND PRO - Store</string>
+    <string name="language">Language</string>
+    <string name="user_guide">User guide</string>
+    <string name="guide_title">ATTEND PRO Store Guide</string>
+    <string name="guide_search_hint">Search the guide…</string>
+    <string name="guide_no_results">No matching result.</string>
+    <string name="guide_pairing_title">Pair an employee phone</string>
+    <string name="guide_pairing_body">Open the employee from Store Management, then Pairing. Start with QR. If it fails, use direct Bluetooth. Bluetooth and Location must be enabled on both phones during pairing. “Pairing…” is not success; success is confirmed only after an authenticated ACK and the linked phone is saved.</string>
+    <string name="guide_qr_title">QR pairing</string>
+    <string name="guide_qr_body">Show the QR code on the Store device and scan it with the Employee app before it expires. Keep the screen open until pairing succeeds. If it expires, generate a new QR code instead of reusing an old image.</string>
+    <string name="guide_ble_title">Bluetooth and BLE/GATT</string>
+    <string name="guide_ble_body">Enable Bluetooth and Location and grant Nearby Devices permissions. After pairing, ATTEND PRO uses Heartbeat and ACK to verify a real connection. Merely seeing the phone in a scan is not a connection. If the link drops, automatic reconnect is attempted when the phone is discovered again.</string>
+    <string name="guide_wifi_title">Wi‑Fi and Hotspot</string>
+    <string name="guide_wifi_body">The Store and Employee phones can communicate on the same LAN or hotspot. This channel is independent of Bluetooth, and attendance still follows the verification method approved by Store Management.</string>
+    <string name="guide_attendance_title">Check-in and check-out</string>
+    <string name="guide_attendance_body">Choose check-in or check-out, then complete an allowed verification method. Phone or location discovery alone does not record attendance unless the store policy explicitly allows a verification flow that completes the action.</string>
+    <string name="guide_shift_title">Working hours</string>
+    <string name="guide_shift_body">Set start and end time using AM/PM. ATTEND PRO stores the time internally in 24-hour format and supports overnight shifts such as 10:00 PM to 6:00 AM. Start and end cannot be identical.</string>
+    <string name="guide_presence_title">Presence proof</string>
+    <string name="guide_presence_body">A manager can request proof of presence using the method assigned to the employee. The employee must complete that method; Bluetooth or GPS proximity alone does not replace the requested verification.</string>
+    <string name="guide_backup_title">Backup and restore</string>
+    <string name="guide_backup_body">Open Backup from Store Management. You can create an encrypted phone backup or upload an encrypted server backup. Keep the backup password safe; the backup cannot be opened without it. Review the preview before restoring.</string>
+    <string name="guide_lock_title">App and management lock</string>
+    <string name="guide_lock_body">Enable the app lock to protect data, and use the Store Management PIN to protect owner settings. Close the management session when finished so owner tools are not left visible to normal users.</string>
+    <string name="guide_update_title">Updates</string>
+    <string name="guide_update_body">The Google Play build updates only through Google Play. The Direct build checks over HTTPS and validates package name, official signature and SHA‑256 before presenting installation to the user. There is no silent installation.</string>
+    <string name="guide_troubleshoot_title">Common troubleshooting</string>
+    <string name="guide_troubleshoot_body">If pairing remains on “Pairing…”, verify Bluetooth, Location and permissions, then generate a new QR or rescan. If a phone is visible but not connected, wait for ACK or restart Bluetooth. If GPS fails, enable high accuracy. Do not clear app data before creating a backup.</string>
+    <string name="store_dashboard_title">Attendance dashboard</string>
+    <string name="system_ready">System ready</string>
+    <string name="present_employees">Employees present</string>
+    <string name="actual_attendance_now">Actual attendance now</string>
+    <string name="connected_devices">Connected devices</string>
+    <string name="connection_channels">Bluetooth • Wi‑Fi • Server • time</string>
+    <string name="attendance_checkout">Check-in and check-out</string>
+    <string name="attendance_instruction">Choose an action, then use a verification method approved by Store Management.</string>
+    <string name="check_in">Check in</string>
+    <string name="check_out">Check out</string>
+    <string name="owner_settings">Store Manager Settings</string>
+    <string name="owner_settings_subtitle">Employees • pairing • shifts • reports • settings • home shortcuts</string>
+    <string name="last_movement">Latest activity</string>
+    <string name="no_operation_today">No activity today</string>
+</resources>
