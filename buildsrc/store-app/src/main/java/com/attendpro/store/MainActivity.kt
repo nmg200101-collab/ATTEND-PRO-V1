@@ -679,21 +679,21 @@ class MainActivity : Activity() {
     }
 
     private fun storeTemplateTitle1978(value: String = storeHomeTemplate1978()): String = when (value) {
-        "SECTIONS" -> "الأقسام"
-        "CLASSIC" -> "الكلاسيكي"
-        else -> "الرئيسي"
+        "SECTIONS" -> t("الأقسام", "Sections")
+        "CLASSIC" -> t("الكلاسيكي", "Classic")
+        else -> t("الرئيسي", "Main")
     }
 
     private fun buildElegantUi() {
         when (storeHomeTemplate1978()) {
             "SECTIONS" -> buildStoreSectionsTemplate1978()
-            "CLASSIC" -> buildUi()
-            else -> buildStoreMainTemplate1978()
+            "CLASSIC" -> buildStoreMainTemplate1978(classic = true)
+            else -> buildStoreMainTemplate1978(classic = false)
         }
     }
 
     private fun homeTemplateChip1978(): TextView = TextView(this).apply {
-        text = "النموذج: ${storeTemplateTitle1978()} ▾"
+        text = t("النموذج: ${storeTemplateTitle1978()} ▾", "Layout: ${storeTemplateTitle1978()} ▾")
         textSize = 12.5f
         gravity = Gravity.CENTER
         setTextColor(android.graphics.Color.WHITE)
@@ -709,12 +709,12 @@ class MainActivity : Activity() {
     private fun showStoreHomeTemplatePicker1978() {
         val ids = arrayOf("MAIN", "SECTIONS", "CLASSIC")
         val labels = arrayOf(
-            "الرئيسي — لوحة الحضور اليومية المتوازنة",
-            "الأقسام — وصول سريع للخدمات على شكل أقسام",
-            "الكلاسيكي — عرض تفصيلي تقليدي"
+            t("الرئيسي — واجهة يومية مضغوطة", "Main — compact daily dashboard"),
+            t("الأقسام — وصول سريع للخدمات", "Sections — quick service access"),
+            t("الكلاسيكي — ترتيب تقليدي آمن وخفيف", "Classic — safe lightweight traditional layout")
         )
         val current = ids.indexOf(storeHomeTemplate1978()).coerceAtLeast(0)
-        AlertDialog.Builder(this).setTitle("نمط الشاشة الرئيسية")
+        AlertDialog.Builder(this).setTitle(t("نمط الشاشة الرئيسية", "Home screen layout"))
             .setSingleChoiceItems(labels, current) { dialog, which ->
                 setStoreHomeTemplate1978(ids[which]); dialog.dismiss(); buildElegantUi(); refreshDashboard()
             }.setNegativeButton("إلغاء", null).show()
@@ -792,200 +792,213 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply{isFillViewport=true;setBackgroundColor(p.bg);addView(root)})
     }
 
-    private fun buildStoreMainTemplate1978() {
+    private fun buildStoreMainTemplate1978(classic: Boolean = false) {
         window.statusBarColor = p.bg
+        val isEnglish = AppLanguage.isEnglish(this)
+        val dir = if (isEnglish) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
-            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-            setPadding(
-                UiKit.dp(this@MainActivity, 12),
-                UiKit.dp(this@MainActivity, 12),
-                UiKit.dp(this@MainActivity, 12),
-                UiKit.dp(this@MainActivity, 30)
-            )
+            layoutDirection = dir
+            setPadding(UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 12))
             setBackgroundColor(p.bg)
         }
 
-        fun compactPanel(title: String, subtitle: String, detail: TextView, action: () -> Unit): LinearLayout =
-            UiKit.card(this, p, 11).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                minimumHeight = UiKit.dp(this@MainActivity, 120)
-                addView(UiKit.title(this@MainActivity, p, title, 16.4f).apply {
-                    gravity = Gravity.CENTER
-                    maxLines = 1
-                })
-                addView(UiKit.subtitle(this@MainActivity, p, subtitle).apply {
-                    gravity = Gravity.CENTER
-                    textSize = 11.6f
-                    maxLines = 2
-                })
-                detail.gravity = Gravity.CENTER
-                detail.textSize = 12.5f
-                detail.maxLines = 4
-                detail.setPadding(0, UiKit.dp(this@MainActivity, 7), 0, 0)
-                addView(detail)
-                UiKit.makeInteractive(this, this@MainActivity, p)
-                setOnClickListener { action() }
-            }
-
-        val header = UiKit.heroCard(this, p, 11)
-        header.addView(TextView(this).apply {
+        val header = UiKit.heroCard(this, p, 8).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 92)
+        }
+        val headerTools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = dir
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        headerTools.addView(TextView(this).apply {
             text = "⋮"
-            textSize = 28f
+            textSize = 25f
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
             contentDescription = t("القائمة", "Menu")
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 48), UiKit.dp(this@MainActivity, 44)).apply { gravity = Gravity.END }
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 42), UiKit.dp(this@MainActivity, 38))
             setOnClickListener { showStoreMainMenu1976() }
         })
-        header.addView(homeTemplateChip1978().apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.START } })
-        header.addView(UiKit.title(this, p, "ATTEND PRO", 21f).apply {
-            gravity = Gravity.CENTER
-            setTextColor(android.graphics.Color.WHITE)
+        headerTools.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
+        headerTools.addView(homeTemplateChip1978().apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UiKit.dp(this@MainActivity, 36))
         })
-        storeSummary = UiKit.subtitle(this, p, storeSummaryText()).apply {
-            gravity = Gravity.CENTER
-            setTextColor(android.graphics.Color.WHITE)
-        }
-        header.addView(storeSummary)
-        header.addView(UiKit.subtitle(this, p, "${getString(R.string.store_dashboard_title)} • ${attendProVersionName()}").apply {
-            gravity = Gravity.CENTER
-            setTextColor(android.graphics.Color.argb(220, 255, 255, 255))
-        })
-        root.addView(header)
-        addStoreTabs1978(root)
+        header.addView(headerTools)
 
-        status = TextView(this).apply {
-            text = getString(R.string.system_ready)
-            textSize = 12.6f
-            setTextColor(p.muted)
-            gravity = Gravity.CENTER
-        }
-
-        linkedEmployeesSummaryView = UiKit.subtitle(this, p, "جاري تحميل الحضور…")
-        connectionSummaryView = UiKit.subtitle(this, p, "جاري فحص الاتصال…")
-        val top = LinearLayout(this).apply {
+        val brandRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            gravity = Gravity.TOP
-        }
-        val presentPanel = compactPanel(
-            getString(R.string.present_employees),
-            getString(R.string.actual_attendance_now),
-            linkedEmployeesSummaryView
-        ) { showLiveAttendanceNow() }
-        val connectedPanel = compactPanel(
-            getString(R.string.connected_devices),
-            getString(R.string.connection_channels),
-            connectionSummaryView
-        ) { showConnectionCenter() }
-        presentPanel.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginEnd = UiKit.dp(this@MainActivity, 4)
-        }
-        connectedPanel.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
-            marginStart = UiKit.dp(this@MainActivity, 4)
-        }
-        top.addView(presentPanel)
-        top.addView(connectedPanel)
-        root.addView(top)
-
-        val attendanceCard = UiKit.card(this, p, 13).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 17.5f).apply {
-                gravity = Gravity.CENTER
-            })
-            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
-                gravity = Gravity.CENTER
-                textSize = 11.8f
-            })
-            val fingerView = FingerprintActionView(this@MainActivity, p.primary).apply {
-                contentDescription = getString(R.string.attendance_checkout)
-                layoutParams = LinearLayout.LayoutParams(
-                    UiKit.dp(this@MainActivity, 132),
-                    UiKit.dp(this@MainActivity, 142)
-                ).apply { gravity = Gravity.CENTER_HORIZONTAL }
-                setOnClickListener { showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method")) }
-            }
-            addView(fingerView)
-
-            val attendanceActions = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutDirection = View.LAYOUT_DIRECTION_RTL
-                gravity = Gravity.CENTER
-            }
-            val checkIn = UiKit.button(this@MainActivity, p, getString(R.string.check_in)).apply {
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 52), 1f).apply {
-                    marginEnd = UiKit.dp(this@MainActivity, 4)
-                }
-                setOnClickListener {
-                    showAttendanceMethods(t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"), AttendanceAction.CHECK_IN)
-                }
-            }
-            val checkOut = UiKit.button(this@MainActivity, p, getString(R.string.check_out), false).apply {
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 52), 1f).apply {
-                    marginStart = UiKit.dp(this@MainActivity, 4)
-                }
-                setOnClickListener {
-                    showAttendanceMethods(t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"), AttendanceAction.CHECK_OUT)
-                }
-            }
-            attendanceActions.addView(checkIn)
-            attendanceActions.addView(checkOut)
-            addView(attendanceActions)
-        }
-        root.addView(attendanceCard)
-
-        val summary = UiKit.card(this, p, 8)
-        counts = TextView(this).apply {
-            textSize = 13.7f
-            setTextColor(p.text)
-            setTypeface(typeface, Typeface.BOLD)
+            layoutDirection = dir
             gravity = Gravity.CENTER
-            setLineSpacing(0f, 1.08f)
         }
-        summary.addView(counts)
-        root.addView(summary)
-
-        recentAttendanceSummaryView = UiKit.subtitle(this, p, getString(R.string.no_operation_today)).apply {
-            gravity = Gravity.CENTER
-            textSize = 12f
-            maxLines = 3
-        }
-
-        val ownerCard = UiKit.card(this, p, 11).apply {
-            gravity = Gravity.CENTER
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 16.5f).apply {
-                gravity = Gravity.CENTER
+        brandRow.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_attend_pro)
+            adjustViewBounds = true
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 42), UiKit.dp(this@MainActivity, 42)).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 8)
+            }
+        })
+        brandRow.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = if (isEnglish) Gravity.START else Gravity.END
+            addView(UiKit.title(this@MainActivity, p, "ATTEND PRO", 20f).apply {
+                setTextColor(android.graphics.Color.WHITE)
+                gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p,
-                getString(R.string.owner_settings_subtitle)).apply {
+                t("نظام حضور المحل • ${attendProVersionName()}", "Store attendance system • ${attendProVersionName()}")).apply {
+                setTextColor(android.graphics.Color.argb(225,255,255,255))
+                textSize = 11.2f
+                gravity = if (isEnglish) Gravity.START else Gravity.END
+            })
+        })
+        header.addView(brandRow)
+        storeSummary = UiKit.subtitle(this, p, storeSummaryText()).apply {
+            gravity = Gravity.CENTER
+            textSize = 10.8f
+            maxLines = 1
+            setTextColor(android.graphics.Color.argb(225,255,255,255))
+        }
+        header.addView(storeSummary)
+        root.addView(header)
+
+        val ownerCard = UiKit.card(this, p, 7).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 62)
+            gravity = Gravity.CENTER
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.5f).apply {
                 gravity = Gravity.CENTER
-                textSize = 11.8f
-                maxLines = 2
+                maxLines = 1
+            })
+            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.owner_settings_subtitle)).apply {
+                gravity = Gravity.CENTER
+                textSize = 10.5f
+                maxLines = 1
             })
             UiKit.makeInteractive(this, this@MainActivity, p)
             setOnClickListener { requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() } }
         }
-        val lastMovement = UiKit.card(this, p, 8).apply {
+        root.addView(ownerCard)
+
+        addStoreTabs1978(root)
+
+        status = TextView(this).apply {
+            text = getString(R.string.system_ready)
+            textSize = 11.2f
+            setTextColor(p.muted)
+            gravity = Gravity.CENTER
+        }
+
+        linkedEmployeesSummaryView = UiKit.subtitle(this, p, t("جاري تحميل الحضور…", "Loading attendance…"))
+        connectionSummaryView = UiKit.subtitle(this, p, t("جاري فحص الاتصال…", "Checking connections…"))
+        fun livePanel(title: String, detail: TextView, action: () -> Unit) = UiKit.card(this, p, 7).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, if (classic) 88 else 78)
+            addView(UiKit.title(this@MainActivity, p, title, 13.8f).apply {
+                gravity = Gravity.CENTER
+                maxLines = 1
+            })
+            detail.gravity = Gravity.CENTER
+            detail.textSize = 10.7f
+            detail.maxLines = if (classic) 3 else 2
+            addView(detail)
+            UiKit.makeInteractive(this, this@MainActivity, p)
+            setOnClickListener { action() }
+        }
+        val liveRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = dir
+            gravity = Gravity.TOP
+        }
+        val presencePanel = livePanel(getString(R.string.present_employees), linkedEmployeesSummaryView) { showLiveAttendanceNow() }
+        val connectPanel = livePanel(getString(R.string.connected_devices), connectionSummaryView) { showConnectionCenter() }
+        presencePanel.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = UiKit.dp(this@MainActivity, 3) }
+        connectPanel.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = UiKit.dp(this@MainActivity, 3) }
+        liveRow.addView(presencePanel)
+        liveRow.addView(connectPanel)
+        root.addView(liveRow)
+
+        val attendanceCard = UiKit.card(this, p, 7).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        val attendanceRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = dir
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val fingerView = FingerprintActionView(this, p.primary).apply {
+            contentDescription = getString(R.string.attendance_checkout)
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, if (classic) 92 else 82), UiKit.dp(this@MainActivity, if (classic) 98 else 88)).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 8)
+            }
+            setOnClickListener { showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method")) }
+        }
+        attendanceRow.addView(fingerView)
+        attendanceRow.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = dir
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 15f).apply {
+                gravity = if (isEnglish) Gravity.START else Gravity.END
+            })
+            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
+                textSize = 10.5f
+                maxLines = 2
+            })
+            val actions = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = dir
+            }
+            actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_in)).apply {
+                textSize = 11.5f
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply { marginEnd = 3 }
+                setOnClickListener { showAttendanceMethods(t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"), AttendanceAction.CHECK_IN) }
+            })
+            actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_out), false).apply {
+                textSize = 11.5f
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply { marginStart = 3 }
+                setOnClickListener { showAttendanceMethods(t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"), AttendanceAction.CHECK_OUT) }
+            })
+            addView(actions)
+        })
+        attendanceCard.addView(attendanceRow)
+        root.addView(attendanceCard)
+
+        counts = TextView(this).apply {
+            textSize = 11.8f
+            setTextColor(p.text)
+            setTypeface(typeface, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            maxLines = 3
+        }
+        recentAttendanceSummaryView = UiKit.subtitle(this, p, getString(R.string.no_operation_today)).apply {
+            gravity = Gravity.CENTER
+            textSize = 10.8f
+            maxLines = 3
+        }
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = dir
+            gravity = Gravity.TOP
+        }
+        val summaryCard = UiKit.card(this, p, 6).apply {
+            addView(UiKit.sectionLabel(this@MainActivity, p, t("اليوم", "Today")))
+            addView(counts)
+        }
+        val latestCard = UiKit.card(this, p, 6).apply {
             addView(UiKit.sectionLabel(this@MainActivity, p, getString(R.string.last_movement)))
             addView(recentAttendanceSummaryView)
             UiKit.makeInteractive(this, this@MainActivity, p)
             setOnClickListener { showConnectionAttendanceHistory() }
         }
-        root.addView(lastMovement)
+        summaryCard.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = 3 }
+        latestCard.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginStart = 3 }
+        bottomRow.addView(summaryCard)
+        bottomRow.addView(latestCard)
+        root.addView(bottomRow)
 
-        if (!repo.hasStoreAdminPin || repo.hasActiveStoreAdminSession()) {
-            root.addView(ownerCard)
-            addOwnerShortcutCard(root)
-        }
-
-        val footer = UiKit.card(this, p, 7)
-        footer.addView(status)
-        root.addView(footer)
+        root.addView(UiKit.card(this, p, 4).apply { addView(status) })
 
         setContentView(ScrollView(this).apply {
             isFillViewport = true
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             setBackgroundColor(p.bg)
             addView(root)
         })
