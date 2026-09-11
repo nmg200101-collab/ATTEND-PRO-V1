@@ -32,6 +32,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.AppIntegrity1982
 import com.attendpro.core.AppLockGateActivity
 import com.attendpro.core.AppLockSettingsDialog
@@ -78,6 +79,8 @@ class MainActivity : Activity() {
     private var pairingSessionDialog: AlertDialog? = null
     private var pairingSessionStatus: TextView? = null
     private val p by lazy { UiKit.palette(this) }
+
+    private fun t(arabic: String, english: String): String = AppLanguage.text(this, arabic, english)
 
     private fun enforceOfficialBuild1982(): Boolean {
         if (!BuildConfig.ENFORCE_OFFICIAL_SIGNATURE) return true
@@ -492,28 +495,25 @@ class MainActivity : Activity() {
 
     private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
-        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("رجوع", null).show()
+        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton(t("رجوع", "Back"), null).show()
     }
 
     private fun showEmployeeMainMenu1976() {
-        showLayeredMenu1977("القائمة", listOf(
-            "الرسائل والإشعارات" to { startActivity(Intent(this, EmployeeMessages1975Activity::class.java)) },
-            "نمط الشاشة الرئيسية" to { showEmployeeHomeTemplatePicker1978() },
-            "دليل مستخدم الموظف" to { showEmployeeUserGuide1976() },
-            "الإعدادات" to { showEmployeeSettings1976() }
+        showLayeredMenu1977(t("القائمة", "Menu"), listOf(
+            t("الرسائل والإشعارات", "Messages and notifications") to { startActivity(Intent(this, EmployeeMessages1975Activity::class.java)) },
+            t("نمط الشاشة الرئيسية", "Home layout") to { showEmployeeHomeTemplatePicker1978() },
+            getString(R.string.user_guide) to { showEmployeeUserGuide1976() },
+            getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
+            t("الإعدادات", "Settings") to { showEmployeeSettings1976() }
         ))
     }
 
     private fun showEmployeeUserGuide1976() {
-        AlertDialog.Builder(this)
-            .setTitle("دليل مستخدم الموظف")
-            .setMessage("1. الحضور والانصراف: اضغط الحركة المطلوبة ثم نفّذ طريقة التحقق التي سمحت بها إدارة المحل.\n\n2. حالة اتصالي: تعرض هل الهاتف مرتبط بالمحل والقناة المتاحة.\n\n3. الظهور التلقائي: اتركه مفعّلًا ليتمكن جهاز المحل من اكتشاف الهاتف عند القرب، لكنه لا يسجل حضورًا وحده.\n\n4. الإشعارات: تستقبل رسائل إدارة النظام وإدارة المحل؛ وإذا كان الهاتف متصلًا بالمحل عبر Bluetooth الموثق يمكن استقبال رسالة المحل مباشرة بدون إنترنت.\n\n5. قائمة ⋮: منها الإشعارات ودليل المستخدم والإعدادات وإدارة الاتصال.\n\nلا تغيّر إعدادات الربط بعد نجاحه إلا عند نقل الهاتف أو إعادة الربط بطلب من إدارة المحل.")
-            .setPositiveButton("حسنًا", null)
-            .show()
+        startActivity(Intent(this, EmployeeUserGuideActivity::class.java))
     }
 
     private fun showEmployeeSettings1976() {
