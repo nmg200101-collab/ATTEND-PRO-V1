@@ -65,7 +65,7 @@ class EmployeeMessages1975Activity : Activity() {
                     card.addView(UiKit.title(this,p,m.title.ifBlank { t("رسالة", "Message") },18f)); card.addView(UiKit.subtitle(this,p,"${m.body}\n${time(m.createdAt)} • ${priorityArabic(m.priority)}"))
                     if (m.readAt <= 0L) card.addView(UiKit.button(this,p,t("تعليم كمقروء", "Mark as read"),false).apply { setOnClickListener { markRead(m.messageId) } })
                     card.addView(UiKit.button(this,p,t("رد على الرسالة", "Reply"),false).apply { setOnClickListener { reply(m) } })
-                    if (local) card.addView(UiKit.subtitle(this,p,t("وصلت هذه الرسالة مباشرة بدون إنترنت. إرسال الرد يحتاج اتصالًا بالخادم حاليًا.", "This message arrived directly without Internet. Sending a reply currently requires a server connection.")))
+                    if (local) card.addView(UiKit.subtitle(this,p,t("وصلت هذه الرسالة مباشرة بدون إنترنت. يمكنك الرد مباشرة عبر Bluetooth الموثق ما دام جهاز المحل متصلًا.", "This message arrived directly without Internet. You can reply through authenticated Bluetooth while the Store device is connected.")))
                     root.addView(card)
                 }
                 root.addView(UiKit.card(this,p).apply {
@@ -89,9 +89,15 @@ class EmployeeMessages1975Activity : Activity() {
             d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val message=field.text.toString().trim(); if(message.isBlank()){field.error=t("اكتب الرسالة", "Write a message");return@setOnClickListener}
                 d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=false
+                if (EmployeeDirectReplyBridge1977.queueReply("", message)) {
+                    toast(t("✓ تم إرسال الرسالة مباشرة إلى جهاز المحل بدون إنترنت", "✓ Message sent directly to the Store without Internet"))
+                    d.dismiss()
+                    load()
+                    return@setOnClickListener
+                }
                 Thread {
                     val r=CentralServerClient.replyEmployeeMessage(identity.serverUrl,identity.trustedStoreId,identity.employeeId,identity.pairingSecret,identity.installationId,"",message)
-                    runOnUiThread { r.onSuccess { toast(t("تم إرسال الرسالة إلى إدارة المحل", "Message sent to Store Management"));d.dismiss();load() }.onFailure { toast(t("تعذر الإرسال الآن. تحقق من الإنترنت ثم أعد المحاولة", "Unable to send now. Check your Internet connection and try again."));d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=true } }
+                    runOnUiThread { r.onSuccess { toast(t("تم إرسال الرسالة إلى إدارة المحل", "Message sent to Store Management"));d.dismiss();load() }.onFailure { toast(t("تعذر الإرسال: لا توجد قناة Bluetooth موثقة ولا اتصال خادم متاح", "Unable to send: no authenticated Bluetooth channel or server connection is available"));d.getButton(AlertDialog.BUTTON_POSITIVE).isEnabled=true } }
                 }.start()
             }
         };d.show()
@@ -104,9 +110,16 @@ class EmployeeMessages1975Activity : Activity() {
         d.setOnShowListener {
             d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val message = field.text.toString().trim(); if (message.isBlank()) { field.error=t("اكتب الرد", "Write a reply"); return@setOnClickListener }
+                if (EmployeeDirectReplyBridge1977.queueReply(parent.messageId, message)) {
+                    toast(t("✓ تم إرسال الرد مباشرة إلى جهاز المحل بدون إنترنت", "✓ Reply sent directly to the Store without Internet"))
+                    d.dismiss()
+                    if (localStore.isLocal(parent.messageId)) localStore.markRead(parent.messageId)
+                    load()
+                    return@setOnClickListener
+                }
                 Thread {
                     val r=CentralServerClient.replyEmployeeMessage(identity.serverUrl,identity.trustedStoreId,identity.employeeId,identity.pairingSecret,identity.installationId,parent.messageId,message)
-                    runOnUiThread { r.onSuccess { toast(t("تم إرسال الرد", "Reply sent")); d.dismiss(); markRead(parent.messageId) }.onFailure { toast(t("تعذر إرسال الرد: ${it.message}", "Unable to send reply: ${it.message}")) } }
+                    runOnUiThread { r.onSuccess { toast(t("تم إرسال الرد", "Reply sent")); d.dismiss(); markRead(parent.messageId) }.onFailure { toast(t("تعذر إرسال الرد: لا توجد قناة Bluetooth موثقة ولا اتصال خادم متاح", "Unable to send reply: no authenticated Bluetooth channel or server connection is available")) } }
                 }.start()
             }
         }; d.show()
