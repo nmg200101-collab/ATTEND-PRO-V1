@@ -103,6 +103,7 @@ jobs:
             :store-app:lintDirectRelease :store-app:lintPlayRelease --stacktrace
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          python3 tools/audit-translation-rc2.py
 
       - name: Build direct APK and Play AAB variants
         run: |
@@ -211,6 +212,7 @@ jobs:
           cp DATA_SAFETY_MAPPING_RC2.md signed/
           cp PLAY_REVIEWER_INSTRUCTIONS_EN_RC2.md signed/
           cp LANGUAGE_MIGRATION_REPORT_RC2.md signed/
+          cp translation-audit-rc2.txt signed/
           cp CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256 signed/
           cp buildsrc/store-app/build/outputs/mapping/directRelease/mapping.txt signed/STORE-DIRECT-R8-MAPPING-OWNER-ONLY.txt
           cp buildsrc/employee-app/build/outputs/mapping/directRelease/mapping.txt signed/EMPLOYEE-DIRECT-R8-MAPPING-OWNER-ONLY.txt
