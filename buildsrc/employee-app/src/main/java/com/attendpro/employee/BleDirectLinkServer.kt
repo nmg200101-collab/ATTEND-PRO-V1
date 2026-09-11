@@ -59,6 +59,7 @@ class BleDirectLinkServer(
 
     @SuppressLint("MissingPermission")
     fun start() {
+        EmployeeDirectReplyBridge1977.bind(this)
         if (running || !identity.isConfigured || !hasConnectPermission()) return
         val manager = context.getSystemService(BluetoothManager::class.java) ?: return
         val adapter = manager.adapter
