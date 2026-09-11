@@ -18,6 +18,7 @@ import com.attendpro.core.AttendanceAction
 import com.attendpro.core.AttendanceMethod
 import com.attendpro.core.BleDirectProtocol
 import com.attendpro.core.BleLocalMessageProtocol1977
+import com.attendpro.core.BleLocalReplyChannel1977
 import java.security.SecureRandom
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
@@ -48,6 +49,7 @@ class BleDirectLinkClient(
         var config: BleDirectProtocol.Config,
         var gatt: BluetoothGatt? = null,
         var command: BluetoothGattCharacteristic? = null,
+        var reply: BluetoothGattCharacteristic? = null,
         var transportConnected: Boolean = false,
         var authenticated: Boolean = false,
         var lastAdvertisementAt: Long = 0L,
@@ -57,6 +59,8 @@ class BleDirectLinkClient(
         var lastHeartbeatSentAt: Long = 0L,
         var writing: Boolean = false,
         var readingAck: Boolean = false,
+        var readingReply: Boolean = false,
+        var lastReplyPollAt: Long = 0L,
         var activeOperation: Operation? = null,
         var awaitingPingNonce: Int? = null,
         var reconnectAttempt: Int = 0,
@@ -69,6 +73,7 @@ class BleDirectLinkClient(
     private val diagnosticStates = ConcurrentHashMap<String, String>()
     private val handler = Handler(Looper.getMainLooper())
     private val random = SecureRandom()
+    private val localReplyReceiver = StoreLocalReplyReceiver1977(context)
 
     private val heartbeatTask = object : Runnable {
         override fun run() {
@@ -80,8 +85,11 @@ class BleDirectLinkClient(
                     failAndReconnect(s, "مهلة اكتشاف خدمة ATTEND-PRO انتهت")
                 } else if (s.authenticated && now - s.lastAckAt > ACK_STALE_MILLIS) {
                     failAndReconnect(s, "انقطع ACK الحقيقي عبر Bluetooth")
-                } else if (s.transportConnected && s.command != null && !s.writing && !s.readingAck && now - s.lastHeartbeatSentAt >= HEARTBEAT_INTERVAL_MILLIS) {
+                } else if (s.transportConnected && s.command != null && !s.writing && !s.readingAck && !s.readingReply && now - s.lastHeartbeatSentAt >= HEARTBEAT_INTERVAL_MILLIS) {
                     enqueueHeartbeat(s)
+                } else if (s.authenticated && s.reply != null && !s.writing && !s.readingAck && !s.readingReply &&
+                    synchronized(s) { s.queue.isEmpty() } && now - s.lastReplyPollAt >= LOCAL_REPLY_POLL_MILLIS) {
+                    pollLocalReply(s)
                 } else if (s.gatt == null && !s.reconnectScheduled && now - s.lastAdvertisementAt <= ADVERTISEMENT_RECONNECT_WINDOW_MILLIS) {
                     scheduleReconnect(s, "استعادة Bluetooth تلقائيًا")
                 }
@@ -179,8 +187,10 @@ class BleDirectLinkClient(
         session.transportConnected = false
         session.authenticated = false
         session.command = null
+        session.reply = null
         session.writing = false
         session.readingAck = false
+        session.readingReply = false
         session.activeOperation = null
         session.awaitingPingNonce = null
         synchronized(session) { session.queue.clear() }
@@ -243,6 +253,7 @@ class BleDirectLinkClient(
                 failAndReconnect(session, "قناة ATTEND-PRO المباشرة غير متاحة")
                 return
             }
+            session.reply = service.getCharacteristic(BleLocalReplyChannel1977.REPLY_UUID)
             session.stateChangedAt = System.currentTimeMillis()
             diagnosticStates[session.employeeId] = "services ✓ • sending heartbeat"
             enqueueHeartbeat(session)
@@ -288,13 +299,45 @@ class BleDirectLinkClient(
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) {
             if (!callbackIsCurrent(session, generation, gatt)) return
             @Suppress("DEPRECATION")
-            processAck(session, characteristic, characteristic.value ?: ByteArray(0), status)
+            val value = characteristic.value ?: ByteArray(0)
+            if (characteristic.uuid == BleLocalReplyChannel1977.REPLY_UUID) processLocalReply(session, value, status)
+            else processAck(session, characteristic, value, status)
         }
 
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
             if (!callbackIsCurrent(session, generation, gatt)) return
-            processAck(session, characteristic, value, status)
+            if (characteristic.uuid == BleLocalReplyChannel1977.REPLY_UUID) processLocalReply(session, value, status)
+            else processAck(session, characteristic, value, status)
         }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun pollLocalReply(session: Session) {
+        val characteristic = session.reply ?: return
+        val gatt = session.gatt ?: return
+        if (!session.authenticated || session.writing || session.readingAck || session.readingReply) return
+        session.readingReply = true
+        session.lastReplyPollAt = System.currentTimeMillis()
+        val started = runCatching {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                gatt.readCharacteristic(characteristic)
+            } else {
+                @Suppress("DEPRECATION")
+                gatt.readCharacteristic(characteristic)
+            }
+        }.getOrDefault(false)
+        if (!started) session.readingReply = false
+    }
+
+    private fun processLocalReply(session: Session, value: ByteArray, status: Int) {
+        session.readingReply = false
+        if (status == BluetoothGatt.GATT_SUCCESS && value.isNotEmpty()) {
+            val result = localReplyReceiver.accept(session.employeeId, value, session.secret)
+            if (result.completed != null) {
+                onState(session.employeeId, true, "✓ وصل رد الموظف مباشرة عبر Bluetooth بدون إنترنت")
+            }
+        }
+        drain(session)
     }
 
     private fun processAck(session: Session, characteristic: BluetoothGattCharacteristic, value: ByteArray, status: Int) {
@@ -426,6 +469,7 @@ class BleDirectLinkClient(
         private const val CONNECT_TIMEOUT_MILLIS = 10_000L
         private const val SERVICE_TIMEOUT_MILLIS = 8_000L
         private const val ADVERTISEMENT_RECONNECT_WINDOW_MILLIS = 35_000L
+        private const val LOCAL_REPLY_POLL_MILLIS = 2_000L
         private val RECONNECT_BACKOFF_MILLIS = longArrayOf(1_500L, 3_000L, 5_000L, 8_000L, 12_000L)
     }
 }
