@@ -655,12 +655,16 @@ class SystemManagement1971Activity : Activity() {
     private fun agentActions(agent: JSONObject) {
         val id = agent.optString("agentId")
         val title = agent.optString("displayName")
-        val actions = arrayOf("تعديل مستوى الثقة والصلاحيات", "تدوير رمز الوكيل", if (agent.optBoolean("active", true)) "تعطيل الوكيل" else "إعادة تنشيط الوكيل")
+        val actions = arrayOf(
+            "تعديل مستوى الثقة والصلاحيات",
+            "بيانات الدخول — إنشاء وعرض رمز جديد",
+            if (agent.optBoolean("active", true)) "تعطيل الوكيل" else "إعادة تنشيط الوكيل"
+        )
         AlertDialog.Builder(this).setTitle(title).setItems(actions) { _, which ->
             when (which) {
                 0 -> editAgent(agent)
                 1 -> request("POST", "/api/v1/manage/agents/${enc(id)}/token", JSONObject()) { r ->
-                    r.onSuccess { showOneTimeToken(it, "رمز وكيل جديد") }.onFailure { toast("تعذر تدوير الرمز: ${it.message}") }
+                    r.onSuccess { showOneTimeToken(it, "بيانات دخول الوكيل — رمز جديد") }.onFailure { toast("تعذر إنشاء رمز دخول جديد: ${it.message}") }
                 }
                 2 -> {
                     val body = JSONObject().put("active", !agent.optBoolean("active", true))
@@ -781,6 +785,13 @@ class SystemManagement1971Activity : Activity() {
             addView(TextView(this@SystemManagement1971Activity).apply {
                 text = "الحالة: ${statusArabic(store.optString("status"))}\nالمعرّف: $id\nالوكيل: ${store.optString("agentName").ifBlank { "بدون وكيل" }}\nآخر اتصال: ${time(store.optLong("lastSeenAt"))}"
                 textSize = 14f; setTextColor(ink); gravity = Gravity.RIGHT
+            })
+        }
+
+        card(root, "بيانات الدخول", "حالة الاعتماد والحماية") {
+            addView(TextView(this@SystemManagement1971Activity).apply {
+                text = "هذا المشترك لا يملك كلمة مرور نصية محفوظة في النظام. الدخول والتشغيل يعتمدان على تفعيل الجهاز وAccess Token محمي. عند نقل الجهاز استخدم الاستعادة أو إعادة التفعيل المعتمدة من مالك النظام."
+                textSize = 13f; setTextColor(muted); gravity = Gravity.RIGHT
             })
         }
 
