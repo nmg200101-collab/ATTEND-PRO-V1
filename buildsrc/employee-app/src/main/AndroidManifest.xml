@@ -45,6 +45,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="false" />
+        <activity android:name="com.attendpro.core.PrivacyDataActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".EmployeeUserGuideActivity" android:screenOrientation="portrait" android:exported="false" />
         <provider
             android:name="androidx.core.content.FileProvider"
