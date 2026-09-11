@@ -46,7 +46,6 @@ import com.attendpro.core.AppIntegrity1982
 import com.attendpro.core.AttendanceAction
 import com.attendpro.core.AttendanceEvent
 import com.attendpro.core.AttendanceMethod
-import com.attendpro.core.AppUpdateManager
 import com.attendpro.core.BleProtocol
 import com.attendpro.core.BleDirectProtocol
 import com.attendpro.core.LanAckProtocol
@@ -216,7 +215,7 @@ class MainActivity : Activity() {
         ) { msg ->
             runOnUiThread { if (::status.isInitialized) status.text = msg }
         }
-        AppUpdateManager.check(this, repo.serverUrl.ifBlank { AppUpdateManager.DEFAULT_SERVER }, "store")
+        DistributionUpdateManager.check(this, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store")
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -243,6 +242,7 @@ class MainActivity : Activity() {
         // Legacy PIN/Pattern data is kept readable for backward compatibility, but these methods
         // remain disabled and are never offered by the current attendance UI.
         super.onResume()
+        DistributionUpdateManager.resume(this)
         nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask)
         nearbyRefreshHandler.post(nearbyRefreshTask)
         LateAlertScheduler.sync(this, repo)
@@ -465,7 +465,7 @@ class MainActivity : Activity() {
         status = TextView(this).apply { text = "بانتظار التفعيل المركزي"; textSize = 15f; setTextColor(p.muted); gravity = Gravity.CENTER; setPadding(0, UiKit.dp(this@MainActivity, 8), 0, 0) }
         activation.addView(status)
         activation.addView(UiKit.button(this, p, "فحص تحديث التطبيق", false).apply {
-            setOnClickListener { AppUpdateManager.check(this@MainActivity, repo.serverUrl.ifBlank { AppUpdateManager.DEFAULT_SERVER }, "store", manual = true) }
+            setOnClickListener { DistributionUpdateManager.check(this@MainActivity, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store", manual = true) }
         })
         root.addView(activation)
 
@@ -653,7 +653,7 @@ class MainActivity : Activity() {
         }
         serviceRow("الموظفون والإعدادات" to { startActivity(Intent(this, StoreSettingsActivity::class.java)) }, "التقارير" to { startActivity(Intent(this, ReportsActivity::class.java)) })
         serviceRow("استلام التقارير" to { startActivity(Intent(this, ReportReceiverActivity::class.java)) }, "بيانات التفعيل" to { showLicenseDetails() })
-        serviceRow("فحص التحديث" to { AppUpdateManager.check(this, repo.serverUrl.ifBlank { AppUpdateManager.DEFAULT_SERVER }, "store", manual = true) }, "إثبات وجود" to { showPresenceChallenge() })
+        serviceRow("فحص التحديث" to { DistributionUpdateManager.check(this, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store", manual = true) }, "إثبات وجود" to { showPresenceChallenge() })
         services.addView(status)
         root.addView(services)
 
@@ -1623,7 +1623,7 @@ class MainActivity : Activity() {
                 2 -> PhoneAttendanceSettingsDialog1928.show(this, repo)
                 3 -> showConnectionCenter()
                 4 -> startActivity(Intent(this, StoreSettingsActivity::class.java))
-                5 -> AppUpdateManager.check(this, repo.serverUrl.ifBlank { AppUpdateManager.DEFAULT_SERVER }, "store", manual = true)
+                5 -> DistributionUpdateManager.check(this, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store", manual = true)
             }
         }.setNegativeButton("إغلاق", null).show()
     }
