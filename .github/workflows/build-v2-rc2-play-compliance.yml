@@ -66,6 +66,17 @@ jobs:
           grep -q 'app-update:2.1.0' buildsrc/employee-app/build.gradle.kts
           grep -q 'android:name="isMonitoringTool"' buildsrc/employee-app/src/play/AndroidManifest.xml
           grep -q 'android:value="enterprise_management"' buildsrc/employee-app/src/play/AndroidManifest.xml
+          test -f PRIVACY_POLICY_RC2.md
+          test -f DATA_DELETION_POLICY_RC2.md
+          test -f DATA_SAFETY_MAPPING_RC2.md
+          test -f PLAY_REVIEWER_INSTRUCTIONS_EN_RC2.md
+          test -f LANGUAGE_MIGRATION_REPORT_RC2.md
+          test -f buildsrc/store-app/src/main/res/values-en/strings.xml
+          test -f buildsrc/employee-app/src/main/res/values-en/strings.xml
+          grep -q 'PrivacyDataActivity' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'PrivacyDataActivity' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'localeConfig' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'localeConfig' buildsrc/employee-app/src/main/AndroidManifest.xml
 
       - name: Verify V2 security and backup contracts
         run: |
@@ -195,6 +206,11 @@ jobs:
           cp BACKUP_RESTORE_SECURITY_V2.md signed/
           cp PLAY_COMPLIANCE_REPORT_RC2.md signed/
           cp FIELD_TEST_CHECKLIST_RC2.md signed/
+          cp PRIVACY_POLICY_RC2.md signed/
+          cp DATA_DELETION_POLICY_RC2.md signed/
+          cp DATA_SAFETY_MAPPING_RC2.md signed/
+          cp PLAY_REVIEWER_INSTRUCTIONS_EN_RC2.md signed/
+          cp LANGUAGE_MIGRATION_REPORT_RC2.md signed/
           cp CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256 signed/
           cp buildsrc/store-app/build/outputs/mapping/directRelease/mapping.txt signed/STORE-DIRECT-R8-MAPPING-OWNER-ONLY.txt
           cp buildsrc/employee-app/build/outputs/mapping/directRelease/mapping.txt signed/EMPLOYEE-DIRECT-R8-MAPPING-OWNER-ONLY.txt
