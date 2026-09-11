@@ -96,12 +96,15 @@ class BleDirectLinkServer(
     fun isRunning(): Boolean = running
     fun isServiceReady(): Boolean = running && serviceReady
 
+    @SuppressLint("MissingPermission")
     private fun authFor(device: BluetoothDevice?): AuthState? {
+        if (!hasConnectPermission()) return null
         val address = device?.address ?: return null
         val state = authenticatedDevices[address] ?: return null
         return state.takeIf { System.currentTimeMillis() - it.lastProtocolAt <= AUTH_SESSION_MILLIS }
     }
 
+    @SuppressLint("MissingPermission")
     private val callback = object : BluetoothGattServerCallback() {
         override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
             if (service?.uuid != BleDirectProtocol.SERVICE_UUID) return
