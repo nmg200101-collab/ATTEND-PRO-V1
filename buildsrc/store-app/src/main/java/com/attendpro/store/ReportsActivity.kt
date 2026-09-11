@@ -228,35 +228,35 @@ class ReportsActivity : Activity() {
     private fun chooseAuthorizedReceiver(events: List<AttendanceEvent>) {
         val receivers = repo.authorizedReportReceivers().filter { it.active }
         if (receivers.isEmpty()) {
-            info("لا توجد هواتف مصرح لها", "من إدارة المحل ← هواتف استلام التقارير، أضف هاتف المراقبة بمسح QR الخاص به أولًا.")
+            info(t("لا توجد هواتف مصرح لها", "No authorized phones"), t("من إدارة المحل ← هواتف استلام التقارير، أضف هاتف المراقبة بمسح QR الخاص به أولًا.", "From Store Management → report receiver phones, add the monitoring phone by scanning its QR first."))
             return
         }
-        AlertDialog.Builder(this).setTitle("اختر هاتف الاستلام").setItems(receivers.map { "${it.name} • ${it.receiverId}" }.toTypedArray()) { _, which ->
+        AlertDialog.Builder(this).setTitle(t("اختر هاتف الاستلام", "Choose receiver phone")).setItems(receivers.map { "${it.name} • ${it.receiverId}" }.toTypedArray()) { _, which ->
             shareToReceiver(events, receivers[which])
-        }.setNegativeButton("إلغاء", null).show()
+        }.setNegativeButton(t("إلغاء", "Cancel"), null).show()
     }
 
     private fun shareToReceiver(events: List<AttendanceEvent>, receiver: AuthorizedReportReceiver) {
-        val (transfer, code) = repo.createReportTransfer(period.title, receiver.receiverId, receiver.name)
+        val (transfer, code) = repo.createReportTransfer(periodLabel(), receiver.receiverId, receiver.name)
         val s = summary(events)
         val reportText = buildString {
-            append("المحل: ${repo.storeName}\nالفرع: ${repo.branchId}\nالفترة: ${period.title}\n")
-            append("الموظفون: ${s.uniqueEmployees} • الحضور: ${s.checkIns} • الانصراف: ${s.checkOuts} • حالات التأخير: ${s.lateEmployees} • الانصراف المبكر: ${s.earlyDepartures}\n\n")
+            append(t("المحل: ${repo.storeName}\nالفرع: ${repo.branchId}\nالفترة: ${period.title}\n", "Store: ${repo.storeName}\nBranch: ${repo.branchId}\nPeriod: ${periodLabel()}\n"))
+            append(t("الموظفون: ${s.uniqueEmployees} • الحضور: ${s.checkIns} • الانصراف: ${s.checkOuts} • حالات التأخير: ${s.lateEmployees} • الانصراف المبكر: ${s.earlyDepartures}\n\n", "Employees: ${s.uniqueEmployees} • check-ins: ${s.checkIns} • check-outs: ${s.checkOuts} • late: ${s.lateEmployees} • early departures: ${s.earlyDepartures}\n\n"))
             append(reportPreview(events))
         }
-        val pkg = ReportProtocol.ReportPackage(receiver.receiverId, transfer.transferId, repo.storeName, repo.branchId, period.title, System.currentTimeMillis(), reportText, code)
-        val encrypted = runCatching { ReportProtocol.encodePackage(pkg, receiver.secret) }.getOrElse { info("المشاركة", "تعذر تشفير التقرير: ${it.message ?: "خطأ"}"); return }
+        val pkg = ReportProtocol.ReportPackage(receiver.receiverId, transfer.transferId, repo.storeName, repo.branchId, periodLabel(), System.currentTimeMillis(), reportText, code)
+        val encrypted = runCatching { ReportProtocol.encodePackage(pkg, receiver.secret) }.getOrElse { info(t("المشاركة", "Sharing"), t("تعذر تشفير التقرير: ${it.message ?: "خطأ"}", "Unable to encrypt report: ${it.message ?: "Error"}")); return }
         repo.markReportReceiverUsed(receiver.receiverId)
 
         if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-            info("إرسال عبر الإنترنت", "جاري رفع التقرير المشفر إلى هاتف «${receiver.name}» عبر الخادم المركزي. سيبقى محتوى التقرير مشفرًا للحزمة الموجهة لهذا الهاتف.")
+            info(t("إرسال عبر الإنترنت", "Sending online"), t("جاري رفع التقرير المشفر إلى هاتف «${receiver.name}» عبر الخادم المركزي. سيبقى محتوى التقرير مشفرًا للحزمة الموجهة لهذا الهاتف.", "Uploading the encrypted report to ${receiver.name} through the central server. Report content remains encrypted for that phone."))
             Thread {
                 val r = CentralServerClient.pushReport(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), receiver.receiverId, transfer.transferId, encrypted, transfer.confirmationCodeHash)
                 runOnUiThread {
                     if (r.isSuccess) {
-                        info("تم الإرسال عن بُعد ✓", "وصل التقرير إلى صندوق الهاتف المصرح له عبر الإنترنت. عند فتحه في «استلام التقارير» سيتم تأكيد الاستلام مركزيًا.\nرقم النقل: ${transfer.transferId}")
+                        info(t("تم الإرسال عن بُعد ✓", "Remote delivery complete ✓"), t("وصل التقرير إلى صندوق الهاتف المصرح له عبر الإنترنت. عند فتحه في «استلام التقارير» سيتم تأكيد الاستلام مركزيًا.\nرقم النقل: ${transfer.transferId}", "The report reached the authorized phone inbox online. Receipt will be confirmed centrally when opened.\nTransfer ID: ${transfer.transferId}"))
                     } else {
-                        info("تعذر الإرسال عبر الخادم", "${r.exceptionOrNull()?.message ?: "خطأ"}\n\nسيتم فتح المشاركة اليدوية كخيار احتياطي.")
+                        info(t("تعذر الإرسال عبر الخادم", "Server delivery failed"), t("${r.exceptionOrNull()?.message ?: "خطأ"}\n\nسيتم فتح المشاركة اليدوية كخيار احتياطي.", "${r.exceptionOrNull()?.message ?: "Error"}\n\nManual sharing will open as a fallback."))
                         shareEncryptedFallback(receiver, encrypted)
                     }
                     buildUi()
@@ -265,29 +265,29 @@ class ReportsActivity : Activity() {
             return
         }
         shareEncryptedFallback(receiver, encrypted)
-        info("تم تجهيز النقل", "لا يوجد تفعيل مركزي نشط، لذلك تم استخدام المشاركة اليدوية المشفرة.\nرقم النقل: ${transfer.transferId}")
+        info(t("تم تجهيز النقل", "Transfer prepared"), t("لا يوجد تفعيل مركزي نشط، لذلك تم استخدام المشاركة اليدوية المشفرة.\nرقم النقل: ${transfer.transferId}", "Central activation is unavailable, so encrypted manual sharing was used.\nTransfer ID: ${transfer.transferId}"))
         buildUi()
     }
 
     private fun shareEncryptedFallback(receiver: AuthorizedReportReceiver, encrypted: String) {
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "ATTEND PRO - تقرير مشفر إلى ${receiver.name}")
+            putExtra(Intent.EXTRA_SUBJECT, t("ATTEND PRO - تقرير مشفر إلى ${receiver.name}", "ATTEND PRO - Encrypted report to ${receiver.name}"))
             putExtra(Intent.EXTRA_TEXT, encrypted)
-        }, "إرسال التقرير إلى ${receiver.name}"))
+        }, t("إرسال التقرير إلى ${receiver.name}", "Send report to ${receiver.name}")))
     }
 
     private fun confirmReceiptDialog() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
-        val id = UiKit.field(this, p, "رقم النقل مثل RPT-XXXXXXXX")
-        val code = UiKit.field(this, p, "رمز تأكيد الاستلام", true)
+        val id = UiKit.field(this, p, t("رقم النقل مثل RPT-XXXXXXXX", "Transfer ID such as RPT-XXXXXXXX"))
+        val code = UiKit.field(this, p, t("رمز تأكيد الاستلام", "Receipt confirmation code"), true)
         box.addView(id); box.addView(code)
-        val dialog = AlertDialog.Builder(this).setTitle("تأكيد استلام المشاركة").setView(box).setPositiveButton("تأكيد", null).setNegativeButton("إلغاء", null).create()
+        val dialog = AlertDialog.Builder(this).setTitle(t("تأكيد استلام المشاركة", "Confirm shared report receipt")).setView(box).setPositiveButton(t("تأكيد", "Confirm"), null).setNegativeButton(t("إلغاء", "Cancel"), null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 if (repo.confirmReportTransfer(id.text.toString(), code.text.toString())) {
-                    dialog.dismiss(); info("تم التأكيد", "تم تسجيل استلام التقرير بنجاح."); buildUi()
-                } else code.error = "رقم النقل أو رمز التأكيد غير صحيح"
+                    dialog.dismiss(); info(t("تم التأكيد", "Confirmed"), t("تم تسجيل استلام التقرير بنجاح.", "Report receipt was recorded successfully.")); buildUi()
+                } else code.error = t("رقم النقل أو رمز التأكيد غير صحيح", "Transfer ID or confirmation code is incorrect")
             }
         }
         dialog.show()
@@ -295,10 +295,10 @@ class ReportsActivity : Activity() {
 
     private fun transferStatusText(): String {
         val recent = repo.reportTransfers().take(5)
-        if (recent.isEmpty()) return "لا توجد مشاركات مؤكدة بعد."
+        if (recent.isEmpty()) return t("لا توجد مشاركات مؤكدة بعد.", "No verified shares yet.")
         val fmt = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
         return recent.joinToString("\n") { r ->
-            val state = if (r.status == "CONFIRMED") "✓ تم الاستلام" else "بانتظار التأكيد"
+            val state = if (r.status == "CONFIRMED") t("✓ تم الاستلام", "✓ Received") else t("بانتظار التأكيد", "Awaiting confirmation")
             "${r.transferId} • ${r.periodLabel}${if (r.receiverName.isNotBlank()) " • ${r.receiverName}" else ""} • $state • ${fmt.format(Date(r.createdAt))}"
         }
     }
@@ -307,21 +307,21 @@ class ReportsActivity : Activity() {
         val s = summary(events)
         val text = buildString {
             append("ATTEND PRO — ${repo.storeName}\n")
-            append("الفترة: ${period.title}\n")
-            append("الفرع: ${repo.branchId}\n")
-            append("الموظفون في التقرير: ${s.uniqueEmployees}\n")
-            append("الحضور: ${s.checkIns}\n")
-            append("الانصراف: ${s.checkOuts}\n")
-            append("حالات التأخير: ${s.lateEmployees}\n")
-            append("الانصراف المبكر: ${s.earlyDepartures}\n")
-            append("إجمالي الحركات: ${events.size}\n")
-            append("أُنشئ في: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}")
+            append(t("الفترة: ${period.title}\n", "Period: ${periodLabel()}\n"))
+            append(t("الفرع: ${repo.branchId}\n", "Branch: ${repo.branchId}\n"))
+            append(t("الموظفون في التقرير: ${s.uniqueEmployees}\n", "Employees in report: ${s.uniqueEmployees}\n"))
+            append(t("الحضور: ${s.checkIns}\n", "Check-ins: ${s.checkIns}\n"))
+            append(t("الانصراف: ${s.checkOuts}\n", "Check-outs: ${s.checkOuts}\n"))
+            append(t("حالات التأخير: ${s.lateEmployees}\n", "Late employees: ${s.lateEmployees}\n"))
+            append(t("الانصراف المبكر: ${s.earlyDepartures}\n", "Early departures: ${s.earlyDepartures}\n"))
+            append(t("إجمالي الحركات: ${events.size}\n", "Total events: ${events.size}\n"))
+            append(t("أُنشئ في: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}", "Generated at: ${SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())}"))
         }
         startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_SUBJECT, "ATTEND PRO - تقرير ${period.title}")
+            putExtra(Intent.EXTRA_SUBJECT, "ATTEND PRO - ${periodLabel()}")
             putExtra(Intent.EXTRA_TEXT, text)
-        }, "مشاركة التقرير"))
+        }, t("مشاركة التقرير", "Share report")))
     }
 
     private fun shareCsv(events: List<AttendanceEvent>) {
@@ -346,21 +346,21 @@ class ReportsActivity : Activity() {
     private fun csvCell(value: String): String = "\"${value.replace("\"", "\"\"")}\""
 
     private fun remoteStatusText(): String {
-        val last = if (repo.lastSyncAt > 0L) SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(repo.lastSyncAt)) else "لم تتم بعد"
-        val server = if (repo.serverUrl.isBlank()) "غير مربوط" else "HTTPS مضبوط"
-        val license = if (repo.isCentralActivationActive()) "تفعيل مركزي نشط" else "التفعيل المركزي غير صالح"
+        val last = if (repo.lastSyncAt > 0L) SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(repo.lastSyncAt)) else t("لم تتم بعد", "Not yet")
+        val server = if (repo.serverUrl.isBlank()) t("غير مربوط", "Not linked") else t("HTTPS مضبوط", "HTTPS configured")
+        val license = if (repo.isCentralActivationActive()) t("تفعيل مركزي نشط", "Central activation active") else t("التفعيل المركزي غير صالح", "Central activation invalid")
         val receivers = repo.authorizedReportReceivers().count { it.active }
-        return "الخادم: $server • $license • هواتف المراقبة: $receivers\nعمليات تنتظر المزامنة: ${repo.pendingEvents().size} • آخر مزامنة: $last${if (repo.lastSyncMessage.isNotBlank()) "\n${repo.lastSyncMessage}" else ""}"
+        return t("الخادم: $server • $license • هواتف المراقبة: $receivers\nعمليات تنتظر المزامنة: ${repo.pendingEvents().size} • آخر مزامنة: $last${if (repo.lastSyncMessage.isNotBlank()) "\n${repo.lastSyncMessage}" else ""}", "Server: $server • $license • monitoring phones: $receivers\nPending sync events: ${repo.pendingEvents().size} • last sync: $last${if (repo.lastSyncMessage.isNotBlank()) "\n${repo.lastSyncMessage}" else ""}")
     }
 
     private fun syncNow() {
         if (syncInProgress) return
         if (repo.serverUrl.isBlank()) {
-            info("المزامنة", "لم يتم ربط خادم ATTEND PRO المركزي بعد. يمكنك استخدام مشاركة التقرير الآن، والمراقبة التلقائية ستعمل بعد ربط الخادم.")
+            info(t("المزامنة", "Sync"), t("لم يتم ربط خادم ATTEND PRO المركزي بعد. يمكنك استخدام مشاركة التقرير الآن، والمراقبة التلقائية ستعمل بعد ربط الخادم.", "The ATTEND PRO central server is not linked yet. Report sharing works now; automatic monitoring will work after server linking."))
             return
         }
         if (!repo.isActivationActive()) {
-            info("المزامنة", "فعّل جهاز المحل أولًا قبل المزامنة المركزية.")
+            info(t("المزامنة", "Sync"), t("فعّل جهاز المحل أولًا قبل المزامنة المركزية.", "Activate the Store device before central synchronization."))
             return
         }
         val pending = repo.pendingEvents()
@@ -376,11 +376,11 @@ class ReportsActivity : Activity() {
                 if (result.isSuccess) {
                     repo.markSynced(result.getOrThrow())
                     repo.lastSyncAt = System.currentTimeMillis()
-                    repo.lastSyncMessage = "تمت المزامنة بنجاح"
-                    info("تمت المزامنة", if (result.getOrThrow().isEmpty()) "تم فحص الخادم ولا توجد حركات جديدة." else "تم إرسال ${result.getOrThrow().size} حركة إلى الخادم.")
+                    repo.lastSyncMessage = t("تمت المزامنة بنجاح", "Sync completed successfully")
+                    info(t("تمت المزامنة", "Sync complete"), if (result.getOrThrow().isEmpty()) t("تم فحص الخادم ولا توجد حركات جديدة.", "Server checked; there are no new events.") else t("تم إرسال ${result.getOrThrow().size} حركة إلى الخادم.", "${result.getOrThrow().size} events were sent to the server."))
                 } else {
-                    repo.lastSyncMessage = "فشلت المزامنة: ${result.exceptionOrNull()?.message ?: "خطأ"}"
-                    info("تعذر المزامنة", repo.lastSyncMessage)
+                    repo.lastSyncMessage = t("فشلت المزامنة: ${result.exceptionOrNull()?.message ?: "خطأ"}", "Sync failed: ${result.exceptionOrNull()?.message ?: "Error"}")
+                    info(t("تعذر المزامنة", "Unable to sync"), repo.lastSyncMessage)
                 }
                 buildUi()
             }
@@ -407,6 +407,6 @@ class ReportsActivity : Activity() {
         shiftWindow1980(time, employee).end
 
     private fun info(title: String, message: String) {
-        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("حسنًا", null).show()
+        AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton(t("حسنًا", "OK"), null).show()
     }
 }
