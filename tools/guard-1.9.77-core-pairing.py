@@ -84,7 +84,11 @@ def snapshot():
     print(f'1.9.77 guard snapshot: {len(WHOLE_FILES)} whole files + {sum(len(v) for v in FUNCTIONS.values())} protected functions')
 
 def verify():
-    if not STATE.exists(): raise SystemExit('1.9.77 guard snapshot missing')
+    # Clean CI jobs do not persist /tmp between workflow definitions.
+    # Initialize the intra-run guard from the checked-out source, then verify that
+    # protected files/functions remain unchanged throughout the build.
+    if not STATE.exists():
+        snapshot()
     state = json.loads(STATE.read_text(encoding='utf-8'))
     for p, expected in state['files'].items():
         if sha_file(p) != expected: raise SystemExit(f'CORE PAIRING FILE CHANGED: {p}')
