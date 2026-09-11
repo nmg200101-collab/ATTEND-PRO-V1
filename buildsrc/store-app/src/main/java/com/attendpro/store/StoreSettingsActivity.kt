@@ -24,6 +24,7 @@ import android.widget.CheckBox
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import com.attendpro.core.AppLanguage
 import com.attendpro.core.NetworkTools
 import com.attendpro.core.AppLockGateActivity
 import com.attendpro.core.AppLockSettingsDialog
@@ -47,6 +48,8 @@ import java.util.Locale
 class StoreSettingsActivity : Activity() {
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
+
+    private fun t(arabic: String, english: String): String = AppLanguage.text(this, arabic, english)
     private var authenticated = false
     private var sessionToken = ""
     private var advancedMode1977 = false
@@ -197,27 +200,24 @@ class StoreSettingsActivity : Activity() {
 
     private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
-        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton("رجوع", null).show()
+        AlertDialog.Builder(this).setTitle(title).setView(box).setNegativeButton(t("رجوع", "Back"), null).show()
     }
 
     private fun showStoreTopMenu1976() {
-        showLayeredMenu1977("القائمة", listOf(
-            "الإشعارات" to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
-            "دليل مستخدم إدارة المحل" to { showStoreUserGuide1976() },
-            "الإعدادات المتقدمة" to { showAdvancedDashboard1975() }
+        showLayeredMenu1977(t("القائمة", "Menu"), listOf(
+            t("الإشعارات", "Notifications") to { startActivity(Intent(this, StoreMessages1975Activity::class.java)) },
+            getString(R.string.user_guide) to { showStoreUserGuide1976() },
+            getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
+            t("الإعدادات المتقدمة", "Advanced settings") to { showAdvancedDashboard1975() }
         ))
     }
 
     private fun showStoreUserGuide1976() {
-        AlertDialog.Builder(this)
-            .setTitle("دليل مستخدم إدارة المحل")
-            .setMessage("1. الموظفون: أضف الموظف بالبيانات الأساسية، ثم جهّز الوجه أو الهاتف أو أي طريقة تحقق تحتاجها.\n\n2. الحضور والتشغيل: عدّل الدوام والموقع وطرق الحضور من قسم واحد.\n\n3. الصوت والرسائل: تحكم في نطق جهاز المحل وتنبيه هاتف الموظف واستقبل الرسائل.\n\n4. التقارير والحماية: افتح التقارير وحماية الإدارة وفحص الجاهزية.\n\n5. قائمة ⋮ أعلى الشاشة: الإشعارات، دليل المستخدم، والإعدادات المتقدمة.\n\nملاحظة: إعدادات Bluetooth وQR والاقتران تعمل كما هي ولا تحتاج تعديلًا أثناء الاستخدام العادي.")
-            .setPositiveButton("حسنًا", null)
-            .show()
+        startActivity(Intent(this, StoreUserGuideActivity::class.java))
     }
 
     private fun showStoreOperations1976() {
