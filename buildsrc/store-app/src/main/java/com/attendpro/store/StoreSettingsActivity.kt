@@ -200,7 +200,7 @@ class StoreSettingsActivity : Activity() {
 
     private fun showLayeredMenu1977(title: String, items: List<Pair<String, () -> Unit>>) {
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@StoreSettingsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
         }
         items.forEach { (label, action) -> box.addView(UiKit.button(this, p, label, false).apply { setOnClickListener { action() } }) }
@@ -419,40 +419,40 @@ class StoreSettingsActivity : Activity() {
 
     private fun shiftSettings() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
-        val start = UiKit.field(this, p, "بداية الدوام").apply {
+        val start = UiKit.field(this, p, t("بداية الدوام", "Shift start")).apply {
             isFocusable = false
             isClickable = true
             FormPickerHelper.setTime(this, repo.shiftHour, repo.shiftMinute)
             setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftHour, repo.shiftMinute) }
         }
-        val end = UiKit.field(this, p, "نهاية الدوام").apply {
+        val end = UiKit.field(this, p, t("نهاية الدوام", "Shift end")).apply {
             isFocusable = false
             isClickable = true
             FormPickerHelper.setTime(this, repo.shiftEndHour, repo.shiftEndMinute)
             setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftEndHour, repo.shiftEndMinute) }
         }
-        val grace = UiKit.field(this, p, "دقائق السماح").apply {
+        val grace = UiKit.field(this, p, t("دقائق السماح", "Grace minutes")).apply {
             setText(repo.graceMinutes.toString())
             isFocusable = false
             isClickable = true
-            setOnClickListener { FormPickerHelper.pickNumber(this@StoreSettingsActivity, this, 0, 120, "دقائق السماح") }
+            setOnClickListener { FormPickerHelper.pickNumber(this@StoreSettingsActivity, this, 0, 120, t("دقائق السماح", "Grace minutes")) }
         }
         box.addView(UiKit.subtitle(this, p,
-            "اختر الساعة والدقائق وصباح/مساء. يُحفظ الوقت داخليًا بنظام 24 ساعة. يمكن للدوام أن يعبر منتصف الليل، مثل 10:00 م إلى 6:00 ص."))
+            t("اختر الساعة والدقائق وصباح/مساء. يُحفظ الوقت داخليًا بنظام 24 ساعة. يمكن للدوام أن يعبر منتصف الليل، مثل 10:00 م إلى 6:00 ص.", "Choose hour, minute and AM/PM. Time is stored internally in 24-hour format. Overnight shifts are supported, such as 10:00 PM to 6:00 AM.")))
         listOf(start, end, grace).forEach { box.addView(it) }
-        val dialog = AlertDialog.Builder(this).setTitle("الدوام والسماح").setView(box)
-            .setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
+        val dialog = AlertDialog.Builder(this).setTitle(t("الدوام والسماح", "Shift and grace period")).setView(box)
+            .setPositiveButton(t("حفظ", "Save"), null).setNegativeButton(t("إلغاء", "Cancel"), null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val aTime = FormPickerHelper.selectedTime(start, repo.shiftHour, repo.shiftMinute)
                 val bTime = FormPickerHelper.selectedTime(end, repo.shiftEndHour, repo.shiftEndMinute)
                 val g = grace.text.toString().toIntOrNull()
                 if (ShiftTimeCodec.same(aTime, bTime)) {
-                    end.error = "وقت نهاية الدوام يجب أن يختلف عن وقت البداية"
+                    end.error = t("وقت نهاية الدوام يجب أن يختلف عن وقت البداية", "Shift end must differ from shift start")
                     return@setOnClickListener
                 }
                 if (g == null || g !in 0..120) {
-                    grace.error = "اختر من 0 إلى 120 دقيقة"
+                    grace.error = t("اختر من 0 إلى 120 دقيقة", "Choose from 0 to 120 minutes")
                     return@setOnClickListener
                 }
                 repo.shiftHour = aTime.hour24
@@ -462,9 +462,9 @@ class StoreSettingsActivity : Activity() {
                 repo.graceMinutes = g
                 val overnight = (bTime.hour24 * 60 + bTime.minute) < (aTime.hour24 * 60 + aTime.minute)
                 dialog.dismiss()
-                val suffix = if (overnight) " (دوام ليلي يعبر منتصف الليل)" else ""
-                info("تم", "تم حفظ الدوام " + ShiftTimeCodec.format(aTime.hour24, aTime.minute) +
-                    " إلى " + ShiftTimeCodec.format(bTime.hour24, bTime.minute) + suffix + ".")
+                val suffix = if (overnight) t(" (دوام ليلي يعبر منتصف الليل)", " (overnight shift)") else ""
+                info(t("تم", "Saved"), t("تم حفظ الدوام ", "Shift saved: ") + ShiftTimeCodec.format(aTime.hour24, aTime.minute) +
+                    t(" إلى ", " to ") + ShiftTimeCodec.format(bTime.hour24, bTime.minute) + suffix + ".")
                 showDashboard()
             }
         }
@@ -605,7 +605,7 @@ class StoreSettingsActivity : Activity() {
             append("آخر استعادة: ${formatBackupTime(lastRestore)}")
         }
         val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@StoreSettingsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 8))
         }
         box.addView(UiKit.subtitle(this, p, statusText))
@@ -869,7 +869,7 @@ class StoreSettingsActivity : Activity() {
     }
 
     private fun baseRoot() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = View.LAYOUT_DIRECTION_RTL
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; layoutDirection = if (AppLanguage.isEnglish(this@StoreSettingsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
         setPadding(UiKit.dp(this@StoreSettingsActivity, 16), UiKit.dp(this@StoreSettingsActivity, 18), UiKit.dp(this@StoreSettingsActivity, 16), UiKit.dp(this@StoreSettingsActivity, 28)); setBackgroundColor(p.bg)
     }
 
