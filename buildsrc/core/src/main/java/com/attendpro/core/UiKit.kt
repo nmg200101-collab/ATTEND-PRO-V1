@@ -113,13 +113,13 @@ object UiKit {
             "$selected${preset.title}\n${preset.description}"
         }.toTypedArray()
         AlertDialog.Builder(activity)
-            .setTitle("الألوان والثيمات")
+            .setTitle(if (AppLanguage.isEnglish(activity)) "Colors and themes" else "الألوان والثيمات")
             .setSingleChoiceItems(labels, Preset.entries.indexOf(current)) { dialog, which ->
                 setPreset(activity, Preset.entries[which])
                 dialog.dismiss()
                 onChanged?.invoke() ?: activity.recreate()
             }
-            .setNegativeButton("رجوع", null)
+            .setNegativeButton(if (AppLanguage.isEnglish(activity)) "Back" else "رجوع", null)
             .show()
     }
 
@@ -130,7 +130,7 @@ object UiKit {
             "$selected${mode.title}\n${mode.description}"
         }.toTypedArray()
         AlertDialog.Builder(activity)
-            .setTitle("ترتيب الواجهة")
+            .setTitle(if (AppLanguage.isEnglish(activity)) "Interface layout" else "ترتيب الواجهة")
             .setSingleChoiceItems(labels, LayoutMode.entries.indexOf(current)) { dialog, which ->
                 setLayout(activity, LayoutMode.entries[which])
                 dialog.dismiss()
@@ -364,7 +364,7 @@ object UiKit {
             if (mode == LayoutMode.COMPACT) {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
-                layoutDirection = View.LAYOUT_DIRECTION_RTL
+                layoutDirection = if (AppLanguage.isEnglish(context)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
                 if (icon.isNotBlank()) addView(TextView(context).apply {
                     text = icon
                     textSize = 17f
