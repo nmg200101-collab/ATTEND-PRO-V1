@@ -288,6 +288,9 @@ class StoreRepository(context: Context) {
     fun validateStoreAdminSession(token: String): Boolean =
         token.isNotBlank() && token == storeAdminSessionToken && storeAdminSessionUntil > System.currentTimeMillis()
 
+    fun hasActiveStoreAdminSession(): Boolean =
+        storeAdminSessionToken.isNotBlank() && storeAdminSessionUntil > System.currentTimeMillis()
+
     fun clearStoreAdminSession() { storeAdminSessionToken = ""; storeAdminSessionUntil = 0L }
 
     fun verifyStoreAdminPin(entered: String): Boolean {
