@@ -1007,6 +1007,7 @@ class MainActivity : Activity() {
             t("نمط الشاشة الرئيسية", "Home layout") to { showStoreHomeTemplatePicker1978() },
             getString(R.string.user_guide) to { showStoreUserGuide1976() },
             getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
+            t("الخصوصية والبيانات", "Privacy and data") to { startActivity(Intent(this, com.attendpro.core.PrivacyDataActivity::class.java)) },
             t("الإعدادات", "Settings") to { startActivity(Intent(this, StoreSettingsActivity::class.java)) },
             t("منطقة إدارة النظام", "System administration") to { startActivity(Intent(this, SystemSettingsActivity::class.java).putExtra("OWNER_ONLY_1978", true)) }
         ))
