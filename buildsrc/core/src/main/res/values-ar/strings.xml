@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="privacy_center_title">الخصوصية والبيانات</string>
+    <string name="privacy_center_summary">يوضح هذا القسم كيفية تعامل ATTEND PRO مع بيانات المحل والموظف، وروابط سياسة الخصوصية وطلب حذف البيانات.</string>
+    <string name="privacy_location_title">الموقع في الخلفية</string>
+    <string name="privacy_location_body">عند تفعيل نطاق المحل، قد يجمع تطبيق الموظف بيانات الموقع لتمكين اكتشاف قرب الهاتف وتنبيهات النطاق حتى عندما يكون التطبيق مغلقًا أو غير مستخدم. قد تُرسل حالة القرب والمسافة والدقة ووقت القراءة إلى خادم إدارة المحل. الموقع وحده لا يسجل حضورًا أو انصرافًا تلقائيًا.</string>
+    <string name="privacy_security_title">الأمان والنسخ الاحتياطي</string>
+    <string name="privacy_security_body">تتحقق ATTEND PRO من الاتصالات والتوقيع وفق ضوابط التطبيق. النسخ الاحتياطية التي ترفع إلى الخادم تُشفّر من التطبيق قبل الرفع.</string>
+    <string name="privacy_delete_title">حذف البيانات</string>
+    <string name="privacy_delete_body">يمكن بدء طلب حذف بيانات المحل أو الموظف من صفحة الحذف. لا يتم تنفيذ حذف نهائي قبل التحقق من ملكية الطلب وصلاحية مقدمه.</string>
+    <string name="privacy_open_policy">فتح سياسة الخصوصية على الويب</string>
+    <string name="privacy_open_deletion">طلب حذف البيانات</string>
+    <string name="privacy_browser_error">تعذر فتح المتصفح على هذا الجهاز.</string>
+</resources>
