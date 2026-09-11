@@ -83,25 +83,26 @@ object UiKit {
     fun appearanceSummary(context: Context): String = "${currentPreset(context).title} • ${currentLayout(context).title}"
 
     fun showAppearancePicker(activity: Activity, onChanged: (() -> Unit)? = null) {
+        val english = AppLanguage.isEnglish(activity)
         val items = arrayOf(
-            "الألوان والثيمات\n${currentPreset(activity).title}",
-            "ترتيب الواجهة\n${currentLayout(activity).title}",
-            "الوضع الليلي والنهاري\nيتبع إعداد الهاتف تلقائيًا"
+            (if (english) "Colors and themes" else "الألوان والثيمات") + "\n${currentPreset(activity).title}",
+            (if (english) "Interface layout" else "ترتيب الواجهة") + "\n${currentLayout(activity).title}",
+            if (english) "Light and dark mode\nFollows the phone setting automatically" else "الوضع الليلي والنهاري\nيتبع إعداد الهاتف تلقائيًا"
         )
         AlertDialog.Builder(activity)
-            .setTitle("المظهر وطريقة العرض")
+            .setTitle(if (english) "Appearance and layout" else "المظهر وطريقة العرض")
             .setItems(items) { _, which ->
                 when (which) {
                     0 -> showThemePicker(activity, onChanged)
                     1 -> showLayoutPicker(activity, onChanged)
                     else -> AlertDialog.Builder(activity)
-                        .setTitle("الوضع الليلي والنهاري")
-                        .setMessage("يتبع ATTEND PRO إعداد الوضع الليلي أو النهاري في الهاتف تلقائيًا حتى تبقى الألوان متناسقة مع النظام.")
-                        .setPositiveButton("حسنًا", null)
+                        .setTitle(if (english) "Light and dark mode" else "الوضع الليلي والنهاري")
+                        .setMessage(if (english) "ATTEND PRO follows the phone light/dark mode automatically." else "يتبع ATTEND PRO إعداد الوضع الليلي أو النهاري في الهاتف تلقائيًا حتى تبقى الألوان متناسقة مع النظام.")
+                        .setPositiveButton(if (english) "OK" else "حسنًا", null)
                         .show()
                 }
             }
-            .setNegativeButton("إغلاق", null)
+            .setNegativeButton(if (english) "Close" else "إغلاق", null)
             .show()
     }
 
@@ -265,7 +266,7 @@ object UiKit {
     }
 
     fun title(context: Context, palette: Palette, text: String, size: Float = 21f): TextView = TextView(context).apply {
-        this.text = text
+        this.text = AppLanguage.legacyUiText(context, text)
         textSize = size
         setTextColor(palette.text)
         setTypeface(typeface, Typeface.BOLD)
@@ -275,7 +276,7 @@ object UiKit {
     }
 
     fun subtitle(context: Context, palette: Palette, text: String): TextView = TextView(context).apply {
-        this.text = text
+        this.text = AppLanguage.legacyUiText(context, text)
         textSize = 14.2f
         setTextColor(palette.muted)
         gravity = Gravity.START
@@ -284,7 +285,7 @@ object UiKit {
     }
 
     fun field(context: Context, palette: Palette, hintText: String, numeric: Boolean = false): EditText = EditText(context).apply {
-        hint = hintText
+        hint = AppLanguage.legacyUiText(context, hintText)
         textSize = 15.5f
         setTextColor(palette.text)
         setHintTextColor(palette.muted)
@@ -321,7 +322,7 @@ object UiKit {
     }
 
     fun button(context: Context, palette: Palette, label: String, primary: Boolean = true): Button = Button(context).apply {
-        text = decorated(label)
+        text = decorated(AppLanguage.legacyUiText(context, label))
         textSize = 14.8f
         isAllCaps = false
         gravity = Gravity.CENTER
@@ -340,7 +341,7 @@ object UiKit {
     }
 
     fun sectionLabel(context: Context, palette: Palette, label: String): TextView = TextView(context).apply {
-        text = label
+        text = AppLanguage.legacyUiText(context, label)
         textSize = 12.8f
         setTextColor(palette.accent)
         setTypeface(typeface, Typeface.BOLD)
@@ -356,8 +357,10 @@ object UiKit {
             LayoutMode.LARGE -> 16
             LayoutMode.ORGANIZED -> 12
         }).apply {
-            val cleanTitle = titleText.replace(Regex("""^[^\p{L}\p{N}]+\s*"""), "")
-            val icon = iconFor(titleText)
+            val translatedTitle = AppLanguage.legacyUiText(context, titleText)
+            val translatedSubtitle = AppLanguage.legacyUiText(context, subtitleText)
+            val cleanTitle = translatedTitle.replace(Regex("""^[^\p{L}\p{N}]+\s*"""), "")
+            val icon = iconFor(translatedTitle)
             if (mode == LayoutMode.COMPACT) {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -377,7 +380,7 @@ object UiKit {
                     gravity = Gravity.CENTER_VERTICAL
                     layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
                     addView(title(context, palette, cleanTitle, 15.5f))
-                    addView(subtitle(context, palette, subtitleText).apply { textSize = 12.1f; maxLines = 2 })
+                    addView(subtitle(context, palette, translatedSubtitle).apply { textSize = 12.1f; maxLines = 2 })
                 })
             } else {
                 gravity = Gravity.CENTER_HORIZONTAL
@@ -396,7 +399,7 @@ object UiKit {
                     }
                 })
                 addView(title(context, palette, cleanTitle, if (mode == LayoutMode.LARGE) 17.4f else 16.2f).apply { gravity = Gravity.CENTER })
-                addView(subtitle(context, palette, subtitleText).apply {
+                addView(subtitle(context, palette, translatedSubtitle).apply {
                     gravity = Gravity.CENTER
                     textSize = if (mode == LayoutMode.LARGE) 13.1f else 12.4f
                     maxLines = if (mode == LayoutMode.LARGE) 4 else 3
@@ -408,7 +411,7 @@ object UiKit {
     }
 
     fun statusBadge(context: Context, palette: Palette, label: String, positive: Boolean): TextView = TextView(context).apply {
-        text = label
+        text = AppLanguage.legacyUiText(context, label)
         textSize = 12.8f
         gravity = Gravity.CENTER
         setTypeface(typeface, Typeface.BOLD)
