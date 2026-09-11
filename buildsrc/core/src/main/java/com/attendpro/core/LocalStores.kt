@@ -229,7 +229,10 @@ data class AuthorizedReportReceiver(
     val secret: String,
     val active: Boolean = true,
     val createdAt: Long = System.currentTimeMillis(),
-    val lastUsedAt: Long = 0L
+    val lastUsedAt: Long = 0L,
+    val canReceiveReports: Boolean = true,
+    val canMessageEmployees: Boolean = false,
+    val canManageStore: Boolean = false
 )
 
 class StoreRepository(context: Context) {
@@ -740,7 +743,10 @@ class StoreRepository(context: Context) {
                 secret = o.getString("secret"),
                 active = o.optBoolean("active", true),
                 createdAt = o.optLong("createdAt", System.currentTimeMillis()),
-                lastUsedAt = o.optLong("lastUsedAt", 0L)
+                lastUsedAt = o.optLong("lastUsedAt", 0L),
+                canReceiveReports = o.optBoolean("canReceiveReports", true),
+                canMessageEmployees = o.optBoolean("canMessageEmployees", false),
+                canManageStore = o.optBoolean("canManageStore", false)
             )
         }.getOrNull() }.sortedByDescending { it.createdAt }
     }
@@ -750,6 +756,9 @@ class StoreRepository(context: Context) {
         items.take(30).forEach { r -> array.put(JSONObject().apply {
             put("receiverId", r.receiverId); put("name", r.name); put("secret", r.secret); put("active", r.active)
             put("createdAt", r.createdAt); put("lastUsedAt", r.lastUsedAt)
+            put("canReceiveReports", r.canReceiveReports)
+            put("canMessageEmployees", r.canMessageEmployees)
+            put("canManageStore", r.canManageStore)
         }) }
         prefs.edit().putString("authorizedReportReceivers", array.toString()).apply()
     }
@@ -766,6 +775,21 @@ class StoreRepository(context: Context) {
 
     fun setReportReceiverActive(receiverId: String, active: Boolean) {
         saveAuthorizedReportReceivers(authorizedReportReceivers().map { if (it.receiverId == receiverId) it.copy(active = active) else it })
+    }
+
+    fun setReportReceiverPermissions(
+        receiverId: String,
+        canReceiveReports: Boolean,
+        canMessageEmployees: Boolean,
+        canManageStore: Boolean
+    ) {
+        saveAuthorizedReportReceivers(authorizedReportReceivers().map {
+            if (it.receiverId == receiverId) it.copy(
+                canReceiveReports = canReceiveReports,
+                canMessageEmployees = canMessageEmployees,
+                canManageStore = canManageStore
+            ) else it
+        })
     }
 
     fun removeReportReceiver(receiverId: String) = saveAuthorizedReportReceivers(authorizedReportReceivers().filterNot { it.receiverId == receiverId })
