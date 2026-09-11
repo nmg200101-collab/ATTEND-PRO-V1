@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: attend-pro-v2-rc2-play-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build-test-sign:
