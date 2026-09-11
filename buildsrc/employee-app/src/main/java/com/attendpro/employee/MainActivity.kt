@@ -37,7 +37,6 @@ import com.attendpro.core.AppLockGateActivity
 import com.attendpro.core.AppLockSettingsDialog
 import com.attendpro.core.AttendanceMethod
 import com.attendpro.core.AttendanceAction
-import com.attendpro.core.AppUpdateManager
 import com.attendpro.core.BleProtocol
 import com.attendpro.core.EmployeeIdentityStore
 import com.attendpro.core.PairingProtocol
@@ -115,7 +114,7 @@ class MainActivity : Activity() {
         if (identity.isConfigured) {
             if (identity.autoPresence) startPresence() else startBackgroundPresence()
         }
-        AppUpdateManager.check(this, AppUpdateManager.DEFAULT_SERVER, "employee")
+        DistributionUpdateManager.check(this, DistributionUpdateManager.DEFAULT_SERVER, "employee")
         // Keep Android 13+ notification permission out of the Bluetooth permission transaction.
         // Requesting two runtime-permission dialogs at once is unreliable on some OEM builds.
         if (hasRequiredBlePermissions()) maybeRequestNotificationPermission()
@@ -210,7 +209,7 @@ class MainActivity : Activity() {
         attend.addView(UiKit.button(this,p,"إعداد كلمة مرور الهاتف", false).apply { setOnClickListener { setupLocalCredentials() } })
         attend.addView(UiKit.button(this,p,"فحص التعرّف عبر GPS", false).apply { setOnClickListener { requestGpsProof() } })
         attend.addView(UiKit.button(this,p,"فحص تحديث التطبيق", false).apply {
-            setOnClickListener { AppUpdateManager.check(this@MainActivity, AppUpdateManager.DEFAULT_SERVER, "employee", manual = true) }
+            setOnClickListener { DistributionUpdateManager.check(this@MainActivity, DistributionUpdateManager.DEFAULT_SERVER, "employee", manual = true) }
         })
         attend.addView(UiKit.subtitle(this,p,"Bluetooth وWi‑Fi/نقطة الاتصال يتعرفان على الهاتف تلقائيًا. GPS يسجل قرب الهاتف ووقت أول/آخر تعرّف فقط، ولا يسجل الحضور ولا يثبت الهوية."))
         root.addView(attend)
@@ -523,7 +522,7 @@ class MainActivity : Activity() {
             "المظهر وطريقة العرض" to { UiKit.showAppearancePicker(this) },
             "قفل التطبيق والبصمة" to { showAppLockSettings() },
             "كلمة مرور إثبات الحضور" to { setupLocalCredentials() },
-            "فحص تحديث التطبيق" to { AppUpdateManager.check(this, AppUpdateManager.DEFAULT_SERVER, "employee", manual = true) },
+            "فحص تحديث التطبيق" to { DistributionUpdateManager.check(this, DistributionUpdateManager.DEFAULT_SERVER, "employee", manual = true) },
             "إلغاء ربط الهاتف" to { confirmUnlink() }
         ))
     }
@@ -735,7 +734,7 @@ class MainActivity : Activity() {
         pairingDiscovery.start(code)
         // Server is an optional fallback only. Local Bluetooth/Hotspot pairing never waits for it.
         Thread {
-            val result = CentralServerClient.claimEmployeePairingTicket(AppUpdateManager.DEFAULT_SERVER, code, identity.installationId)
+            val result = CentralServerClient.claimEmployeePairingTicket(DistributionUpdateManager.DEFAULT_SERVER, code, identity.installationId)
             runOnUiThread {
                 if (pendingPairingCode != code) return@runOnUiThread
                 result.onSuccess { provision -> acceptProvision(provision, serverValidated = true) }
@@ -1127,6 +1126,7 @@ class MainActivity : Activity() {
         NotificationPermissionHelper.ensure(this)
         if (intent?.getBooleanExtra(AttendanceRequestNotifier.EXTRA_OPEN_CHALLENGE, false) == true) { intent.removeExtra(AttendanceRequestNotifier.EXTRA_OPEN_CHALLENGE); android.os.Handler(android.os.Looper.getMainLooper()).post { openPendingChallenge() } }
         super.onResume()
+        DistributionUpdateManager.resume(this)
         if (::identity.isInitialized && identity.isConfigured) {
             EmployeeLateAlertScheduler.sync(this, identity)
             if(identity.autoPresence) startPresence() else startBackgroundPresence()
@@ -1173,13 +1173,26 @@ class MainActivity : Activity() {
         }.show()
 }
 
+    private fun requestLocationPermissionWithDisclosure(nextHint: String) {
+        AlertDialog.Builder(this)
+            .setTitle("استخدام الموقع في ATTEND PRO")
+            .setMessage("يجمع ATTEND PRO بيانات الموقع لتمكين التحقق من وجود هاتف الموظف قرب المحل وتنبيهات النطاق حتى عندما يكون التطبيق مغلقًا أو غير مستخدم. عند تفعيل الاتصال بالخادم قد تُرسل حالة القرب والمسافة ودقة القراءة ووقتها إلى خادم إدارة المحل. لا تسجل قراءة الموقع حضورًا أو انصرافًا تلقائيًا.")
+            .setPositiveButton("متابعة") { _, _ ->
+                requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_GPS_PERMISSION)
+                status.text = nextHint
+            }
+            .setNegativeButton("ليس الآن") { _, _ ->
+                status.text = "لم يتم طلب إذن الموقع؛ Bluetooth وWi‑Fi والخادم يمكنها الاستمرار دون GPS"
+            }
+            .show()
+    }
+
     private fun ensureGeoPermissionIfNeeded() {
         if (!identity.geoArrivalAlertsEnabled || !identity.isTrustedStoreGpsConfigured) return
         val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_GPS_PERMISSION)
-            status.text = "اسمح بالموقع لتفعيل التعرف المحلي عند دخول نطاق المحل بدون إنترنت"
+            requestLocationPermissionWithDisclosure("اسمح بالموقع لتفعيل التعرف عند دخول نطاق المحل")
         }
     }
 
@@ -1189,8 +1202,7 @@ class MainActivity : Activity() {
         val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) {
-            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_GPS_PERMISSION)
-            status.text = "اسمح بالموقع ثم أعد الضغط على GPS"
+            requestLocationPermissionWithDisclosure("بعد منح الموقع أعد الضغط على GPS لإجراء إثبات القرب")
             return
         }
         val manager = getSystemService(LocationManager::class.java)
@@ -1293,7 +1305,7 @@ class MainActivity : Activity() {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && identity.geoArrivalAlertsEnabled && identity.isTrustedStoreGpsConfigured &&
                         checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                         AlertDialog.Builder(this).setTitle("السماح بالموقع في الخلفية")
-                            .setMessage("لكي يتعرف التطبيق على دخول نطاق المحل بدون إنترنت حتى عندما لا تكون الشاشة مفتوحة، اختر إذن الموقع «السماح طوال الوقت» من إعدادات التطبيق. إذا لم تمنحه، يستمر Bluetooth وWi‑Fi ويعمل GPS أثناء الاستخدام المسموح فقط.")
+                            .setMessage("ميزة نطاق المحل تجمع الموقع في الخلفية حتى عندما يكون التطبيق مغلقًا أو غير مستخدم، وقد ترسل حالة القرب والمسافة والدقة ووقت القراءة إلى خادم إدارة المحل عند تفعيل الاتصال بالخادم. لا تسجل القراءة حضورًا تلقائيًا. للموافقة اختر «السماح طوال الوقت» من إعدادات التطبيق؛ وإلا يستمر Bluetooth وWi‑Fi ويعمل GPS أثناء الاستخدام المسموح فقط.")
                             .setPositiveButton("فتح إعدادات التطبيق") { _, _ -> startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))) }
                             .setNegativeButton("لاحقًا", null).show()
                     }
