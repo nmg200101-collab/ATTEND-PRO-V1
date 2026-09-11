@@ -26,6 +26,7 @@
 - Generating a new agent code invalidates the old code.
 - New code is visible/copyable at creation time only.
 - Subscriber screen explains device-token authentication rather than a plaintext password.
+- System owner can generate a one-time subscriber recovery credential, view/copy it, and the old protected device token remains non-readable.
 - Owner recovery/reactivation workflow still works.
 
 ## Guide/language
