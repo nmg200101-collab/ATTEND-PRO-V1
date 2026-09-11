@@ -3,18 +3,33 @@
 ## Implemented
 - Persisted app-language manager shared by Store and Employee.
 - Android 13+ per-app locale integration.
-- Arabic and English declared in `locales_config.xml`.
+- Arabic and English declared in locales_config.xml.
 - RTL Arabic / LTR English in updated primary screens.
-- Localized app names.
-- Searchable offline Store and Employee guides in Arabic and English.
-- Store primary dashboard core labels localized.
-- Employee primary dashboard core labels bilingual.
+- Localized app names and primary dashboard resource strings.
+- Practical searchable Store and Employee guides in Arabic and English.
 - Store shift editor localized with locale-aware AM/PM formatting.
 - Language selector in Store and Employee menus.
-- Shared Privacy and Data center in Arabic and English.
+- Privacy and Data center in Arabic and English.
+- Receiver/management-phone screens implemented bilingually.
+- Shared UiKit now translates legacy common labels when English is selected and uses LTR direction for English tiles/dialogs.
+- Store Management and System Administration shared dialog surfaces route legacy labels through the English migration bridge.
 
-## Remaining audit
-Legacy secondary/admin screens still contain historical hard-coded Arabic strings. They must be migrated before English coverage is declared 100%.
+## Current audit status
+The source audit intentionally reports raw hard-coded Arabic literals even when a literal is passed through a runtime bilingual/shared translation surface. It therefore remains a migration inventory rather than proof that every reported occurrence is visible in Arabic at runtime.
 
-## Release rule
-Do not claim complete English support in the Play listing until the hard-coded user-facing Arabic audit is cleared or intentionally exempted for protocol/internal audit text.
+Primary operational paths now have English coverage, but legacy secondary diagnostic/admin text is still being audited. The release remains RC2 and the Play listing must not claim 100% English coverage until a real-device English walkthrough confirms no user-facing Arabic remains.
+
+## Required field verification
+Run both applications in English and exercise:
+- Main / Classic / Sections
+- Store Management
+- employee management and pairing
+- attendance / checkout
+- messages and offline reply
+- receiver phone permissions
+- remote Store settings
+- backups / lock
+- System Administration
+- troubleshooting dialogs
+
+Any visible Arabic system text (excluding user-entered Arabic names/content) is a release blocker for declaring English migration complete.
