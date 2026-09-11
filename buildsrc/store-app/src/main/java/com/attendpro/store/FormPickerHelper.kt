@@ -6,6 +6,7 @@ import android.app.DatePickerDialog
 import android.app.TimePickerDialog
 import android.widget.EditText
 import android.widget.NumberPicker
+import com.attendpro.core.ShiftTimeCodec
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -25,11 +26,23 @@ object FormPickerHelper {
         }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
     }
 
+    fun selectedTime(target: EditText, defaultHour: Int = 8, defaultMinute: Int = 0): ShiftTimeCodec.ClockTime {
+        val tagged = target.tag as? ShiftTimeCodec.ClockTime
+        if (tagged != null) return tagged
+        return ShiftTimeCodec.parseLegacy24(target.text?.toString().orEmpty())
+            ?: ShiftTimeCodec.ClockTime(defaultHour.coerceIn(0, 23), defaultMinute.coerceIn(0, 59))
+    }
+
+    fun setTime(target: EditText, hour24: Int, minute: Int) {
+        val value = ShiftTimeCodec.ClockTime(hour24, minute)
+        target.tag = value
+        target.setText(ShiftTimeCodec.format(value.hour24, value.minute, Locale.getDefault()))
+    }
+
     fun pickTime(activity: Activity, target: EditText, defaultHour: Int = 8, defaultMinute: Int = 0) {
-        val parts = target.text?.toString()?.split(":").orEmpty()
-        val hour = parts.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 23) ?: defaultHour.coerceIn(0, 23)
-        val minute = parts.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 59) ?: defaultMinute.coerceIn(0, 59)
-        TimePickerDialog(activity, { _, h, m -> target.setText(String.format(Locale.US, "%02d:%02d", h, m)) }, hour, minute, true).show()
+        val current = selectedTime(target, defaultHour, defaultMinute)
+        TimePickerDialog(activity, { _, h, m -> setTime(target, h, m) },
+            current.hour24, current.minute, false).show()
     }
 
     fun pickNumber(activity: Activity, target: EditText, min: Int, max: Int, title: String) {
