@@ -139,7 +139,10 @@ jobs:
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
             jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD \
               -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
-            jarsigner -verify -strict "signed/$AAB_OUT"
+            jarsigner -verify -verbose -certs "signed/$AAB_OUT" >/tmp/$APP-aab-verify.txt
+            grep -q 'jar verified' /tmp/$APP-aab-verify.txt
+            AAB_CERT=$(keytool -printcert -jarfile "signed/$AAB_OUT" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr A-F a-f)
+            test "$AAB_CERT" = "$EXPECTED_CERT"
             APKA="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
             test -x "$APKA"
             test "$("$APKA" manifest application-id "signed/$AAB_OUT")" = "$PACKAGE"
