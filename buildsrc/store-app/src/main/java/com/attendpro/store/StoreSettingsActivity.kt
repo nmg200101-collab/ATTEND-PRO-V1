@@ -33,6 +33,7 @@ import com.attendpro.core.QrScannerActivity
 import com.attendpro.core.QrCodeTools
 import com.attendpro.core.ReportProtocol
 import com.attendpro.core.StoreRepository
+import com.attendpro.core.ShiftTimeCodec
 import com.attendpro.core.UiKit
 import com.attendpro.foundation.backup.EncryptedBackupCodec
 import com.attendpro.foundation.backup.StoreBackupArtifact
@@ -419,33 +420,56 @@ class StoreSettingsActivity : Activity() {
     private fun shiftSettings() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(24, 10, 24, 0) }
         val start = UiKit.field(this, p, "بداية الدوام").apply {
-            setText(String.format(java.util.Locale.getDefault(), "%02d:%02d", repo.shiftHour, repo.shiftMinute)); isFocusable = false; isClickable = true
+            isFocusable = false
+            isClickable = true
+            FormPickerHelper.setTime(this, repo.shiftHour, repo.shiftMinute)
             setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftHour, repo.shiftMinute) }
         }
         val end = UiKit.field(this, p, "نهاية الدوام").apply {
-            setText(String.format(java.util.Locale.getDefault(), "%02d:%02d", repo.shiftEndHour, repo.shiftEndMinute)); isFocusable = false; isClickable = true
+            isFocusable = false
+            isClickable = true
+            FormPickerHelper.setTime(this, repo.shiftEndHour, repo.shiftEndMinute)
             setOnClickListener { FormPickerHelper.pickTime(this@StoreSettingsActivity, this, repo.shiftEndHour, repo.shiftEndMinute) }
         }
         val grace = UiKit.field(this, p, "دقائق السماح").apply {
-            setText(repo.graceMinutes.toString()); isFocusable = false; isClickable = true
+            setText(repo.graceMinutes.toString())
+            isFocusable = false
+            isClickable = true
             setOnClickListener { FormPickerHelper.pickNumber(this@StoreSettingsActivity, this, 0, 120, "دقائق السماح") }
         }
-        box.addView(UiKit.subtitle(this, p, "حدد الوقت بالاختيار فقط؛ لا حاجة لكتابة الساعة يدويًا."))
+        box.addView(UiKit.subtitle(this, p,
+            "اختر الساعة والدقائق وصباح/مساء. يُحفظ الوقت داخليًا بنظام 24 ساعة. يمكن للدوام أن يعبر منتصف الليل، مثل 10:00 م إلى 6:00 ص."))
         listOf(start, end, grace).forEach { box.addView(it) }
-        val dialog = AlertDialog.Builder(this).setTitle("الدوام والسماح").setView(box).setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
+        val dialog = AlertDialog.Builder(this).setTitle("الدوام والسماح").setView(box)
+            .setPositiveButton("حفظ", null).setNegativeButton("إلغاء", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
-                fun parseTime(value: String): Pair<Int, Int>? { val parts = value.split(":"); if (parts.size != 2) return null; val h=parts[0].toIntOrNull()?:return null; val m=parts[1].toIntOrNull()?:return null; return if(h in 0..23 && m in 0..59) h to m else null }
-                val a = parseTime(start.text.toString()); val b = parseTime(end.text.toString()); val g = grace.text.toString().toIntOrNull()
-                if (a == null) { start.error = "اختر وقت البداية"; return@setOnClickListener }
-                if (b == null) { end.error = "اختر وقت النهاية"; return@setOnClickListener }
-                if (g == null || g !in 0..120) { grace.error = "اختر من 0 إلى 120"; return@setOnClickListener }
-                repo.shiftHour=a.first; repo.shiftMinute=a.second; repo.shiftEndHour=b.first; repo.shiftEndMinute=b.second; repo.graceMinutes=g
-                dialog.dismiss(); info("تم", "تم حفظ الدوام ودقائق السماح."); showDashboard()
+                val aTime = FormPickerHelper.selectedTime(start, repo.shiftHour, repo.shiftMinute)
+                val bTime = FormPickerHelper.selectedTime(end, repo.shiftEndHour, repo.shiftEndMinute)
+                val g = grace.text.toString().toIntOrNull()
+                if (ShiftTimeCodec.same(aTime, bTime)) {
+                    end.error = "وقت نهاية الدوام يجب أن يختلف عن وقت البداية"
+                    return@setOnClickListener
+                }
+                if (g == null || g !in 0..120) {
+                    grace.error = "اختر من 0 إلى 120 دقيقة"
+                    return@setOnClickListener
+                }
+                repo.shiftHour = aTime.hour24
+                repo.shiftMinute = aTime.minute
+                repo.shiftEndHour = bTime.hour24
+                repo.shiftEndMinute = bTime.minute
+                repo.graceMinutes = g
+                val overnight = (bTime.hour24 * 60 + bTime.minute) < (aTime.hour24 * 60 + aTime.minute)
+                dialog.dismiss()
+                val suffix = if (overnight) " (دوام ليلي يعبر منتصف الليل)" else ""
+                info("تم", "تم حفظ الدوام " + ShiftTimeCodec.format(aTime.hour24, aTime.minute) +
+                    " إلى " + ShiftTimeCodec.format(bTime.hour24, bTime.minute) + suffix + ".")
+                showDashboard()
             }
         }
         dialog.show()
-}
+    }
 
     private fun manageReportReceivers() {
         val receivers = repo.authorizedReportReceivers()
