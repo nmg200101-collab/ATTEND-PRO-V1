@@ -1,0 +1,18 @@
+ATTEND PRO RC3 functional source audit
+
+PASS  AM/PM shift formatter  [buildsrc/core/src/main/java/com/attendpro/core/ShiftTimeCodec.kt]
+PASS  Overnight shift detection  [buildsrc/core/src/main/java/com/attendpro/core/ShiftTimeCodec.kt]
+PASS  Store custom-shift AM/PM picker  [buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt]
+PASS  Large attendance action area  [buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt]
+PASS  Offline Employee reply channel  [buildsrc/core/src/main/java/com/attendpro/core/BleLocalReplyChannel1977.kt]
+PASS  Store receives offline replies  [buildsrc/store-app/src/main/java/com/attendpro/store/StoreLocalReplyStore1977.kt]
+PASS  Receiver report permission  [buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt]
+PASS  Receiver messaging permission  [buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt]
+PASS  Receiver Store-management permission  [buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt]
+PASS  Encrypted phone/server backups  [buildsrc/foundation/src/main/java/com/attendpro/foundation/backup/EncryptedBackupCodec.kt]
+PASS  App lock  [buildsrc/core/src/main/java/com/attendpro/core/AppLock.kt]
+PASS  Direct update verification  [buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt]
+PASS  Store guide tracks release  [buildsrc/store-app/src/main/java/com/attendpro/store/StoreUserGuideActivity.kt]
+PASS  Employee guide tracks release  [buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeUserGuideActivity.kt]
+PASS  Agent credential reset UI  [buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt]
+PASS  Subscriber recovery credential UI  [buildsrc/store-app/src/main/java/com/attendpro/store/SystemManagement1971Activity.kt]

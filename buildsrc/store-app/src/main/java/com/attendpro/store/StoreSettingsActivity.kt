@@ -172,7 +172,7 @@ class StoreSettingsActivity : Activity() {
         root.addView(header)
 
         val hint = UiKit.card(this, p, 10)
-        hint.addView(UiKit.subtitle(this, p, "اختر القسم الذي تحتاجه فقط. جميع التفاصيل القديمة ما زالت موجودة داخل «الإعدادات المتقدمة» في قائمة ⋮.").apply { gravity = Gravity.CENTER })
+        hint.addView(UiKit.subtitle(this, p, "هذه شاشة جميع إعدادات مدير المحل. اختر القسم المطلوب، أو افتح «الإعدادات المتقدمة» من قائمة ⋮ لعرض كل الخيارات التفصيلية القديمة.").apply { gravity = Gravity.CENTER })
         root.addView(hint)
 
         fun largeSection(title: String, subtitle: String, action: () -> Unit): LinearLayout = UiKit.card(this, p, 12).apply {

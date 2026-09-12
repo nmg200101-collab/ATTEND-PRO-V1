@@ -136,6 +136,8 @@ class MainActivity : Activity() {
     )
     private val nearby = ConcurrentHashMap<String, NearbyPhone>()
     private val authenticatedPresenceAt = ConcurrentHashMap<String, Long>()
+    // Updated only by authenticated Direct BLE/GATT callbacks; discovery alone never means connected.
+    private val directBleUiAckAt = ConcurrentHashMap<String, Long>()
     private val lanConfirmedAt = ConcurrentHashMap<String, Long>()
     private val lanPendingTokens = ConcurrentHashMap<String, Pair<Int, Long>>()
     private val serverPresenceAt = ConcurrentHashMap<String, Long>()
@@ -685,13 +687,15 @@ class MainActivity : Activity() {
     private fun storeTemplateTitle1978(value: String = storeHomeTemplate1978()): String = when (value) {
         "SECTIONS" -> t("الأقسام", "Sections")
         "CLASSIC" -> t("الكلاسيكي", "Classic")
+        "FOCUS" -> t("التركيز", "Focus")
         else -> t("الرئيسي", "Main")
     }
 
     private fun buildElegantUi() {
         when (storeHomeTemplate1978()) {
             "SECTIONS" -> buildStoreSectionsTemplate1978()
-            "CLASSIC" -> buildStoreMainTemplate1978(classic = true)
+            "CLASSIC" -> buildUi()
+            "FOCUS" -> buildStoreMainTemplate1978(classic = true)
             else -> buildStoreMainTemplate1978(classic = false)
         }
     }
@@ -711,11 +715,12 @@ class MainActivity : Activity() {
     }
 
     private fun showStoreHomeTemplatePicker1978() {
-        val ids = arrayOf("MAIN", "SECTIONS", "CLASSIC")
+        val ids = arrayOf("MAIN", "SECTIONS", "CLASSIC", "FOCUS")
         val labels = arrayOf(
-            t("الرئيسي — واجهة يومية مضغوطة", "Main — compact daily dashboard"),
-            t("الأقسام — وصول سريع للخدمات", "Sections — quick service access"),
-            t("الكلاسيكي — ترتيب تقليدي آمن وخفيف", "Classic — safe lightweight traditional layout")
+            t("الرئيسي — واجهة يومية متوازنة", "Main — balanced daily dashboard"),
+            t("الأقسام — بطاقات مستقلة ووصول سريع", "Sections — service cards and quick access"),
+            t("الكلاسيكي — اللوحة الأصلية الكاملة", "Classic — original full dashboard"),
+            t("التركيز — حضور واتصال أكبر وأوضح", "Focus — larger attendance and connection panels")
         )
         val current = ids.indexOf(storeHomeTemplate1978()).coerceAtLeast(0)
         AlertDialog.Builder(this).setTitle(t("نمط الشاشة الرئيسية", "Home screen layout"))
@@ -1033,6 +1038,9 @@ class MainActivity : Activity() {
             getString(R.string.user_guide) to { showStoreUserGuide1976() },
             getString(R.string.language) to { AppLanguage.showPicker(this) { recreate() } },
             t("الخصوصية والبيانات", "Privacy and data") to { startActivity(Intent(this, com.attendpro.core.PrivacyDataActivity::class.java)) },
+            t("البحث عن تحديثات التطبيق", "Check for app updates") to {
+                DistributionUpdateManager.check(this, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store", manual = true)
+            },
             t("الإعدادات", "Settings") to { startActivity(Intent(this, StoreSettingsActivity::class.java)) },
             t("منطقة إدارة النظام", "System administration") to { startActivity(Intent(this, SystemSettingsActivity::class.java).putExtra("OWNER_ONLY_1978", true)) }
         ))
@@ -1495,6 +1503,7 @@ class MainActivity : Activity() {
     private data class OwnerShortcut(val id: String, val title: String)
 
     private fun ownerShortcutCatalog(): List<OwnerShortcut> = listOf(
+        OwnerShortcut("all_settings", "جميع إعدادات مدير المحل"),
         OwnerShortcut("employees", "الموظفون وملفات التعرف"),
         OwnerShortcut("pair_employee", "ربط جهاز موظف"),
         OwnerShortcut("presence_challenge", "طلب إثبات حضور"),
@@ -1521,7 +1530,10 @@ class MainActivity : Activity() {
 
     private fun runOwnerShortcut(id: String) {
         when (id) {
-            "employees" -> startActivity(Intent(this, StoreSettingsActivity::class.java))
+            "all_settings" -> startActivity(Intent(this, StoreSettingsActivity::class.java))
+            "employees" -> startActivity(Intent(this, MainActivity::class.java)
+                .putExtra(EXTRA_EMPLOYEE_MANAGER, true)
+                .putExtra(EXTRA_STORE_ADMIN_SESSION, repo.issueStoreAdminSession()))
             "pair_employee" -> showPairEmployeePicker()
             "presence_challenge" -> showPresenceChallenge()
             "attendance_policy" -> PhoneAttendanceSettingsDialog1928.show(this, repo)
@@ -1621,7 +1633,7 @@ class MainActivity : Activity() {
                 UiKit.dp(this@MainActivity, 6)
             )
             addView(UiKit.subtitle(this@MainActivity, p,
-                "اختر الوظيفة مباشرة. ويمكنك تثبيت أي وظيفة تختارها كاختصار في الشاشة الرئيسية.").apply {
+                "يمكنك فتح جميع إعدادات مدير المحل في شاشة واحدة، أو الدخول مباشرة إلى كل خيار على حدة. ويمكن تثبيت الخيارات المهمة كاختصارات في الرئيسية.").apply {
                 gravity = Gravity.CENTER
                 textSize = 11.8f
                 setPadding(0, 0, 0, UiKit.dp(this@MainActivity, 8))
@@ -1646,7 +1658,7 @@ class MainActivity : Activity() {
         })
 
         hubDialog = AlertDialog.Builder(this)
-            .setTitle("إدارة المحل")
+            .setTitle("إعدادات مدير المحل")
             .setView(scroll)
             .setNegativeButton("إغلاق", null)
             .create()
@@ -1677,7 +1689,7 @@ class MainActivity : Activity() {
             val channel = repo.companionLinkedChannel(e.employeeId).ifBlank { "لم يُؤكد الربط بعد" }
             val live = isEmployeeActuallyConnected(e.employeeId, now)
             val connection = when {
-                directBle.isConnected(e.employeeId) -> "Bluetooth ACK"
+                isDirectBleUiConnected(e.employeeId, now) -> "Bluetooth ACK"
                 isLanConnected(e.employeeId, now) -> "Wi‑Fi/Hotspot ACK"
                 isServerPresenceConnected(e.employeeId, now) -> "Server Heartbeat"
                 isGpsRecognizedFresh(e.employeeId, now) -> "GPS رصد فقط"
@@ -2772,14 +2784,18 @@ class MainActivity : Activity() {
 
     private fun markDirectBleState(employeeId: String, connected: Boolean, message: String) {
         val employee = repo.employees().firstOrNull { it.employeeId.equals(employeeId, true) } ?: return
+        val canonicalId = employee.employeeId
         val now = System.currentTimeMillis()
-        val previous = nearby[employeeId]
+        val previous = nearby[canonicalId]
         if (connected) {
-            repo.markCompanionLinked(employeeId, "Bluetooth BLE • ACK", now)
-            val channels = previous?.channelTimes.orEmpty().toMutableMap().apply { put("Bluetooth مباشر", now) }
-            nearby[employeeId] = NearbyPhone(now, previous?.rssi ?: -60, channels, previous?.deviceName.orEmpty(), previous?.gpsInsideAt ?: 0L)
-            val lastDirect = previous?.channelTimes?.get("Bluetooth مباشر") ?: 0L
-            if (now - lastDirect > 10_000L) repo.addPresenceEvent(PresenceEvent(employeeId=employeeId, employeeName=employee.displayName, timestampEpochMillis=now, channel="Bluetooth مباشر", rssi=previous?.rssi?:-60, details="اتصال GATT مشفر ومؤكد مع هاتف الموظف"))
+            directBleUiAckAt[canonicalId] = now
+            repo.markCompanionLinked(canonicalId, "Bluetooth BLE • ACK", now)
+            val channels = previous?.channelTimes.orEmpty().toMutableMap().apply { put("Bluetooth مباشر • ACK", now) }
+            nearby[canonicalId] = NearbyPhone(now, previous?.rssi ?: -60, channels, previous?.deviceName.orEmpty(), previous?.gpsInsideAt ?: 0L)
+            val lastDirect = previous?.channelTimes?.get("Bluetooth مباشر • ACK") ?: 0L
+            if (now - lastDirect > 10_000L) repo.addPresenceEvent(PresenceEvent(employeeId=canonicalId, employeeName=employee.displayName, timestampEpochMillis=now, channel="Bluetooth مباشر • ACK", rssi=previous?.rssi?:-60, details="اتصال GATT مشفر ومؤكد مع هاتف الموظف"))
+        } else {
+            directBleUiAckAt.remove(canonicalId)
         }
         if (::status.isInitialized) status.text = "$message — ${employee.displayName}"
         refreshDashboard()
@@ -2925,8 +2941,19 @@ class MainActivity : Activity() {
     private fun isAuthenticatedPresenceConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean =
         authenticatedPresenceAt[employeeId]?.let { it > 0L && now - it <= 12_000L } == true
 
+    private fun isDirectBleUiConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean {
+        if (directBle.isConnected(employeeId)) return true
+        val callbackAck = directBleUiAckAt[employeeId] ?: 0L
+        val transportAck = directBle.lastAckAt(employeeId)
+        return (callbackAck > 0L && now - callbackAck <= 15_000L) ||
+            (transportAck > 0L && now - transportAck <= 15_000L)
+    }
+
+    private fun directBleLastVisibleAck(employeeId: String): Long =
+        maxOf(directBleUiAckAt[employeeId] ?: 0L, directBle.lastAckAt(employeeId))
+
     private fun isEmployeeActuallyConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean =
-        isAuthenticatedPresenceConnected(employeeId, now) || directBle.isConnected(employeeId) ||
+        isAuthenticatedPresenceConnected(employeeId, now) || isDirectBleUiConnected(employeeId, now) ||
             isLanConnected(employeeId, now) || isServerPresenceConnected(employeeId, now)
 
     private fun maybeRecordPhoneProof(employee:PairedEmployee,token:Int,method:AttendanceMethod, extraEvidence:String = "", forcedAction: AttendanceAction? = null){
@@ -2981,7 +3008,7 @@ class MainActivity : Activity() {
             val connectedNames = connectedIds.map { id -> employees.firstOrNull { it.employeeId == id }?.displayName ?: id }
             val activeChannels = connectedIds.flatMap { id ->
                 buildList {
-                    if (directBle.isConnected(id)) add("Bluetooth BLE • ACK")
+                    if (isDirectBleUiConnected(id, now)) add("Bluetooth BLE • ACK")
                     if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
                     if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
                 }
@@ -3078,7 +3105,7 @@ class MainActivity : Activity() {
         employees.forEach { employee ->
             val phone = nearby[employee.employeeId]
             val age = phone?.let { now - it.seenAt } ?: Long.MAX_VALUE
-            val directAckAge = directBle.lastAckAt(employee.employeeId).let { if (it > 0L) now - it else Long.MAX_VALUE }
+            val directAckAge = directBleLastVisibleAck(employee.employeeId).let { if (it > 0L) now - it else Long.MAX_VALUE }
             val liveChannels = phone?.channelTimes.orEmpty().filterValues { now - it <= 12_000L }.keys.toMutableList()
             if (directAckAge <= 11_000L && "Bluetooth BLE • ACK" !in liveChannels) liveChannels.add(0, "Bluetooth BLE • ACK")
             val lanAckAge = lanConfirmedAt[employee.employeeId]?.let { now - it } ?: Long.MAX_VALUE
@@ -3159,12 +3186,12 @@ class MainActivity : Activity() {
             val phone = nearby[employee.employeeId]
             val lastSeenAt = listOfNotNull(
                 phone?.seenAt,
-                directBle.lastAckAt(employee.employeeId).takeIf { it > 0L },
+                directBleLastVisibleAck(employee.employeeId).takeIf { it > 0L },
                 serverPresenceAt[employee.employeeId]?.takeIf { it > 0L },
                 serverGpsSeenAt[employee.employeeId]?.takeIf { it > 0L }
             ).maxOrNull() ?: 0L
             val recognition = when {
-                directBle.lastAckAt(employee.employeeId).let { it > 0L && now - it <= 11_000L } -> "Bluetooth ACK"
+                isDirectBleUiConnected(employee.employeeId, now) -> "Bluetooth ACK"
                 isLanConnected(employee.employeeId, now) -> "Wi‑Fi / Hotspot ACK"
                 isServerPresenceConnected(employee.employeeId, now) -> "Server Heartbeat"
                 isGpsRecognizedFresh(employee.employeeId, now) -> "GPS رصد فقط"
@@ -3347,7 +3374,7 @@ class MainActivity : Activity() {
             appendLine("Bluetooth Adapter: ${if (btAdapter?.isEnabled == true) "ON" else "OFF"} • صلاحيات BLE: ${if (blePermissions) "ممنوحة" else "ناقصة"}")
             val pairing = activePairingBeacon
             appendLine("Advertising: ${when { pairing?.isAdvertising() == true -> "يعمل للربط"; pairing?.isRunning() == true -> "الربط نشط لكن الإعلان غير مؤكد"; else -> "غير مطلوب الآن (يعمل عند ربط موظف)" }}")
-            appendLine("Scan: ${if (scanner.isScanning()) "يعمل" else "متوقف"} • GATT: ${if (actuallyConnected.any { directBle.isConnected(it.employeeId) }) "ACK مؤكد" else "لا يوجد ACK"}")
+            appendLine("Scan: ${if (scanner.isScanning()) "يعمل" else "متوقف"} • GATT: ${if (actuallyConnected.any { isDirectBleUiConnected(it.employeeId, now) }) "ACK مؤكد" else "لا يوجد ACK"}")
             appendLine("LAN Listener: ${if (networkListener.isRunning()) "يعمل" else "متوقف"} • LAN ACK: ${if (actuallyConnected.any { isLanConnected(it.employeeId, now) }) "مؤكد" else "لا يوجد"}")
             appendLine("Server: $serverText • أجهزة Heartbeat حديثة: ${employees.count { isServerPresenceConnected(it.employeeId, now) }}")
             append("GPS: $gpsText")
@@ -3362,7 +3389,7 @@ class MainActivity : Activity() {
             val discovered = phone?.channelTimes?.filterValues { now - it <= 12_000L }?.keys?.joinToString(" + ").orEmpty().ifBlank { "لا يوجد اكتشاف محلي حديث" }
             val actual = buildList {
                 if (isAuthenticatedPresenceConnected(id, now)) add("Presence HMAC • موثق")
-                if (directBle.isConnected(id)) add("Bluetooth GATT • ACK")
+                if (isDirectBleUiConnected(id, now)) add("Bluetooth GATT • ACK")
                 if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
                 if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
             }.joinToString(" + ").ifBlank { "لا يوجد اتصال موثق حديث" }
