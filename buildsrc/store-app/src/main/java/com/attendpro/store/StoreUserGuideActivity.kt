@@ -26,8 +26,8 @@ class StoreUserGuideActivity : Activity() {
                 "يتحدث هذا القسم مع كل إصدار للتطبيق.", "This section ships with and updates on every app release.",
                 listOf(
                     Topic("version", "الإصدار الحالي", "Current version",
-                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nأبرز تحديثات هذا الإصدار: عرض الدوام بصيغة صباح/مساء في جميع المسارات، تكبير منطقة الحضور/الانصراف، تحسين إدارة بيانات دخول الوكلاء، الرد بدون إنترنت، صلاحيات هاتف الاستلام، وتحسين الإنجليزية والواجهة.",
-                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nHighlights: AM/PM shift display across the app, a larger attendance action area, improved agent credential management, offline replies, receiver-phone permissions, and improved English/UI coverage."),
+                        "أنت تستخدم ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nأبرز تحديثات هذا الإصدار: عرض الدوام بصيغة صباح/مساء في جميع المسارات، تكبير منطقة الحضور/الانصراف، تحسين إدارة بيانات دخول الوكلاء واستعادة المشترك، الرد بدون إنترنت، صلاحيات هاتف الاستلام، وتحسين الإنجليزية والواجهة.",
+                        "You are using ATTEND PRO " + BuildConfig.VERSION_NAME + ".\n\nHighlights: AM/PM shift display across the app, a larger attendance action area, improved agent credential and subscriber-recovery management, offline replies, receiver-phone permissions, and improved English/UI coverage."),
                     Topic("guide_policy", "كيف يتحدث الدليل؟", "How does the guide update?",
                         "الدليل جزء من نفس إصدار التطبيق. عند تثبيت تحديث جديد، تصل معه أقسام الشرح الجديدة والتغييرات المرتبطة بالميزات الجديدة تلقائيًا؛ لذلك لا يحتاج تنزيل دليل منفصل.",
                         "The guide is bundled with the app release. Installing a new app update automatically brings the matching feature instructions, so no separate guide download is required.")
@@ -52,8 +52,8 @@ class StoreUserGuideActivity : Activity() {
                 "الحضور، الانصراف، الدوام، وإثبات الوجود.", "Check-in, check-out, shifts and presence proof.",
                 listOf(
                     Topic("daily", "1. تسجيل حضور أو انصراف", "1. Record check-in or check-out",
-                        "من الرئيسية اختر حضورًا أو انصرافًا ثم اختر الموظف وطريقة التحقق المسموحة له. نفّذ التحقق حتى تظهر نتيجة النجاح. اكتشاف الهاتف أو GPS وحده لا يسجل الحضور تلقائيًا.",
-                        "From Home choose Check in or Check out, select the employee and an allowed verification method, then complete verification. Phone discovery or GPS alone does not automatically record attendance."),
+                        "من بطاقة «الحضور والانصراف» الكبيرة في الرئيسية اختر حضورًا أو انصرافًا، ثم اختر الموظف وطريقة التحقق المسموحة له. نفّذ التحقق حتى تظهر نتيجة النجاح. اكتشاف الهاتف أو GPS وحده لا يسجل الحضور تلقائيًا.",
+                        "From the prominent Attendance card on Home choose Check in or Check out, select the employee and an allowed verification method, then complete verification. Phone discovery or GPS alone does not automatically record attendance."),
                     Topic("shift", "2. ضبط الدوام صباح/مساء", "2. Set AM/PM working hours",
                         "افتح إعدادات مدير المحل ← الدوام. اختر البداية والنهاية بصيغة صباح/مساء. يدعم النظام دوامًا يعبر منتصف الليل مثل 10:00 م إلى 6:00 ص. لا تجعل البداية والنهاية متساويتين. يمكن ضبط دقائق السماح من 0 إلى 120.",
                         "Open Store Manager Settings → Working hours. Choose start and end using AM/PM. Overnight shifts such as 10:00 PM–6:00 AM are supported. Start and end cannot be identical. Grace time can be set from 0 to 120 minutes."),
@@ -102,7 +102,13 @@ class StoreUserGuideActivity : Activity() {
                     Topic("lock", "2. قفل التطبيق والإدارة", "2. App and management lock",
                         "قفل التطبيق يحمي فتح ATTEND PRO. رمز إدارة المحل يحمي وظائف المدير. بعد إنهاء العمل أغلق جلسة الإدارة حتى لا تبقى الأدوات الحساسة مفتوحة.",
                         "App Lock protects opening ATTEND PRO. The Store Management PIN protects manager functions. Close the management session when finished so sensitive tools are not left open."),
-                    Topic("update", "3. التحديث", "3. Update",
+                    Topic("agent_credential", "3. رمز دخول الوكيل", "3. Agent sign-in credential",
+                        "من إدارة النظام افتح تفاصيل الوكيل ثم «بيانات الدخول». لا يعرض ATTEND PRO كلمة مرور قديمة ولا يفك أي hash. عند الحاجة اضغط «إظهار / إنشاء رمز دخول جديد». ينشئ الخادم رمزًا جديدًا ويلغي السابق، ويظهر الرمز كاملًا مرة واحدة فقط. انسخه واحفظه قبل إغلاق النافذة.",
+                        "In System Administration open the agent details, then Sign-in credentials. ATTEND PRO never reveals an old password or reverses a hash. Choose Show / create new sign-in code when needed. The server rotates the credential, invalidates the previous one, and displays the new value only once. Copy and save it before closing the dialog."),
+                    Topic("subscriber_recovery", "4. بيانات دخول واستعادة المشترك", "4. Subscriber access and recovery",
+                        "من إدارة النظام ← المشتركين افتح المشترك ثم «بيانات الدخول والاستعادة». لا يتم عرض Access Token الدائم. مالك النظام فقط يستطيع إنشاء رمز استعادة جديد محدود الغرض. الرمز مؤقت، يُخزن في الخادم كـhash، يبطل الرمز السابق غير المستخدم، ويُستهلك مرة واحدة عند استعادة الجهاز. احفظ الرمز فور ظهوره لأنه لا يعرض مرة أخرى.",
+                        "In System Administration → Subscribers open the subscriber, then Access and recovery. The permanent Access Token is never displayed. Only the system owner can issue a new purpose-limited recovery code. It is temporary, stored server-side only as a hash, invalidates the previous unused code, and is consumed once during device recovery. Save it when shown because it is not displayed again."),
+                    Topic("update", "5. التحديث", "5. Update",
                         "نسخة Google Play تتحدث عبر Google Play. النسخة المباشرة تتحقق من HTTPS والحزمة والتوقيع وSHA‑256 ثم تطلب موافقة المستخدم. لا يوجد تثبيت صامت.",
                         "The Google Play build updates through Google Play. The Direct build validates HTTPS, package, signature and SHA‑256 and then asks the user to approve installation. There is no silent install.")
                 )),
