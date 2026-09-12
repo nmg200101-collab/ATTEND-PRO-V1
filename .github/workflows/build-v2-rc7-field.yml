@@ -1,0 +1,87 @@
+name: Build ATTEND-PRO V2.0.0 RC7 Field
+
+on:
+  push:
+    branches: [attend-pro-v2.0.0-rc2-play-compliance]
+    paths:
+      - '.github/workflows/build-v2-rc7-field.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Verify RC7 and protected pairing
+        run: |
+          set -euo pipefail
+          grep -q 'versionCode = 97' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC7"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 97' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC7"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'RC7 • إصلاح الاتصال والإدارة' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'RC7 • إصلاح Bluetooth/GPS' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'running || !identity.isTrustedStoreGpsConfigured' buildsrc/employee-app/src/main/java/com/attendpro/employee/OfflineGeoMonitor.kt
+          grep -q 'setOf("all_settings", "presence_challenge", "presence_control", "connections")' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+      - name: Test and build Direct release
+        run: |
+          set -euo pipefail
+          gradle -p buildsrc :core:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+      - name: Sign official APKs
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed
+          KEYSTORE=/tmp/attend-pro-rc7.jks
+          EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V2.0.0-RC7.apk; else MOD=store-app; PACKAGE=com.attendpro.store; OUT=ATTEND-PRO-Store-V2.0.0-RC7.apk; fi
+            UNSIGNED=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
+            test -s "$UNSIGNED"
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED" "/tmp/$APP-aligned.apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out "signed/$OUT" "/tmp/$APP-aligned.apk"
+            ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$OUT" > "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='97' versionName='2.0.0-RC7'" "/tmp/$APP-badging.txt"
+          done
+          cp RELEASE_NOTES_V2.0.0_RC7.md FIELD_TEST_CHECKLIST_RC7.md signed/
+          sha256sum signed/* > signed/ALL-SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V2.0.0-RC7-FIELD-SIGNED
+          path: signed/
+          if-no-files-found: error
+          retention-days: 30
