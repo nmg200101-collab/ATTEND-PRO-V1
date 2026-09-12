@@ -54,7 +54,12 @@ jobs:
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189829+github-actions[bot]@users.noreply.github.com'
+          # The patch script prepares the RC6 build workflow too, but GitHub's job token is not allowed
+          # to create/update workflow files. Persist only the already-verified application/source changes;
+          # the official RC6 workflow is created separately through the authorized connector.
+          git restore --source=HEAD -- .github/workflows/build-v2-rc5.yml
+          rm -f .github/workflows/build-v2-rc6.yml
           git add -A
           git commit -m 'RC6: fix Bluetooth GPS proof controls and owner hub'
           git push origin HEAD:attend-pro-v2.0.0-rc2-play-compliance
