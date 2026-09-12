@@ -36,6 +36,7 @@ class SystemSettingsActivity : Activity() {
     private lateinit var repo: StoreRepository
     private var ownerSessionCode: String? = null
     private val p by lazy { UiKit.palette(this) }
+    private fun t(ar: String, en: String): String = if (AppLanguage.isEnglish(this)) en else ar
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
