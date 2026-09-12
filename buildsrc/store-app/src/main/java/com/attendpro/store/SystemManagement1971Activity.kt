@@ -788,11 +788,12 @@ class SystemManagement1971Activity : Activity() {
             })
         }
 
-        card(root, "بيانات الدخول", "حالة الاعتماد والحماية") {
+        card(root, "بيانات الدخول والاستعادة", "حالة الاعتماد والحماية") {
             addView(TextView(this@SystemManagement1971Activity).apply {
-                text = "هذا المشترك لا يملك كلمة مرور نصية محفوظة في النظام. الدخول والتشغيل يعتمدان على تفعيل الجهاز وAccess Token محمي. عند نقل الجهاز استخدم الاستعادة أو إعادة التفعيل المعتمدة من مالك النظام."
+                text = "حالة الاعتماد: ${statusArabic(store.optString("status"))}\nلا توجد كلمة مرور نصية قابلة للاسترجاع. التفعيل وAccess Token الدائم لا يتم عرضهما من إدارة النظام."
                 textSize = 13f; setTextColor(muted); gravity = Gravity.RIGHT
             })
+            if (owner) addView(action("إنشاء رمز وصول/استعادة جديد") { issueSubscriberRecovery(id) })
         }
 
         card(root, "إدارة الحالة والاشتراك", "إجراءات يومية سريعة") {
@@ -820,6 +821,35 @@ class SystemManagement1971Activity : Activity() {
 
         AlertDialog.Builder(this).setTitle("إدارة المشترك").setView(ScrollView(this).apply { addView(root) })
             .setNegativeButton("إغلاق", null).show()
+    }
+
+    private fun issueSubscriberRecovery(storeId: String) {
+        request("POST", "/api/v1/admin/stores/recovery-grant", JSONObject().put("storeId", storeId)) { result ->
+            result.onSuccess { data ->
+                val code = data.optString("code")
+                val expiresAt = data.optLong("expiresAt")
+                if (code.isBlank()) {
+                    toast("لم يُرجع الخادم رمز الاستعادة")
+                    return@onSuccess
+                }
+                AlertDialog.Builder(this)
+                    .setTitle("رمز وصول/استعادة جديد")
+                    .setMessage("احفظ الرمز الآن، لن يظهر مرة أخرى بعد إغلاق النافذة.\n\n$code\n\nصالح حتى: ${time(expiresAt)}\nالرمز السابق غير المستخدم أصبح غير صالح، ويُستخدم هذا الرمز مرة واحدة فقط للاستعادة.")
+                    .setPositiveButton("نسخ الرمز") { _, _ ->
+                        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("ATTEND-PRO recovery code", code))
+                        toast("تم نسخ رمز الاستعادة")
+                    }
+                    .setNegativeButton("إغلاق", null)
+                    .show()
+            }.onFailure {
+                AlertDialog.Builder(this)
+                    .setTitle("تعذر إصدار رمز الاستعادة")
+                    .setMessage(it.message ?: "خطأ غير معروف")
+                    .setPositiveButton("إغلاق", null)
+                    .show()
+            }
+        }
     }
 
     private fun storeAction(storeId: String, action: String, extra: JSONObject = JSONObject()) {
