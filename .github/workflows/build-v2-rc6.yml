@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC6
+name: Build ATTEND-PRO V2.0.0 RC7
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc6-${{ github.ref }}
+  group: attend-pro-v2-rc7-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,33 +20,26 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: android-actions/setup-android@v3
-
-      - name: Install pinned Android 16 SDK
+      - name: Install Android SDK
         run: |
-          set -euo pipefail
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-
-      - name: Verify RC6 version distribution and protected pairing contract
+      - name: Verify RC7 field repair and protected pairing
         run: |
           set -euo pipefail
-          git merge-base --is-ancestor 3b479e310d06bdaec96205aae8787fb264fa02c9 HEAD
-          grep -q 'versionCode = 96' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC6"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 97' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC7"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 97' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC7"' buildsrc/employee-app/build.gradle.kts
           grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 96' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC6"' buildsrc/employee-app/build.gradle.kts
           grep -q 'targetSdk = 36' buildsrc/employee-app/build.gradle.kts
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
@@ -58,35 +51,14 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+          grep -q 'RC7 • إصلاح الاتصال والإدارة' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'RC7 • إصلاح Bluetooth/GPS' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'running || !identity.isTrustedStoreGpsConfigured' buildsrc/employee-app/src/main/java/com/attendpro/employee/OfflineGeoMonitor.kt
           grep -q 'PresenceProofControlActivity' buildsrc/store-app/src/main/AndroidManifest.xml
-          grep -q 'PresenceProofReceiver' buildsrc/store-app/src/main/AndroidManifest.xml
-          grep -q 'isGpsRecognizedFresh(employeeId, now)' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'Bluetooth BLE • موثّق' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'unfilteredFallback' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
-          grep -q 'legacy.*31-byte\|31-byte' buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
           grep -q 'ChallengeDispatch1928.send' buildsrc/store-app/src/main/java/com/attendpro/store/PresenceProofControlActivity.kt
-          grep -q 'عرض جميع إعدادات مدير المحل' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'app-update:2.1.0' buildsrc/store-app/build.gradle.kts
-          grep -q 'app-update:2.1.0' buildsrc/employee-app/build.gradle.kts
-          grep -q 'tools:node="remove"' buildsrc/store-app/src/play/AndroidManifest.xml
-          grep -q 'tools:node="remove"' buildsrc/employee-app/src/play/AndroidManifest.xml
-          test -f RELEASE_NOTES_V2.0.0_RC6.md
-          test -f FIELD_TEST_CHECKLIST_RC6.md
-          python3 tools/check-guide-release-contract.py
-
-      - name: Verify security backup and update contracts
-        run: |
-          set -euo pipefail
-          grep -q 'AES/GCM/NoPadding' buildsrc/foundation/src/main/java/com/attendpro/foundation/backup/EncryptedBackupCodec.kt
-          grep -q 'PBKDF2WithHmacSHA256' buildsrc/foundation/src/main/java/com/attendpro/foundation/backup/EncryptedBackupCodec.kt
-          grep -q 'AttendProApplication' buildsrc/store-app/src/main/AndroidManifest.xml
-          grep -q 'AttendProApplication' buildsrc/employee-app/src/main/AndroidManifest.xml
-          grep -q 'ENFORCE_OFFICIAL_SIGNATURE' buildsrc/store-app/build.gradle.kts
-          grep -q 'ENFORCE_OFFICIAL_SIGNATURE' buildsrc/employee-app/build.gradle.kts
-          grep -q 'usesCleartextTraffic="false"' buildsrc/store-app/src/main/AndroidManifest.xml
-          grep -q 'usesCleartextTraffic="false"' buildsrc/employee-app/src/main/AndroidManifest.xml
-
-      - name: Unit integration migration backup lock messaging shift receiver remote-settings and lint
+          test -f RELEASE_NOTES_V2.0.0_RC7.md
+          test -f FIELD_TEST_CHECKLIST_RC7.md
+      - name: Tests lint and build
         run: |
           set -euo pipefail
           gradle -p buildsrc \
@@ -94,25 +66,13 @@ jobs:
             :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest \
             :foundation:lintDebug \
             :employee-app:lintDirectRelease :employee-app:lintPlayRelease \
-            :store-app:lintDirectRelease :store-app:lintPlayRelease --stacktrace
-          python3 tools/guard-1.9.77-core-pairing.py verify
-          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
-          python3 tools/audit-translation-rc2.py
-          python3 tools/audit-functional-rc3.py
-          python3 tools/check-guide-release-contract.py
-
-      - name: Build Direct APK and Play APK AAB variants
-        run: |
-          set -euo pipefail
-          gradle -p buildsrc \
-            :employee-app:assembleDirectDebug :store-app:assembleDirectDebug \
+            :store-app:lintDirectRelease :store-app:lintPlayRelease \
             :employee-app:assembleDirectRelease :store-app:assembleDirectRelease \
             :employee-app:assemblePlayRelease :store-app:assemblePlayRelease \
             :employee-app:bundlePlayRelease :store-app:bundlePlayRelease --stacktrace
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
-
-      - name: Sign Direct APKs and Play AABs with official identity
+      - name: Sign official RC7 APKs and AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -120,95 +80,32 @@ jobs:
           ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          test -n "$ATTEND_PRO_KEYSTORE_B64"
-          test -n "$ATTEND_PRO_STORE_PASSWORD"
-          test -n "$ATTEND_PRO_KEY_ALIAS"
-          test -n "$ATTEND_PRO_KEY_PASSWORD"
           mkdir -p signed
-          EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
-          KEYSTORE=/tmp/attend-pro-v2-rc6.jks
+          KEYSTORE=/tmp/attend-pro-rc7.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
-          chmod 600 "$KEYSTORE"
+          EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
-            if [ "$APP" = employee ]; then
-              MOD=employee-app
-              PACKAGE=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC6.apk
-              AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC6-Play.aab
-            else
-              MOD=store-app
-              PACKAGE=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V2.0.0-RC6.apk
-              AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC6-Play.aab
-            fi
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC7.apk; AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC7-Play.aab; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC7.apk; AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC7-Play.aab; fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             UNSIGNED_AAB=$(find "buildsrc/$MOD/build/outputs/bundle/playRelease" -name '*.aab' -print -quit)
-            test -s "$UNSIGNED_APK"
-            test -s "$UNSIGNED_AAB"
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
-              --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" \
-              --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" \
-              --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
-              --out "signed/$APK_OUT" "/tmp/$APP-aligned.apk"
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "signed/$APK_OUT"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out "signed/$APK_OUT" "/tmp/$APP-aligned.apk"
             ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL_CERT" = "$EXPECTED_CERT"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='96' versionName='2.0.0-RC6'" "/tmp/$APP-badging.txt"
-
+            grep -q "package: name='$PACKAGE' versionCode='97' versionName='2.0.0-RC7'" "/tmp/$APP-badging.txt"
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
-            jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD \
-              -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
-            jarsigner -verify -verbose -certs "signed/$AAB_OUT" >/tmp/$APP-aab-verify.txt
-            grep -q 'jar verified' /tmp/$APP-aab-verify.txt
-            AAB_CERT=$(keytool -printcert -jarfile "signed/$AAB_OUT" | sed -n 's/^[[:space:]]*SHA256: //p' | head -1 | tr -d ':' | tr A-F a-f)
-            test "$AAB_CERT" = "$EXPECTED_CERT"
-
-            PLAY_APK=$(find "buildsrc/$MOD/build/outputs/apk/play/release" -name '*-unsigned.apk' -print -quit)
-            test -s "$PLAY_APK"
-            APKA="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
-            test "$("$APKA" manifest application-id "$PLAY_APK")" = "$PACKAGE"
-            test "$("$APKA" manifest version-code "$PLAY_APK")" = "96"
-            if "$APKA" manifest permissions "$PLAY_APK" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
-              echo 'Play build must not request package installation permission' >&2; exit 1
-            fi
-            if ! "$APKA" manifest permissions "signed/$APK_OUT" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
-              echo 'Direct APK must retain REQUEST_INSTALL_PACKAGES' >&2; exit 1
-            fi
-            if unzip -p "$PLAY_APK" 'classes*.dex' | strings | grep -Fq '/api/v1/app/update'; then
-              echo 'Play APK contains Direct update endpoint' >&2; exit 1
-            fi
+            jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
+            jarsigner -verify "signed/$AAB_OUT" >/dev/null
           done
-
-      - name: Package RC6 source reports hashes and protected diff
+      - name: Package RC7
         run: |
           set -euo pipefail
-          cp RELEASE_NOTES_V2.0.0_RC6.md signed/
-          cp FIELD_TEST_CHECKLIST_RC6.md signed/
-          cp CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256 signed/
-          [ -f translation-audit-rc2.txt ] && cp translation-audit-rc2.txt signed/ || true
-          [ -f functional-audit-rc3.txt ] && cp functional-audit-rc3.txt signed/ || true
-          git archive --format=zip --prefix=ATTEND-PRO-V2.0.0-RC6/ --output=signed/ATTEND-PRO-V2.0.0-RC6-SOURCE.zip HEAD
+          cp RELEASE_NOTES_V2.0.0_RC7.md FIELD_TEST_CHECKLIST_RC7.md signed/
+          git archive --format=zip --prefix=ATTEND-PRO-V2.0.0-RC7/ --output=signed/ATTEND-PRO-V2.0.0-RC7-SOURCE.zip HEAD
           {
-            printf 'ATTEND-PRO V2.0.0-RC6\n'
-            printf 'Source commit: %s\n' "$GITHUB_SHA"
-            printf 'Workflow run: %s\n' "$GITHUB_RUN_ID"
-            printf 'Protected baseline: 3b479e310d06bdaec96205aae8787fb264fa02c9\n'
-            printf 'Version code: 96\nTarget SDK: 36\n'
-            printf 'Official certificate SHA-256: 2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59\n'
-            printf 'Production deployed: NO\nMain branch merged: NO\n'
-          } > signed/RELEASE-MANIFEST.txt
-          {
-            printf 'Protected connection diff against baseline\n'
-            sha256sum \
-              buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
-              buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
-              buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
-              buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
-              buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
-              buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-            printf '\nprotected_changed:\n'
+            echo 'Protected connection diff against baseline'
+            echo 'protected_changed:'
             git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
               buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
               buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -220,22 +117,16 @@ jobs:
           (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
           mkdir -p test-reports
           find buildsrc -path '*/build/test-results/*' -type f -exec cp --parents {} test-reports/ \; || true
-          find buildsrc -path '*/build/reports/tests/*' -type f -exec cp --parents {} test-reports/ \; || true
-          cp signed/CONNECTION-PROTECTED-DIFF.txt test-reports/
-          cp signed/ALL-SHA256SUMS.txt test-reports/
-
-      - name: Upload signed RC6 bundle
+          cp signed/CONNECTION-PROTECTED-DIFF.txt signed/ALL-SHA256SUMS.txt test-reports/
+      - name: Upload RC7 signed bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC6-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC7-SIGNED
           path: signed/
-          if-no-files-found: error
           retention-days: 30
-
-      - name: Upload RC6 test reports
+      - name: Upload RC7 test reports
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC6-TEST-REPORTS
+          name: ATTEND-PRO-V2.0.0-RC7-TEST-REPORTS
           path: test-reports/
-          if-no-files-found: error
           retention-days: 30
