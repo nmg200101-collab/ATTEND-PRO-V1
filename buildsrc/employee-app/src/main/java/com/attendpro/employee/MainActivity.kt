@@ -903,7 +903,8 @@ class MainActivity : Activity() {
             return
         }
         startBackgroundPresence()
-        status.text = "الظهور التلقائي يعمل عبر Bluetooth وWi‑Fi/Hotspot والخادم"
+        ensureGeoPermissionIfNeeded()
+        status.text = "الظهور التلقائي يعمل عبر Bluetooth وWi‑Fi/Hotspot والخادم؛ GPS يعمل عند منح الموقع"
     }
 
     private fun startBackgroundPresence() {
@@ -1192,7 +1193,7 @@ class MainActivity : Activity() {
     }
 
     private fun ensureGeoPermissionIfNeeded() {
-        if (!identity.geoArrivalAlertsEnabled || !identity.isTrustedStoreGpsConfigured) return
+        if (!identity.isTrustedStoreGpsConfigured) return
         val fine = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         if (!fine && !coarse) {
@@ -1307,7 +1308,7 @@ class MainActivity : Activity() {
             REQUEST_GPS_PERMISSION -> {
                 if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
                     status.text = "✓ تم منح الموقع — تفعيل مراقبة نطاق المحل محليًا"
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && identity.geoArrivalAlertsEnabled && identity.isTrustedStoreGpsConfigured &&
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && identity.isTrustedStoreGpsConfigured &&
                         checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) != PackageManager.PERMISSION_GRANTED) {
                         AlertDialog.Builder(this).setTitle("السماح بالموقع في الخلفية")
                             .setMessage("ميزة نطاق المحل تجمع الموقع في الخلفية حتى عندما يكون التطبيق مغلقًا أو غير مستخدم، وقد ترسل حالة القرب والمسافة والدقة ووقت القراءة إلى خادم إدارة المحل عند تفعيل الاتصال بالخادم. لا تسجل القراءة حضورًا تلقائيًا. للموافقة اختر «السماح طوال الوقت» من إعدادات التطبيق؛ وإلا يستمر Bluetooth وWi‑Fi ويعمل GPS أثناء الاستخدام المسموح فقط.")

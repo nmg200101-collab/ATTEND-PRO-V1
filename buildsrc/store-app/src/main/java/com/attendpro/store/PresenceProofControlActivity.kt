@@ -21,6 +21,7 @@ import com.attendpro.core.AttendanceMethod
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.DeviceIdentity
 import com.attendpro.core.StoreRepository
+import com.attendpro.core.SecretCodec
 import com.attendpro.core.UiKit
 import java.util.Calendar
 
@@ -76,8 +77,24 @@ class PresenceProofControlActivity : Activity() {
     }
 
     private fun sendNow(employeeId:String,name:String,method:AttendanceMethod,action:AttendanceAction) {
-        if(!repo.hasCentralCredentials() || repo.serverUrl.isBlank()) { AlertDialog.Builder(this).setMessage("الإرسال اليدوي المجدول يحتاج اتصال الخادم. يمكن استخدام زر إثبات الحضور في الشاشة الرئيسية للقناة المحلية.").setPositiveButton("حسنًا",null).show(); return }
-        Thread { val r=CentralServerClient.createPresenceChallenge(repo.serverUrl,repo.centralAccessToken,repo.storeId,DeviceIdentity(this),employeeId,method,action); runOnUiThread { AlertDialog.Builder(this).setMessage(if(r.isSuccess) "تم إرسال طلب الإثبات إلى $name." else "تعذر الإرسال: ${r.exceptionOrNull()?.message ?: "خطأ"}").setPositiveButton("حسنًا",null).show() } }.start()
+        val e = repo.employees().firstOrNull { it.employeeId == employeeId } ?: return
+        val secret = SecretCodec.decode(e.pairingSecret) ?: ByteArray(0)
+        val localSent = ChallengeDispatch1928.send(this, employeeId, secret, method, action = action)
+        if(!repo.hasCentralCredentials() || repo.serverUrl.isBlank()) {
+            AlertDialog.Builder(this).setMessage(if(localSent) "تم إرسال طلب الإثبات إلى $name محليًا عبر Bluetooth/Wi‑Fi." else "تعذر الإرسال المحلي. تأكد من Bluetooth أو اتصال الشبكة المحلية.").setPositiveButton("حسنًا",null).show(); return
+        }
+        Thread {
+            val r=CentralServerClient.createPresenceChallenge(repo.serverUrl,repo.centralAccessToken,repo.storeId,DeviceIdentity(this),employeeId,method,action)
+            runOnUiThread {
+                val message = when {
+                    r.isSuccess && localSent -> "تم إرسال طلب الإثبات إلى $name محليًا وعبر الخادم."
+                    r.isSuccess -> "تم إرسال طلب الإثبات إلى $name عبر الخادم."
+                    localSent -> "تم إرسال الطلب محليًا إلى $name؛ تعذر الخادم وسيستمر الطلب المحلي."
+                    else -> "تعذر الإرسال المحلي والخادم: ${r.exceptionOrNull()?.message ?: "خطأ"}"
+                }
+                AlertDialog.Builder(this).setMessage(message).setPositiveButton("حسنًا",null).show()
+            }
+        }.start()
     }
 
     companion object { const val PREFS="presence_proof_control_rc5" }
@@ -101,6 +118,16 @@ class PresenceProofReceiver: BroadcastReceiver() {
         if(intent?.action!=PresenceProofScheduler.ACTION && intent?.action!=Intent.ACTION_BOOT_COMPLETED && intent?.action!=Intent.ACTION_MY_PACKAGE_REPLACED) return
         val prefs=context.getSharedPreferences(PresenceProofControlActivity.PREFS,Context.MODE_PRIVATE); if(!prefs.getBoolean("enabled",false)) return
         if(intent.action==Intent.ACTION_BOOT_COMPLETED || intent.action==Intent.ACTION_MY_PACKAGE_REPLACED) { PresenceProofScheduler.schedule(context); return }
-        val pending=goAsync(); Thread { try { val repo=StoreRepository(context); val id=prefs.getString("employeeId","").orEmpty(); val e=repo.employees().firstOrNull{it.employeeId==id && it.active && it.companionEnabled}; if(e!=null && repo.hasCentralCredentials() && repo.serverUrl.isNotBlank()) { val method=runCatching{AttendanceMethod.valueOf(prefs.getString("method",AttendanceMethod.PHONE_BLE_BIOMETRIC.name)!!)}.getOrDefault(AttendanceMethod.PHONE_BLE_BIOMETRIC); val action=runCatching{AttendanceAction.valueOf(prefs.getString("action",AttendanceAction.CHECK_IN.name)!!)}.getOrDefault(AttendanceAction.CHECK_IN); CentralServerClient.createPresenceChallenge(repo.serverUrl,repo.centralAccessToken,repo.storeId,DeviceIdentity(context),e.employeeId,method,action) } } finally { PresenceProofScheduler.schedule(context); pending.finish() } }.start()
+        val pending=goAsync(); Thread { try {
+            val repo=StoreRepository(context); val id=prefs.getString("employeeId","").orEmpty()
+            val e=repo.employees().firstOrNull{it.employeeId==id && it.active && it.companionEnabled}
+            if(e!=null) {
+                val method=runCatching{AttendanceMethod.valueOf(prefs.getString("method",AttendanceMethod.PHONE_BLE_BIOMETRIC.name)!!)}.getOrDefault(AttendanceMethod.PHONE_BLE_BIOMETRIC)
+                val action=runCatching{AttendanceAction.valueOf(prefs.getString("action",AttendanceAction.CHECK_IN.name)!!)}.getOrDefault(AttendanceAction.CHECK_IN)
+                val secret=SecretCodec.decode(e.pairingSecret) ?: ByteArray(0)
+                ChallengeDispatch1928.send(context,e.employeeId,secret,method,action=action)
+                if(repo.hasCentralCredentials() && repo.serverUrl.isNotBlank()) CentralServerClient.createPresenceChallenge(repo.serverUrl,repo.centralAccessToken,repo.storeId,DeviceIdentity(context),e.employeeId,method,action)
+            }
+        } finally { PresenceProofScheduler.schedule(context); pending.finish() } }.start()
     }
 }

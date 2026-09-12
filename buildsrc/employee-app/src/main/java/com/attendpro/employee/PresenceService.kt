@@ -95,9 +95,11 @@ class PresenceService : Service() {
             this,
             identity,
             onEntered = { distance, accuracy ->
-                AttendanceRequestNotifier.notifyGeoArrival(this, identity.displayName, identity.trustedStoreName, distance)
-                if (identity.employeeVoicePromptsEnabled) {
-                    voicePrompter.speak("يا ${identity.displayName}، تم التعرف على هاتفك بالقرب من ${identity.trustedStoreName} عبر الموقع. هذا لا يسجل الحضور تلقائيًا")
+                if (identity.geoArrivalAlertsEnabled) {
+                    AttendanceRequestNotifier.notifyGeoArrival(this, identity.displayName, identity.trustedStoreName, distance)
+                    if (identity.employeeVoicePromptsEnabled) {
+                        voicePrompter.speak("يا ${identity.displayName}، تم التعرف على هاتفك بالقرب من ${identity.trustedStoreName} عبر الموقع. هذا لا يسجل الحضور تلقائيًا")
+                    }
                 }
                 identity.lastGpsDistanceMeters = distance
                 identity.lastGpsAccuracyMeters = accuracy
@@ -185,7 +187,7 @@ class PresenceService : Service() {
         val hasBackgroundLocation = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
             checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
         val backgroundRestart = intent == null || intent.getBooleanExtra(EXTRA_BACKGROUND_RESTART, false)
-        locationMonitoringAllowedForRun = identity.geoArrivalAlertsEnabled && identity.isTrustedStoreGpsConfigured && hasForegroundLocation &&
+        locationMonitoringAllowedForRun = identity.isTrustedStoreGpsConfigured && hasForegroundLocation &&
             (!backgroundRestart || hasBackgroundLocation)
         val foregroundStarted = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -253,13 +255,15 @@ class PresenceService : Service() {
 
 
     private fun maybeUploadGpsObservation(state: String, distance: Int, accuracy: Int, observedAt: Long) {
-        if (!identity.serverLinked || !identity.isConfigured || identity.serverUrl.isBlank()) return
-        val now = System.currentTimeMillis()
-        if (now - identity.lastGpsServerUploadAt < 20_000L) return
+        // Always persist the latest GPS recognition locally first. A stale serverLinked flag must not
+        // suppress fresh GPS telemetry after app/server restarts.
         identity.lastGpsState = state
         identity.lastGpsObservedAt = observedAt
         identity.lastGpsDistanceMeters = distance
         identity.lastGpsAccuracyMeters = accuracy
+        if (!identity.isConfigured || identity.serverUrl.isBlank()) return
+        val now = System.currentTimeMillis()
+        if (now - identity.lastGpsServerUploadAt < 20_000L) return
         identity.lastGpsServerUploadAt = now
         Thread {
             CentralServerClient.sendEmployeeGeoObservation(
@@ -272,7 +276,7 @@ class PresenceService : Service() {
                 distance,
                 accuracy,
                 observedAt
-            ).onFailure {
+            ).onSuccess { identity.serverLinked = true }.onFailure {
                 // Do not mark the employee server link dead because a geo telemetry write failed.
                 // Challenge polling/registration remains the authoritative server connection.
             }

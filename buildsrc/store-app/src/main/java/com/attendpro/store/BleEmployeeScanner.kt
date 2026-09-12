@@ -28,6 +28,7 @@ class BleEmployeeScanner(
     private var wanted = false
     private var startedAt = 0L
     private var lastResultAt = 0L
+    private var unfilteredFallback = false
 
     private val retry = Runnable { if (wanted) startInternal() }
     private val watchdog = object : Runnable {
@@ -35,7 +36,10 @@ class BleEmployeeScanner(
             if (wanted && scanning) {
                 val now = System.currentTimeMillis()
                 val reference = if (lastResultAt > 0L) lastResultAt else startedAt
-                if (reference > 0L && now - reference > 25_000L) {
+                if (reference > 0L && now - reference > 8_000L && !unfilteredFallback) {
+                    unfilteredFallback = true
+                    restartScan("تفعيل مسح BLE المتوافق مع الأجهزة تلقائيًا")
+                } else if (reference > 0L && now - reference > 25_000L) {
                     restartScan("إعادة تنشيط مسح BLE تلقائيًا")
                 }
             }
@@ -122,7 +126,7 @@ class BleEmployeeScanner(
                 BleProtocol.MANUFACTURER_ID, byteArrayOf(BleProtocol.VERSION), byteArrayOf(0xFF.toByte())
             ).build()
         )
-        runCatching { scanner.startScan(filters, settings, callback) }
+        runCatching { scanner.startScan(if (unfilteredFallback) null else filters, settings, callback) }
             .onSuccess {
                 scanning = true
                 startedAt = System.currentTimeMillis()
@@ -143,6 +147,7 @@ class BleEmployeeScanner(
         handler.removeCallbacks(watchdog)
         if (hasPermissions()) runCatching { adapter?.bluetoothLeScanner?.stopScan(callback) }
         scanning = false
+        unfilteredFallback = false
     }
 
 

@@ -3,8 +3,8 @@ from pathlib import Path
 import re
 import sys
 
-EXPECTED_CODE = 95
-EXPECTED_NAME = "2.0.0-RC5"
+EXPECTED_CODE = 96
+EXPECTED_NAME = "2.0.0-RC6"
 
 apps = {
     "store": Path("buildsrc/store-app/build.gradle.kts"),
@@ -14,7 +14,7 @@ guides = {
     "store": Path("buildsrc/store-app/src/main/java/com/attendpro/store/StoreUserGuideActivity.kt"),
     "employee": Path("buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeUserGuideActivity.kt"),
 }
-release_notes = Path("RELEASE_NOTES_V2.0.0_RC5.md")
+release_notes = Path("RELEASE_NOTES_V2.0.0_RC6.md")
 
 errors = []
 for name, path in apps.items():
@@ -27,7 +27,7 @@ for name, path in apps.items():
         errors.append(f"{name}: versionName must be {EXPECTED_NAME}")
 
 notes = release_notes.read_text(encoding="utf-8") if release_notes.exists() else ""
-for token in (EXPECTED_NAME, "versionCode 95", "Bluetooth", "GPS", "Presence Proof", "credential"):
+for token in (EXPECTED_NAME, "versionCode 96", "Bluetooth", "GPS", "Presence Proof", "credential"):
     if token.lower() not in notes.lower():
         errors.append(f"release notes missing token: {token}")
 

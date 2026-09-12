@@ -147,10 +147,12 @@ class BlePresenceAdvertiser(
             .setConnectable(true)
             .setTimeout(0)
             .build()
+        // RC6: the authenticated manufacturer frame alone is kept in the primary legacy
+        // advertisement. Adding a 128-bit service UUID here can overflow the 31-byte budget on
+        // Samsung/Motorola and cause ADVERTISE_FAILED_DATA_TOO_LARGE. GATT UUID stays in scan response.
         val data = AdvertiseData.Builder()
             .setIncludeDeviceName(false)
             .setIncludeTxPowerLevel(false)
-            .addServiceUuid(BleProtocol.SERVICE_UUID)
             .addManufacturerData(BleProtocol.MANUFACTURER_ID, payload)
             .build()
         // Put the actual direct-GATT service UUID in scan response instead of the primary

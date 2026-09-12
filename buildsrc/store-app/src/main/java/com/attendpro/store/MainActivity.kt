@@ -1506,7 +1506,7 @@ class MainActivity : Activity() {
     private data class OwnerShortcut(val id: String, val title: String)
 
     private fun ownerShortcutCatalog(): List<OwnerShortcut> = listOf(
-        OwnerShortcut("all_settings", "جميع إعدادات مدير المحل"),
+        OwnerShortcut("all_settings", "عرض جميع إعدادات مدير المحل"),
         OwnerShortcut("employees", "الموظفون وملفات التعرف"),
         OwnerShortcut("pair_employee", "ربط جهاز موظف"),
         OwnerShortcut("presence_challenge", "طلب إثبات حضور الآن"),
@@ -1534,7 +1534,7 @@ class MainActivity : Activity() {
 
     private fun runOwnerShortcut(id: String) {
         when (id) {
-            "all_settings" -> startActivity(Intent(this, StoreSettingsActivity::class.java))
+            "all_settings" -> showStoreOwnerHub()
             "employees" -> startActivity(Intent(this, MainActivity::class.java)
                 .putExtra(EXTRA_EMPLOYEE_MANAGER, true)
                 .putExtra(EXTRA_STORE_ADMIN_SESSION, repo.issueStoreAdminSession()))
@@ -1647,7 +1647,7 @@ class MainActivity : Activity() {
         val scroll = ScrollView(this).apply { addView(content) }
         var hubDialog: AlertDialog? = null
 
-        ownerShortcutCatalog().forEach { shortcut ->
+        ownerShortcutCatalog().filterNot { it.id == "all_settings" }.forEach { shortcut ->
             content.addView(UiKit.button(this, p, shortcut.title, false).apply {
                 setOnClickListener {
                     hubDialog?.dismiss()
@@ -1655,6 +1655,12 @@ class MainActivity : Activity() {
                 }
             })
         }
+        content.addView(UiKit.button(this, p, "الإعدادات المتقدمة والسياسات", false).apply {
+            setOnClickListener {
+                hubDialog?.dismiss()
+                startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java))
+            }
+        })
         content.addView(UiKit.button(this, p, "تخصيص اختصارات الشاشة الرئيسية").apply {
             setOnClickListener {
                 hubDialog?.dismiss()
@@ -1668,6 +1674,7 @@ class MainActivity : Activity() {
             .setNegativeButton("إغلاق", null)
             .create()
         hubDialog.show()
+        hubDialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
     private fun showPairEmployeePicker() {
