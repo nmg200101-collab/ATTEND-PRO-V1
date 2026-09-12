@@ -47,7 +47,7 @@ class OfflineGeoMonitor(
 
     @SuppressLint("MissingPermission")
     fun start() {
-        if (running || !identity.geoArrivalAlertsEnabled || !identity.isTrustedStoreGpsConfigured || !hasPermission()) return
+        if (running || !identity.isTrustedStoreGpsConfigured || !hasPermission()) return
         val lm = manager ?: return
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             .filter { runCatching { lm.isProviderEnabled(it) }.getOrDefault(false) }

@@ -99,6 +99,11 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (!enforceOfficialBuild1982()) return
         identity = EmployeeIdentityStore(this)
+        val rc7Migration = getSharedPreferences("attend_rc7_migration", MODE_PRIVATE)
+        if (identity.isConfigured && !rc7Migration.getBoolean("presence_enabled_once", false)) {
+            identity.autoPresence = true
+            rc7Migration.edit().putBoolean("presence_enabled_once", true).apply()
+        }
         advertiser = BlePresenceAdvertiser(this) { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } }
         networkPresence = NetworkPresenceBroadcaster(onStatus = { msg -> runOnUiThread { if (::status.isInitialized) status.text = msg } })
         pairingDiscovery = PairingDiscovery(this,{value,channel->
@@ -168,7 +173,7 @@ class MainActivity : Activity() {
         header.addView(employeeTemplateChip1978().apply { layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply{gravity=Gravity.START} })
         header.addView(ImageView(this).apply { setImageResource(R.drawable.ic_attend_pro); layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity,76),UiKit.dp(this@MainActivity,76)) })
         header.addView(UiKit.title(this,p,"ATTEND PRO",27f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
-        header.addView(UiKit.subtitle(this,p,"تطبيق الموظف المساند • الإصدار ${attendProVersionName()}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        header.addView(UiKit.subtitle(this,p,"RC7 • إصلاح Bluetooth/GPS • الإصدار ${attendProVersionName()}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         header.addView(UiKit.subtitle(this,p,"اختياري — جهاز المحل هو النظام الأساسي").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(215,255,255,255)) })
         root.addView(header)
         addEmployeeTabs1978(root)

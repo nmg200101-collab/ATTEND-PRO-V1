@@ -572,7 +572,7 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 52), UiKit.dp(this@MainActivity, 52))
         })
         header.addView(UiKit.title(this, p, "ATTEND PRO", 25f).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
-        header.addView(UiKit.subtitle(this, p, "نظام حضور المحل • الإصدار ${attendProVersionName()}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        header.addView(UiKit.subtitle(this, p, "RC7 • إصلاح الاتصال والإدارة • الإصدار ${attendProVersionName()}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         storeSummary = UiKit.subtitle(this, p, storeSummaryText()).apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(235,255,255,255)); setPadding(0, UiKit.dp(this@MainActivity, 5), 0, 0) }
         header.addView(storeSummary)
         root.addView(header)
@@ -673,6 +673,7 @@ class MainActivity : Activity() {
         }
         timelineCard.addView(activityTimelineView)
         root.addView(timelineCard)
+        addOwnerShortcutCard(root)
 
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
     }
@@ -763,7 +764,7 @@ class MainActivity : Activity() {
         header.addView(UiKit.title(this,p,"ATTEND PRO",22f).apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.WHITE)})
         storeSummary=UiKit.subtitle(this,p,storeSummaryText()).apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.WHITE)}
         header.addView(storeSummary)
-        header.addView(UiKit.subtitle(this,p,"لوحة الأقسام • ${attendProVersionName()}").apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.argb(220,255,255,255))})
+        header.addView(UiKit.subtitle(this,p,"RC7 • لوحة الأقسام • ${attendProVersionName()}").apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.argb(220,255,255,255))})
         root.addView(header)
         addStoreTabs1978(root)
 
@@ -797,6 +798,7 @@ class MainActivity : Activity() {
 
         recentAttendanceSummaryView=UiKit.subtitle(this,p,"لا توجد عملية اليوم").apply{gravity=Gravity.CENTER}
         val recent=UiKit.card(this,p,8);recent.addView(UiKit.sectionLabel(this,p,"آخر حركة"));recent.addView(recentAttendanceSummaryView);UiKit.makeInteractive(recent,this,p);recent.setOnClickListener{showConnectionAttendanceHistory()};root.addView(recent)
+        addOwnerShortcutCard(root)
         root.addView(UiKit.card(this,p,7).apply{addView(status)})
         setContentView(ScrollView(this).apply{isFillViewport=true;setBackgroundColor(p.bg);addView(root)})
     }
@@ -856,7 +858,7 @@ class MainActivity : Activity() {
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p,
-                t("نظام حضور المحل • ${attendProVersionName()}", "Store attendance system • ${attendProVersionName()}")).apply {
+                t("RC7 • إصلاح الاتصال والإدارة • ${attendProVersionName()}", "RC7 • connectivity/admin repair • ${attendProVersionName()}")).apply {
                 setTextColor(android.graphics.Color.argb(225,255,255,255))
                 textSize = 11.2f
                 gravity = if (isEnglish) Gravity.START else Gravity.END
@@ -1010,6 +1012,7 @@ class MainActivity : Activity() {
         bottomRow.addView(summaryCard)
         bottomRow.addView(latestCard)
         root.addView(bottomRow)
+        addOwnerShortcutCard(root)
 
         root.addView(UiKit.card(this, p, 4).apply { addView(status) })
 
@@ -1522,9 +1525,11 @@ class MainActivity : Activity() {
         OwnerShortcut("license", "التفعيل والاشتراك")
     )
 
-    private fun ownerShortcutIds(): Set<String> =
-        getSharedPreferences("store_owner_ui", MODE_PRIVATE)
-            .getStringSet("home_shortcuts", emptySet())?.toSet().orEmpty()
+    private fun ownerShortcutIds(): Set<String> {
+        val prefs = getSharedPreferences("store_owner_ui", MODE_PRIVATE)
+        val stored = prefs.getStringSet("home_shortcuts", null)
+        return stored?.toSet() ?: setOf("all_settings", "presence_challenge", "presence_control", "connections")
+    }
 
     private fun saveOwnerShortcutIds(ids: Set<String>) {
         val valid = ownerShortcutCatalog().map { it.id }.toSet()
