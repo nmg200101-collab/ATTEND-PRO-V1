@@ -34,7 +34,7 @@ object ShiftTimeCodec {
         endHour24: Int,
         endMinute: Int,
         locale: Locale = Locale.getDefault()
-    ): String = format(startHour24, startMinute, locale) + " - " + format(endHour24, endMinute, locale)
+    ): String = format(startHour24, startMinute, locale) + " → " + format(endHour24, endMinute, locale)
 
     fun isOvernight(startHour24: Int, startMinute: Int, endHour24: Int, endMinute: Int): Boolean {
         val start = startHour24 * 60 + startMinute
