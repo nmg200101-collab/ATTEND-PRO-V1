@@ -39,6 +39,14 @@
         </activity>
         <activity android:name=".ReportsActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".StoreSettingsActivity" android:screenOrientation="portrait" android:exported="false" />
+        <activity android:name=".PresenceProofControlActivity" android:screenOrientation="portrait" android:exported="false" />
+        <receiver android:name=".PresenceProofReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="com.attendpro.store.ACTION_PRESENCE_PROOF_RC5" />
+            </intent-filter>
+        </receiver>
         <activity android:name=".StoreVoiceControl1975Activity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".StoreMessages1975Activity" android:screenOrientation="portrait" android:exported="false" />
         <receiver android:name=".StoreMessagePoll1975" android:exported="false">

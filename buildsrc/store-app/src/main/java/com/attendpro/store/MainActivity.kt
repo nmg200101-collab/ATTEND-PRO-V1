@@ -1041,6 +1041,9 @@ class MainActivity : Activity() {
             t("البحث عن تحديثات التطبيق", "Check for app updates") to {
                 DistributionUpdateManager.check(this, repo.serverUrl.ifBlank { DistributionUpdateManager.DEFAULT_SERVER }, "store", manual = true)
             },
+            t("التحكم بإثبات الحضور", "Presence proof control") to {
+                startActivity(Intent(this, PresenceProofControlActivity::class.java))
+            },
             t("الإعدادات", "Settings") to { startActivity(Intent(this, StoreSettingsActivity::class.java)) },
             t("منطقة إدارة النظام", "System administration") to { startActivity(Intent(this, SystemSettingsActivity::class.java).putExtra("OWNER_ONLY_1978", true)) }
         ))
@@ -1506,7 +1509,8 @@ class MainActivity : Activity() {
         OwnerShortcut("all_settings", "جميع إعدادات مدير المحل"),
         OwnerShortcut("employees", "الموظفون وملفات التعرف"),
         OwnerShortcut("pair_employee", "ربط جهاز موظف"),
-        OwnerShortcut("presence_challenge", "طلب إثبات حضور"),
+        OwnerShortcut("presence_challenge", "طلب إثبات حضور الآن"),
+        OwnerShortcut("presence_control", "التحكم بطلبات إثبات الحضور"),
         OwnerShortcut("attendance_policy", "الدوام وسياسات الحضور"),
         OwnerShortcut("smart_attendance", "الدوام والتنبيهات الذكية"),
         OwnerShortcut("live_attendance", "الحضور الآن"),
@@ -1536,6 +1540,7 @@ class MainActivity : Activity() {
                 .putExtra(EXTRA_STORE_ADMIN_SESSION, repo.issueStoreAdminSession()))
             "pair_employee" -> showPairEmployeePicker()
             "presence_challenge" -> showPresenceChallenge()
+            "presence_control" -> startActivity(Intent(this, PresenceProofControlActivity::class.java))
             "attendance_policy" -> PhoneAttendanceSettingsDialog1928.show(this, repo)
             "smart_attendance" -> showSmartAttendanceControl()
             "live_attendance" -> showLiveAttendanceNow()
@@ -2823,6 +2828,11 @@ class MainActivity : Activity() {
         for(employee in employees){
             val secret=SecretCodec.decode(employee.pairingSecret)?:continue
             if(!BleProtocol.verify(payload,employee.employeeId,secret))continue
+            if (channel.startsWith("Bluetooth", ignoreCase = true)) {
+                val bleNow = System.currentTimeMillis()
+                authenticatedPresenceAt[employee.employeeId] = bleNow
+                repo.markCompanionLinked(employee.employeeId, "Bluetooth BLE • موثّق", bleNow)
+            }
             // LAN is promoted to a real connection only when even a discovery frame carries
             // a valid rotating HMAC token. BLE discovery may remain unauthenticated because
             // the direct GATT heartbeat performs the authentication before "connected".
@@ -2954,7 +2964,8 @@ class MainActivity : Activity() {
 
     private fun isEmployeeActuallyConnected(employeeId: String, now: Long = System.currentTimeMillis()): Boolean =
         isAuthenticatedPresenceConnected(employeeId, now) || isDirectBleUiConnected(employeeId, now) ||
-            isLanConnected(employeeId, now) || isServerPresenceConnected(employeeId, now)
+            isLanConnected(employeeId, now) || isServerPresenceConnected(employeeId, now) ||
+            isGpsRecognizedFresh(employeeId, now)
 
     private fun maybeRecordPhoneProof(employee:PairedEmployee,token:Int,method:AttendanceMethod, extraEvidence:String = "", forcedAction: AttendanceAction? = null){
         if (method == AttendanceMethod.GPS) return // 1.9.58: GPS is recognition/telemetry only, never attendance proof.
@@ -3009,8 +3020,10 @@ class MainActivity : Activity() {
             val activeChannels = connectedIds.flatMap { id ->
                 buildList {
                     if (isDirectBleUiConnected(id, now)) add("Bluetooth BLE • ACK")
+                    else if (isAuthenticatedPresenceConnected(id, now)) add("Bluetooth BLE • موثّق")
                     if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
                     if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
+                    if (isGpsRecognizedFresh(id, now)) add("GPS • داخل/قرب النطاق")
                 }
             }.distinct()
             val server = ServerDiagnostics.snapshot()
@@ -3112,7 +3125,9 @@ class MainActivity : Activity() {
             if (lanAckAge <= 8_000L && "Wi‑Fi/Hotspot • ACK" !in liveChannels) liveChannels.add("Wi‑Fi/Hotspot • ACK")
             val statusText = when {
                 directAckAge <= 11_000L -> "● متصل ومؤكد عبر Bluetooth ACK"
+                isAuthenticatedPresenceConnected(employee.employeeId, now) -> "● متصل عبر Bluetooth BLE موثّق"
                 lanAckAge <= 8_000L -> "● متصل ومؤكد عبر LAN ACK"
+                isGpsRecognizedFresh(employee.employeeId, now) -> "● متعرّف عبر GPS داخل/قرب النطاق"
                 age <= 12_000L -> "◌ مكتشف/قريب فقط — بانتظار ACK"
                 age <= 60_000L -> "◌ انقطع مؤخرًا"
                 else -> "○ غير متصل"
