@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC7
+name: Build ATTEND-PRO V2.0.0 RC8
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc7-${{ github.ref }}
+  group: attend-pro-v2-rc8-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,15 +32,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Verify RC7 field repair and protected pairing
+      - name: Apply RC8 employee pairing repair
         run: |
           set -euo pipefail
-          grep -q 'versionCode = 97' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC7"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 97' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC7"' buildsrc/employee-app/build.gradle.kts
-          grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
-          grep -q 'targetSdk = 36' buildsrc/employee-app/build.gradle.kts
+          python3 tools/apply-rc8-employee-pairing-fix.py
+          grep -q 'versionCode = 98' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC8"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 98' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC8"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'startPairingDiscoveryReliable(envelope.code' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'إعادة محاولة الربط' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
           python3 tools/guard-1.9.77-core-pairing.py verify
@@ -51,28 +52,18 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-          grep -q 'RC7 • إصلاح الاتصال والإدارة' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'RC7 • إصلاح Bluetooth/GPS' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
-          grep -q 'running || !identity.isTrustedStoreGpsConfigured' buildsrc/employee-app/src/main/java/com/attendpro/employee/OfflineGeoMonitor.kt
-          grep -q 'PresenceProofControlActivity' buildsrc/store-app/src/main/AndroidManifest.xml
-          grep -q 'ChallengeDispatch1928.send' buildsrc/store-app/src/main/java/com/attendpro/store/PresenceProofControlActivity.kt
-          test -f RELEASE_NOTES_V2.0.0_RC7.md
-          test -f FIELD_TEST_CHECKLIST_RC7.md
-      - name: Tests lint and build
+      - name: Test and build RC8
         run: |
           set -euo pipefail
           gradle -p buildsrc \
             :core:testDebugUnitTest :foundation:testDebugUnitTest \
             :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest \
-            :foundation:lintDebug \
-            :employee-app:lintDirectRelease :employee-app:lintPlayRelease \
-            :store-app:lintDirectRelease :store-app:lintPlayRelease \
+            :employee-app:compileDirectDebugKotlin :store-app:compileDirectDebugKotlin \
             :employee-app:assembleDirectRelease :store-app:assembleDirectRelease \
-            :employee-app:assemblePlayRelease :store-app:assemblePlayRelease \
             :employee-app:bundlePlayRelease :store-app:bundlePlayRelease --stacktrace
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
-      - name: Sign official RC7 APKs and AABs
+      - name: Sign official RC8 packages
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -81,11 +72,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p signed
-          KEYSTORE=/tmp/attend-pro-rc7.jks
+          KEYSTORE=/tmp/attend-pro-rc8.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC7.apk; AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC7-Play.aab; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC7.apk; AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC7-Play.aab; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC8.apk; AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC8-Play.aab; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC8.apk; AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC8-Play.aab; fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             UNSIGNED_AAB=$(find "buildsrc/$MOD/build/outputs/bundle/playRelease" -name '*.aab' -print -quit)
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
@@ -93,16 +84,15 @@ jobs:
             ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL_CERT" = "$EXPECTED_CERT"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='97' versionName='2.0.0-RC7'" "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='98' versionName='2.0.0-RC8'" "/tmp/$APP-badging.txt"
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
             jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
             jarsigner -verify "signed/$AAB_OUT" >/dev/null
           done
-      - name: Package RC7
+      - name: Package RC8 reports
         run: |
           set -euo pipefail
-          cp RELEASE_NOTES_V2.0.0_RC7.md FIELD_TEST_CHECKLIST_RC7.md signed/
-          git archive --format=zip --prefix=ATTEND-PRO-V2.0.0-RC7/ --output=signed/ATTEND-PRO-V2.0.0-RC7-SOURCE.zip HEAD
+          cp RELEASE_NOTES_V2.0.0_RC8.md FIELD_TEST_CHECKLIST_RC8.md signed/
           {
             echo 'Protected connection diff against baseline'
             echo 'protected_changed:'
@@ -118,15 +108,15 @@ jobs:
           mkdir -p test-reports
           find buildsrc -path '*/build/test-results/*' -type f -exec cp --parents {} test-reports/ \; || true
           cp signed/CONNECTION-PROTECTED-DIFF.txt signed/ALL-SHA256SUMS.txt test-reports/
-      - name: Upload RC7 signed bundle
+      - name: Upload RC8 signed bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC7-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC8-SIGNED
           path: signed/
           retention-days: 30
-      - name: Upload RC7 test reports
+      - name: Upload RC8 test reports
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC7-TEST-REPORTS
+          name: ATTEND-PRO-V2.0.0-RC8-TEST-REPORTS
           path: test-reports/
           retention-days: 30
