@@ -1,0 +1,42 @@
+name: RC3 one-shot SystemSettings patch
+
+on:
+  push:
+    branches: [attend-pro-v2.0.0-rc2-play-compliance]
+    paths:
+      - '.github/workflows/patch-rc3-system-settings.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: attend-pro-v2.0.0-rc2-play-compliance
+          fetch-depth: 0
+      - name: Add missing language helper only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt')
+          s = p.read_text()
+          anchor = '    private val p by lazy { UiKit.palette(this) }\n'
+          helper = '    private fun t(ar: String, en: String): String = if (AppLanguage.isEnglish(this)) en else ar\n'
+          if helper not in s:
+              if anchor not in s:
+                  raise SystemExit('expected anchor not found')
+              s = s.replace(anchor, anchor + helper, 1)
+              p.write_text(s)
+          PY
+          git diff --check
+          git diff -- buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          git config user.name 'attend-pro-ci'
+          git config user.email 'actions@users.noreply.github.com'
+          git add buildsrc/store-app/src/main/java/com/attendpro/store/SystemSettingsActivity.kt
+          git diff --cached --quiet && exit 0
+          git commit -m 'RC3: fix SystemSettings language helper compile error'
+          git push origin HEAD:attend-pro-v2.0.0-rc2-play-compliance
