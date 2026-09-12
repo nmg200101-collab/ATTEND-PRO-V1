@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC3
+name: Build ATTEND-PRO V2.0.0 RC4
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc3-${{ github.ref }}
+  group: attend-pro-v2-rc4-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -38,15 +38,15 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Verify RC3 version, distribution and protected pairing contract
+      - name: Verify RC4 version, distribution and protected pairing contract
         run: |
           set -euo pipefail
           git merge-base --is-ancestor 3b479e310d06bdaec96205aae8787fb264fa02c9 HEAD
-          grep -q 'versionCode = 93' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC3"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 94' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC4"' buildsrc/store-app/build.gradle.kts
           grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 93' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC3"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 94' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC4"' buildsrc/employee-app/build.gradle.kts
           grep -q 'targetSdk = 36' buildsrc/employee-app/build.gradle.kts
           grep -q 'tools:node="remove"' buildsrc/store-app/src/play/AndroidManifest.xml
           grep -q 'tools:node="remove"' buildsrc/employee-app/src/play/AndroidManifest.xml
@@ -71,8 +71,8 @@ jobs:
           test -f DATA_SAFETY_MAPPING_RC2.md
           test -f PLAY_REVIEWER_INSTRUCTIONS_EN_RC2.md
           test -f LANGUAGE_MIGRATION_REPORT_RC2.md
-          test -f RELEASE_NOTES_V2.0.0_RC3.md
-          test -f FIELD_TEST_CHECKLIST_RC3.md
+          test -f RELEASE_NOTES_V2.0.0_RC4.md
+          test -f FIELD_TEST_CHECKLIST_RC4.md
           python3 tools/check-guide-release-contract.py
 
       - name: Verify V2 security and backup contracts
@@ -134,20 +134,20 @@ jobs:
           test -n "$ATTEND_PRO_KEY_PASSWORD"
           mkdir -p signed
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
-          KEYSTORE=/tmp/attend-pro-v2-rc3.jks
+          KEYSTORE=/tmp/attend-pro-v2-rc4.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           for APP in employee store; do
             if [ "$APP" = employee ]; then
               MOD=employee-app
               PACKAGE=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC3.apk
-              AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC3-Play.aab
+              APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC4.apk
+              AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC4-Play.aab
             else
               MOD=store-app
               PACKAGE=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V2.0.0-RC3.apk
-              AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC3-Play.aab
+              APK_OUT=ATTEND-PRO-Store-V2.0.0-RC4.apk
+              AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC4-Play.aab
             fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             UNSIGNED_AAB=$(find "buildsrc/$MOD/build/outputs/bundle/playRelease" -name '*.aab' -print -quit)
@@ -164,7 +164,7 @@ jobs:
             ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL_CERT" = "$EXPECTED_CERT"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='93' versionName='2.0.0-RC3'" "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='94' versionName='2.0.0-RC4'" "/tmp/$APP-badging.txt"
 
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
             jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD \
@@ -178,7 +178,7 @@ jobs:
             APKA="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
             test -x "$APKA"
             test "$("$APKA" manifest application-id "$PLAY_APK")" = "$PACKAGE"
-            test "$("$APKA" manifest version-code "$PLAY_APK")" = "93"
+            test "$("$APKA" manifest version-code "$PLAY_APK")" = "94"
             if "$APKA" manifest permissions "$PLAY_APK" | grep -q 'android.permission.REQUEST_INSTALL_PACKAGES'; then
               echo "Play build must not request package installation permission" >&2
               exit 1
@@ -198,15 +198,15 @@ jobs:
             fi
           done
 
-      - name: Package RC3 documentation source hashes and protected diff
+      - name: Package RC4 documentation source hashes and protected diff
         run: |
           set -euo pipefail
           cp ARCHITECTURE_V2_FOUNDATION.md signed/
           cp MIGRATION_REPORT_V2_FOUNDATION.md signed/
-          cp RELEASE_NOTES_V2.0.0_RC3.md signed/
+          cp RELEASE_NOTES_V2.0.0_RC4.md signed/
           cp BACKUP_RESTORE_SECURITY_V2.md signed/
           cp PLAY_COMPLIANCE_REPORT_RC2.md signed/
-          cp FIELD_TEST_CHECKLIST_RC3.md signed/
+          cp FIELD_TEST_CHECKLIST_RC4.md signed/
           cp PRIVACY_POLICY_RC2.md signed/
           cp DATA_DELETION_POLICY_RC2.md signed/
           cp DATA_SAFETY_MAPPING_RC2.md signed/
@@ -219,13 +219,13 @@ jobs:
           cp buildsrc/employee-app/build/outputs/mapping/directRelease/mapping.txt signed/EMPLOYEE-DIRECT-R8-MAPPING-OWNER-ONLY.txt
           cp buildsrc/store-app/build/outputs/mapping/playRelease/mapping.txt signed/STORE-PLAY-R8-MAPPING-OWNER-ONLY.txt
           cp buildsrc/employee-app/build/outputs/mapping/playRelease/mapping.txt signed/EMPLOYEE-PLAY-R8-MAPPING-OWNER-ONLY.txt
-          git archive --format=zip --prefix=ATTEND-PRO-V2.0.0-RC3/ --output=signed/ATTEND-PRO-V2.0.0-RC3-SOURCE.zip HEAD
+          git archive --format=zip --prefix=ATTEND-PRO-V2.0.0-RC4/ --output=signed/ATTEND-PRO-V2.0.0-RC4-SOURCE.zip HEAD
           {
-            printf 'ATTEND-PRO V2.0.0-RC3\n'
+            printf 'ATTEND-PRO V2.0.0-RC4\n'
             printf 'Source commit: %s\n' "$GITHUB_SHA"
             printf 'Workflow run: %s\n' "$GITHUB_RUN_ID"
             printf 'Protected baseline: 3b479e310d06bdaec96205aae8787fb264fa02c9\n'
-            printf 'Version code: 93\nTarget SDK: 36\n'
+            printf 'Version code: 94\nTarget SDK: 36\n'
             printf 'Official certificate SHA-256: 2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59\n'
             printf 'Production deployed: NO\nMain branch merged: NO\n'
           } > signed/RELEASE-MANIFEST.txt
@@ -250,10 +250,10 @@ jobs:
           (cd signed && find . -maxdepth 1 -type f ! -name ALL-SHA256SUMS.txt -printf '%f\0' | sort -z | xargs -0 sha256sum > ALL-SHA256SUMS.txt)
           (cd signed && sha256sum -c ALL-SHA256SUMS.txt)
 
-      - name: Upload signed RC3 bundle
+      - name: Upload signed RC4 bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC3-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC4-SIGNED
           path: signed/*
           if-no-files-found: error
           retention-days: 30
@@ -262,7 +262,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC3-TEST-REPORTS
+          name: ATTEND-PRO-V2.0.0-RC4-TEST-REPORTS
           path: |
             buildsrc/core/build/reports/tests/
             buildsrc/foundation/build/reports/tests/
