@@ -48,7 +48,7 @@ rep(store,
                     .maxByOrNull { it.time }
 ''')
 
-helper = '''    private fun addGpsZoneCardRc14Fix(root: LinearLayout) {
+helper = r'''    private fun addGpsZoneCardRc14Fix(root: LinearLayout) {
         val card = UiKit.card(this, p, 14)
         card.addView(UiKit.sectionLabel(this, p, "GPS • منطقة التعرف على هاتف الموظف"))
         val stateText = when {
@@ -131,7 +131,7 @@ rep(store,
 ''')
 
 # Employee gets a permanent GPS readiness card in every current home template.
-emp_helper = '''    private fun addEmployeeGpsCardRc14Fix(root: LinearLayout) {
+emp_helper = r'''    private fun addEmployeeGpsCardRc14Fix(root: LinearLayout) {
         if (!identity.isConfigured) return
         val lm = getSystemService(LocationManager::class.java)
         val locationOn = lm != null && (runCatching { lm.isProviderEnabled(LocationManager.GPS_PROVIDER) }.getOrDefault(false) ||
