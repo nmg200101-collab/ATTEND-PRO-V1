@@ -62,3 +62,5 @@ if os.environ.get('GITHUB_ACTIONS') == 'true':
     patch(scanner,
 '        unfilteredFallback = false\n',
 '        unfilteredFallback = true\n')
+
+# Build retry marker: BLE field recovery hotfix
