@@ -1,5 +1,5 @@
 from pathlib import Path
-import hashlib, json, re, sys
+import hashlib, json, re, sys, subprocess
 
 STATE = Path('/tmp/attend1977-core-pairing-guard.json')
 WHOLE_FILES = [
@@ -75,7 +75,22 @@ def extract_function(path: str, name: str) -> str:
             i += 1
     raise SystemExit(f'unbalanced protected function {name} in {path}')
 
+def apply_rc14_field_fixes_once():
+    marker = Path('/tmp/attend-rc14-gps-field-fixes-applied')
+    if marker.exists():
+        return
+    for patch_path in [
+        'tools/apply-rc14-gps-zone-hotfix.py',
+        'tools/apply-rc14-gps-ble-telemetry.py',
+    ]:
+        if not Path(patch_path).exists():
+            raise SystemExit(f'missing GPS field patch: {patch_path}')
+        subprocess.run([sys.executable, patch_path], check=True)
+    marker.write_text('ok', encoding='utf-8')
+    print('RC14 GPS field fixes applied before guard snapshot')
+
 def snapshot():
+    apply_rc14_field_fixes_once()
     state = {
         'files': {p: sha_file(p) for p in WHOLE_FILES},
         'functions': {p: {n: sha_bytes(extract_function(p,n).encode('utf-8')) for n in names} for p,names in FUNCTIONS.items()},
