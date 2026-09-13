@@ -38,10 +38,10 @@ rep(main,
 '''        box.addView(UiKit.statusBadge(this, p, if (actuallyConnected.isEmpty()) "لا توجد أجهزة متصلة فعليًا" else "${actuallyConnected.size} جهاز''',
 '''        box.addView(UiKit.button(this, p, "إعداد GPS وتحديد النطاق", false).apply { setOnClickListener { showGpsSetupDialog(firstTime = false) } })\n        box.addView(UiKit.statusBadge(this, p, if (actuallyConnected.isEmpty()) "لا توجد أجهزة متصلة فعليًا" else "${actuallyConnected.size} جهاز''')
 
-# Add a request code near the class companion constants by inserting before onDestroy helper area safely.
+# Add request code to the existing companion object. Do not create a second companion object.
 rep(main,
-'''    override fun onDestroy(){nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask);scanner.stop();networkListener.stop();StoreDirectLinkBridge1977.unbind(directBle);directBle.stop();voiceAnnouncer.shutdown();super.onDestroy()}\n''',
-'''    override fun onDestroy(){nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask);scanner.stop();networkListener.stop();StoreDirectLinkBridge1977.unbind(directBle);directBle.stop();voiceAnnouncer.shutdown();super.onDestroy()}\n\n    companion object { private const val REQUEST_GPS_SETUP_LOCATION_RC14 = 8140 }\n''')
+'''        private const val REQUEST_GPS_PERMISSION = 6204\n''',
+'''        private const val REQUEST_GPS_PERMISSION = 6204\n        private const val REQUEST_GPS_SETUP_LOCATION_RC14 = 8140\n''')
 
 # Visible marker only.
 for pth in ['buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt','buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt']:
@@ -59,4 +59,5 @@ assert 'versionCode = 104' in (ROOT/'buildsrc/store-app/build.gradle.kts').read_
 assert 'maybeShowGpsFirstSetup()' in (ROOT/main).read_text()
 assert 'إعداد GPS وتحديد النطاق' in (ROOT/main).read_text()
 assert 'REQUEST_GPS_SETUP_LOCATION_RC14' in (ROOT/main).read_text()
+assert (ROOT/main).read_text().count('companion object') == 1
 print('RC14 GPS first-run setup applied')
