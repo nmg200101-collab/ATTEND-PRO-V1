@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC10
+name: Build ATTEND-PRO V2.0.0 RC11
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc10-${{ github.ref }}
+  group: attend-pro-v2-rc11-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,20 +32,20 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Apply RC10 stable connection recovery
+      - name: Apply RC11 live connection fix
         run: |
           set -euo pipefail
           python3 tools/apply-rc8-employee-pairing-fix.py
-          python3 tools/apply-rc10-stable-connection.py
-          grep -q 'versionCode = 100' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC10"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 100' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC10"' buildsrc/employee-app/build.gradle.kts
+          python3 tools/apply-rc11-live-connection-fix.py
+          grep -q 'versionCode = 101' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC11"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 101' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC11"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'scanner.startScan(null, settings, callback)' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
           grep -q '.addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
-          grep -q 'scanner.startScan(filters, settings, callback)' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
           grep -q '!bluetooth.isRunning() || !bluetooth.isAdvertising()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
           grep -q 'val gpsAllowedNow = identity.isTrustedStoreGpsConfigured && hasLocation' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'RC10 • استعادة الاتصال الميداني Bluetooth/GPS' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'RC11 • إصلاح Bluetooth/GPS بدون رجوع للتحديثات' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
           python3 tools/guard-1.9.77-core-pairing.py verify
@@ -56,7 +56,7 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-      - name: Test and build RC10
+      - name: Test and build RC11
         run: |
           set -euo pipefail
           gradle -p buildsrc \
@@ -67,7 +67,7 @@ jobs:
             :employee-app:bundlePlayRelease :store-app:bundlePlayRelease --stacktrace
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
-      - name: Sign official RC10 packages
+      - name: Sign official RC11 packages
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -76,11 +76,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p signed
-          KEYSTORE=/tmp/attend-pro-rc10.jks
+          KEYSTORE=/tmp/attend-pro-rc11.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
-            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC10.apk; AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC10-Play.aab; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC10.apk; AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC10-Play.aab; fi
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC11.apk; AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC11-Play.aab; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC11.apk; AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC11-Play.aab; fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             UNSIGNED_AAB=$(find "buildsrc/$MOD/build/outputs/bundle/playRelease" -name '*.aab' -print -quit)
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
@@ -88,15 +88,15 @@ jobs:
             ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL_CERT" = "$EXPECTED_CERT"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='100' versionName='2.0.0-RC10'" "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='101' versionName='2.0.0-RC11'" "/tmp/$APP-badging.txt"
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
             jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
             jarsigner -verify "signed/$AAB_OUT" >/dev/null
           done
-      - name: Package RC10 reports
+      - name: Package RC11 reports
         run: |
           set -euo pipefail
-          cp RELEASE_NOTES_V2.0.0_RC10.md FIELD_TEST_CHECKLIST_RC10.md signed/
+          cp RELEASE_NOTES_V2.0.0_RC11.md FIELD_TEST_CHECKLIST_RC11.md signed/
           {
             echo 'Protected connection diff against baseline'
             echo 'protected_changed:'
@@ -109,25 +109,26 @@ jobs:
               buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
           } > signed/CONNECTION-PROTECTED-DIFF.txt
           {
-            echo 'RC10 runtime recovery checks'
+            echo 'RC11 runtime checks'
+            grep -n 'scanner.startScan(null, settings, callback)' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
+            grep -n 'rawScanCount' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
             grep -n '.addServiceUuid(BleProtocol.SERVICE_UUID)' buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt
-            grep -n 'scanner.startScan(filters, settings, callback)' buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt
             grep -n '!bluetooth.isRunning() || !bluetooth.isAdvertising()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
             grep -n 'gpsAllowedNow' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          } > signed/RC10-CONNECTION-RUNTIME-CHECK.txt
+          } > signed/RC11-CONNECTION-RUNTIME-CHECK.txt
           (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
           mkdir -p test-reports
           find buildsrc -path '*/build/test-results/*' -type f -exec cp --parents {} test-reports/ \; || true
-          cp signed/CONNECTION-PROTECTED-DIFF.txt signed/RC10-CONNECTION-RUNTIME-CHECK.txt signed/ALL-SHA256SUMS.txt test-reports/
-      - name: Upload RC10 signed bundle
+          cp signed/CONNECTION-PROTECTED-DIFF.txt signed/RC11-CONNECTION-RUNTIME-CHECK.txt signed/ALL-SHA256SUMS.txt test-reports/
+      - name: Upload RC11 signed bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC10-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC11-SIGNED
           path: signed/
           retention-days: 30
-      - name: Upload RC10 test reports
+      - name: Upload RC11 test reports
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC10-TEST-REPORTS
+          name: ATTEND-PRO-V2.0.0-RC11-TEST-REPORTS
           path: test-reports/
           retention-days: 30
