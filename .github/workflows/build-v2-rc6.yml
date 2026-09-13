@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC13
+name: Build ATTEND-PRO V2.0.0 RC14
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc13-${{ github.ref }}
+  group: attend-pro-v2-rc14-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -33,14 +33,14 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Apply RC13 GPS primary presence
+      - name: Apply RC14 GPS first-run setup
         run: |
           set -euo pipefail
           python3 tools/apply-rc8-employee-pairing-fix.py
           python3 tools/apply-rc11-live-connection-fix.py
           python3 tools/apply-rc12-radio-recovery.py
 
-          # Freeze the field-approved RC12 Bluetooth implementation before GPS changes.
+          # Freeze field-approved RC12 Bluetooth runtime before GPS-only updates.
           sha256sum \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
@@ -49,19 +49,23 @@ jobs:
             > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
 
           python3 tools/apply-rc13-gps-primary-presence.py
+          python3 tools/apply-rc14-gps-first-setup.py
 
-          # RC13 may feed GPS telemetry from PresenceService, but must not alter approved BLE runtime files.
+          # GPS updates must not alter the approved Bluetooth implementation.
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
-          grep -q 'versionCode = 103' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC13"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 103' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC13"' buildsrc/employee-app/build.gradle.kts
-          grep -q 'bluetoothStateReceiver' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'versionCode = 104' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC14"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 104' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC14"' buildsrc/employee-app/build.gradle.kts
           grep -q 'network.updateGeoObservation' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'GeoPresenceProtocol' buildsrc/employee-app/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt
           grep -q 'GeoPresenceProtocol.looksLike' buildsrc/store-app/src/main/java/com/attendpro/store/NetworkPresenceListener.kt
           grep -q 'handleLocalGpsFrame' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'قناة اتصال أساسية للرصد' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'maybeShowGpsFirstSetup' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'إعداد GPS والنطاق لأول مرة' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'إعداد GPS وتحديد النطاق' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'gpsRadiusMeters = meters' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'storeLatitude = best.latitude' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'storeLongitude = best.longitude' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
 
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
@@ -74,7 +78,7 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
 
-      - name: Test and build RC13
+      - name: Test and build RC14
         run: |
           set -euo pipefail
           gradle -p buildsrc \
@@ -87,7 +91,7 @@ jobs:
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
 
-      - name: Sign official RC13 packages
+      - name: Sign official RC14 packages
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -96,18 +100,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p signed
-          KEYSTORE=/tmp/attend-pro-rc13.jks
+          KEYSTORE=/tmp/attend-pro-rc14.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
               MOD=employee-app; PACKAGE=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC13.apk
-              AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC13-Play.aab
+              APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC14.apk
+              AAB_OUT=ATTEND-PRO-Employee-V2.0.0-RC14-Play.aab
             else
               MOD=store-app; PACKAGE=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V2.0.0-RC13.apk
-              AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC13-Play.aab
+              APK_OUT=ATTEND-PRO-Store-V2.0.0-RC14.apk
+              AAB_OUT=ATTEND-PRO-Store-V2.0.0-RC14-Play.aab
             fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             UNSIGNED_AAB=$(find "buildsrc/$MOD/build/outputs/bundle/playRelease" -name '*.aab' -print -quit)
@@ -122,17 +126,27 @@ jobs:
             ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$ACTUAL_CERT" = "$EXPECTED_CERT"
             "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='103' versionName='2.0.0-RC13'" "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='104' versionName='2.0.0-RC14'" "/tmp/$APP-badging.txt"
             cp "$UNSIGNED_AAB" "signed/$AAB_OUT"
             jarsigner -keystore "$KEYSTORE" -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -sigalg SHA256withRSA -digestalg SHA-256 "signed/$AAB_OUT" "$ATTEND_PRO_KEY_ALIAS"
             jarsigner -verify "signed/$AAB_OUT" >/dev/null
           done
 
-      - name: Package RC13 reports
+      - name: Package RC14 reports
         run: |
           set -euo pipefail
-          cp RELEASE_NOTES_V2.0.0_RC13.md FIELD_TEST_CHECKLIST_RC13.md signed/
+          cp RELEASE_NOTES_V2.0.0_RC14.md FIELD_TEST_CHECKLIST_RC14.md signed/
           cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256
+          {
+            echo 'RC14 GPS setup checks'
+            grep -n 'maybeShowGpsFirstSetup' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+            grep -n 'إعداد GPS والنطاق لأول مرة' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+            grep -n 'إعداد GPS وتحديد النطاق' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+            grep -n 'gpsRadiusMeters = meters' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+            grep -n 'storeLatitude =' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt | head
+            grep -n 'storeLongitude =' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt | head
+            grep -n 'handleLocalGpsFrame' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          } > signed/RC14-GPS-SETUP-CHECK.txt
           {
             echo 'Protected pairing diff against field baseline'
             echo 'protected_changed:'
@@ -144,29 +158,21 @@ jobs:
               buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
               buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
           } > signed/CONNECTION-PROTECTED-DIFF.txt
-          {
-            echo 'RC13 GPS primary presence checks'
-            grep -n 'updateGeoObservation' buildsrc/employee-app/src/main/java/com/attendpro/employee/NetworkPresenceBroadcaster.kt
-            grep -n 'GeoPresenceProtocol.looksLike' buildsrc/store-app/src/main/java/com/attendpro/store/NetworkPresenceListener.kt
-            grep -n 'handleLocalGpsFrame' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            grep -n 'gpsDistanceLabel' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt | head
-            grep -n 'قناة اتصال أساسية للرصد' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          } > signed/RC13-GPS-RUNTIME-CHECK.txt
           (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
           mkdir -p test-reports
           find buildsrc -path '*/build/test-results/*' -type f -exec cp --parents {} test-reports/ \; || true
-          cp signed/CONNECTION-PROTECTED-DIFF.txt signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256 signed/RC13-GPS-RUNTIME-CHECK.txt signed/ALL-SHA256SUMS.txt test-reports/
+          cp signed/RC14-GPS-SETUP-CHECK.txt signed/CONNECTION-PROTECTED-DIFF.txt signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256 signed/ALL-SHA256SUMS.txt test-reports/
 
-      - name: Upload RC13 signed bundle
+      - name: Upload RC14 signed bundle
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC13-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC14-SIGNED
           path: signed/
           retention-days: 30
 
-      - name: Upload RC13 test reports
+      - name: Upload RC14 test reports
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC13-TEST-REPORTS
+          name: ATTEND-PRO-V2.0.0-RC14-TEST-REPORTS
           path: test-reports/
           retention-days: 30
