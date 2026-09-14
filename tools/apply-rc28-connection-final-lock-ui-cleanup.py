@@ -9,10 +9,9 @@ store = store_p.read_text(encoding='utf-8')
 # Server reachability is diagnostics only; GPS is zone recognition; BLE distance is approximate.
 
 # Do not present GPS Store-point distance as exact phone-to-phone distance.
-# Keep the already-computed state/age/accuracy information intact and only remove the
-# misleading distance token when that token exists in the post-RC27 source.
-if '${gpsDistanceLabel(employeeId)}' in store:
-    store = store.replace('${gpsDistanceLabel(employeeId)} • ', '', 1)
+# Replace every UI interpolation of the GPS distance helper. The underlying telemetry is retained
+# for diagnostics, but the normal user surface no longer shows the number as an exact distance.
+store = store.replace('${gpsDistanceLabel(employeeId)}', 'موقع GPS')
 
 # Approximate Bluetooth distance from RSSI. Insert beside an existing stable connection helper.
 helper = '''    private fun bluetoothApproxDistanceRc28(rssi: Int): String {
@@ -41,7 +40,6 @@ ble_candidates = [
     '" (${phone.rssi} dBm)"',
     '" • ${phone.rssi} dBm"',
 ]
-ble_changed = False
 for old in ble_candidates:
     if old in store:
         if old.startswith('" ('):
@@ -49,9 +47,7 @@ for old in ble_candidates:
         else:
             new = '" • ${phone.rssi} dBm • ${bluetoothApproxDistanceRc28(phone.rssi)} تقديري"'
         store = store.replace(old, new, 1)
-        ble_changed = True
         break
-# Some UI variants do not print raw RSSI. The helper remains available for the canonical details view.
 
 # Hide low-level transport diagnostics behind one technical-diagnostics action.
 old_diag_view = '        box.addView(UiKit.subtitle(this, p, diagnosticText).apply { gravity = Gravity.CENTER })\n'
@@ -62,7 +58,6 @@ if old_diag_view in store:
         })
 ''', 1)
 else:
-    # Alternate RC27 layout: place the diagnostics action before the first connection-center close/back action.
     marker = '        box.addView(UiKit.button(this, p, "إغلاق", false)'
     if marker in store and 'التشخيص الفني للاتصال' not in store:
         store = store.replace(marker, '''        box.addView(UiKit.button(this, p, "التشخيص الفني", false).apply {
@@ -87,6 +82,5 @@ assert 'isLanConnected(employeeId, now) || isServerPresenceConnected' not in s
 assert 'الخادم فقط — لا يُعد جهازًا متصلًا' in s
 assert 'bluetoothApproxDistanceRc28' in s
 assert 'فتح مركز الاتصال' not in s
-# Do not allow future UI cleanup to reintroduce GPS distance as an exact-looking value.
 assert '${gpsDistanceLabel(employeeId)}' not in s
 print('RC28 applied: connection finalization + UI cleanup + anti-regression invariants')
