@@ -123,3 +123,5 @@ jobs:
           name: ATTEND-PRO-V2.0.0-RC26-SIGNED
           path: signed/
           retention-days: 30
+
+# RC26 trigger: true device presence is separated from server reachability.
