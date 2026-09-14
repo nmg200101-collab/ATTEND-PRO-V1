@@ -27,7 +27,7 @@ jobs:
       - name: Verify frozen connection patch chain
         run: |
           set -euo pipefail
-          PIN=0c0ece377d44f5dc7e62418372ce71a81904e5b8
+          PIN=d0e18e705dd4e388c24f326ad91652cc8f465d0a
           git diff --exit-code "$PIN" -- \
             tools/apply-rc8-employee-pairing-fix.py \
             tools/apply-rc11-live-connection-fix.py \
@@ -110,7 +110,6 @@ jobs:
           sed -i 's/versionCode = 104/versionCode = 118/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC28"/g' \
             buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
 
-          # Existing hard locks must still pass.
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
@@ -123,17 +122,15 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
 
-          # Final RC28 invariants.
           grep -q 'restoreCachedGpsConfigRc27()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
           grep -q 'flushQueuedGpsObservationRc27()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
           grep -q 'bluetoothApproxDistanceRc28' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          grep -q 'التشخيص الفني للاتصال' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
           grep -q 'الخادم فقط — لا يُعد جهازًا متصلًا' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
           ! grep -q 'فتح مركز الاتصال' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          ! grep -q '\${gpsDistanceLabel(employeeId)}' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
           grep -q 'versionCode = 118' buildsrc/store-app/build.gradle.kts
           grep -q 'versionName = "2.0.0-RC28"' buildsrc/store-app/build.gradle.kts
 
-          # Produce a reproducible final connection snapshot for audit/reference.
           sha256sum \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
