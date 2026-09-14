@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
-# RC27 build trigger: final offline GPS validation.
+# RC27 final build trigger after corrected RC26 observation anchor.
 ROOT = Path('.')
 service_p = ROOT / 'buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt'
 ui_p = ROOT / 'buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt'
