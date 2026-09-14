@@ -86,7 +86,7 @@ jobs:
           EMP=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
           grep -q 'refreshLocationMonitoringAllowedRc24()' "$EMP"
           grep -q 'ensureLocationForegroundTypeRc24()' "$EMP"
-          grep -q 'BLE state must never gate GPS' "$EMP"
+          grep -q 'This is independent from BLE state' "$EMP"
           grep -Fq 'GPS_RECOGNITION_FRESH_MILLIS = 5 * 60_000L' "$MAIN"
           grep -q 'GPS • عبر الخادم' "$MAIN"
           grep -q 'Server • GPS heartbeat' "$MAIN"
