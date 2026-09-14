@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 
+# RC27 build trigger: final offline GPS validation.
 ROOT = Path('.')
 service_p = ROOT / 'buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt'
 ui_p = ROOT / 'buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt'
@@ -17,28 +18,24 @@ if 'private val gpsOfflinePrefsRc27' not in service:
         raise SystemExit('RC27: field anchor missing')
     service = service.replace(field_anchor, field_anchor + '''    private val gpsOfflinePrefsRc27 by lazy { getSharedPreferences("gps_offline_rc27", MODE_PRIVATE) }\n''', 1)
 
-# Restore cached zone before attempting any cloud sync.
 tick_anchor = '            identity.presenceServiceHeartbeatAt = System.currentTimeMillis()\n            syncGpsConfigFromServerRc25()\n'
 if 'restoreCachedGpsConfigRc27()' not in service:
     if tick_anchor not in service:
         raise SystemExit('RC27: tick anchor missing')
     service = service.replace(tick_anchor, '            identity.presenceServiceHeartbeatAt = System.currentTimeMillis()\n            restoreCachedGpsConfigRc27()\n            flushQueuedGpsObservationRc27()\n            syncGpsConfigFromServerRc25()\n', 1)
 
-# Persist successful config locally.
 success_anchor = '''                    if (cfg.enabled && cfg.latitude.isFinite() && cfg.longitude.isFinite()) {\n                        identity.trustedStoreLatitude = cfg.latitude\n                        identity.trustedStoreLongitude = cfg.longitude\n                        identity.trustedStoreGpsRadius = cfg.radiusMeters\n'''
 if 'cacheGpsConfigRc27(' not in service:
     if success_anchor not in service:
         raise SystemExit('RC27: config success anchor missing')
     service = service.replace(success_anchor, '''                    if (cfg.enabled && cfg.latitude.isFinite() && cfg.longitude.isFinite()) {\n                        identity.trustedStoreLatitude = cfg.latitude\n                        identity.trustedStoreLongitude = cfg.longitude\n                        identity.trustedStoreGpsRadius = cfg.radiusMeters\n                        cacheGpsConfigRc27(cfg.latitude, cfg.longitude, cfg.radiusMeters, cfg.revision)\n''', 1)
 
-# Queue every observation locally before cloud attempt.
 obs_anchor = '''        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n'''
 if 'queueGpsObservationRc27(' not in service:
     if obs_anchor not in service:
         raise SystemExit('RC27: observation anchor missing')
     service = service.replace(obs_anchor, '''        queueGpsObservationRc27(state, distance, accuracy, observedAt)\n        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n''', 1)
 
-# Clear queued item only after confirmed cloud upload.
 upload_ok_anchor = '''                getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()\n                    .putLong("upload_ok_at", System.currentTimeMillis())\n                    .putString("upload_state", state)\n                    .putString("upload_error", "")\n                    .apply()\n'''
 if 'clearQueuedGpsObservationRc27(observedAt)' not in service:
     if upload_ok_anchor not in service:
@@ -52,7 +49,6 @@ if 'private fun restoreCachedGpsConfigRc27()' not in service:
         raise SystemExit('RC27: method anchor missing')
     service = service.replace(method_anchor, helpers + method_anchor, 1)
 
-# Make diagnostics explicit about offline behavior.
 ui_anchor = '            appendLine("GPS Upload: ${if (uploadOkAt > 0L && uploadOkAt >= uploadFailAt) "وصل للخادم ✓ • منذ ${(now-uploadOkAt).coerceAtLeast(0L)/1000}ث" else if (uploadFailAt > 0L) "فشل • ${uploadError.ifBlank { "خطأ غير محدد" }}" else "لم تُرفع قراءة بعد"}")\n'
 if 'GPS Offline:' not in ui:
     if ui_anchor not in ui:
