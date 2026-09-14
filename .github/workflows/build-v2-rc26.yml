@@ -1,5 +1,5 @@
 name: Build ATTEND-PRO V2.0.0 RC27
-# RC27 single registered workflow trigger
+# RC27 final offline GPS build trigger v2
 
 on:
   workflow_dispatch:
