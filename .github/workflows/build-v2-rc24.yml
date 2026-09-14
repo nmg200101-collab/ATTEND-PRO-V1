@@ -30,14 +30,19 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
-      - name: Bootstrap Gradle 8.11.1 with retries
+      - name: Bootstrap Gradle 8.11.1 with fallback
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           GRADLE_VERSION=8.11.1
           DIST="gradle-${GRADLE_VERSION}-bin.zip"
-          URL="https://services.gradle.org/distributions/${DIST}"
-          curl --fail --location --retry 8 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
-            "$URL" -o "/tmp/$DIST"
+          PRIMARY="https://services.gradle.org/distributions/${DIST}"
+          MIRROR="https://github.com/gradle/gradle-distributions/releases/download/v${GRADLE_VERSION}.0/${DIST}"
+          if ! curl --fail --location --retry 2 --retry-all-errors --retry-delay 2 --connect-timeout 15 "$PRIMARY" -o "/tmp/$DIST"; then
+            rm -f "/tmp/$DIST"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "$MIRROR" -o "/tmp/$DIST"
+          fi
           unzip -q "/tmp/$DIST" -d /opt/gradle
           echo "/opt/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
           /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle --version
