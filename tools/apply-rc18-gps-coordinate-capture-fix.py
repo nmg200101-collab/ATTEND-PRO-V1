@@ -5,6 +5,14 @@ ROOT = Path('.')
 settings = ROOT / 'buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt'
 s = settings.read_text(encoding='utf-8')
 
+# RC17 intentionally made GPS highly visible by adding a direct dashboard card.
+# RC18 keeps GPS in one canonical location only:
+# Store manager -> الحضور والتشغيل -> موقع المحل وGPS.
+duplicate = '''        root.addView(largeSection("GPS • موقع المحل ومنطقة التعرف", "حدد موقع المحل الحالي والنطاق بالمتر ثم احفظ لإرساله إلى هاتف الموظف") { gpsSettings() })
+'''
+if duplicate in s:
+    s = s.replace(duplicate, '', 1)
+
 old = '''                requestFreshLocation(manager) { location ->
                     if (location == null) { info("الموقع", "لم يصل موقع صالح. فعّل دقة الموقع العالية واقترب من نافذة أو مكان مفتوح ثم أعد المحاولة."); return@requestFreshLocation }
                     if (isMockLocation(location)) { info("الموقع", "تم رفض موقع تجريبي/مزيف."); return@requestFreshLocation }
@@ -12,7 +20,7 @@ old = '''                requestFreshLocation(manager) { location ->
                     info("تم التقاط الموقع", "تم التقاط موقع حديث بدقة ${location.accuracy.toInt()} متر. راجع نطاق التعرف ثم اضغط حفظ.")
                 }
 '''
-new = '''                requestFreshLocation(manager) { location ->
+new = r'''                requestFreshLocation(manager) { location ->
                     if (location == null) { info("الموقع", "لم يصل موقع صالح. تأكد من تشغيل الموقع بدقة عالية ومنح إذن الموقع الدقيق ثم أعد المحاولة."); return@requestFreshLocation }
                     if (isMockLocation(location)) { info("الموقع", "تم رفض موقع تجريبي/مزيف."); return@requestFreshLocation }
                     val la = location.latitude
@@ -54,7 +62,10 @@ s = s.replace(old, new, 1)
 
 settings.write_text(s, encoding='utf-8')
 
-assert 'تم تحديد موقع المحل ✓' in settings.read_text(encoding='utf-8')
-assert 'خط العرض:' in settings.read_text(encoding='utf-8')
-assert 'repo.gpsRecognitionEnabled = true' in settings.read_text(encoding='utf-8')
-print('RC18 GPS coordinate capture fix applied')
+result = settings.read_text(encoding='utf-8')
+assert 'تم تحديد موقع المحل ✓' in result
+assert 'خط العرض:' in result
+assert 'repo.gpsRecognitionEnabled = true' in result
+assert duplicate.strip() not in result
+assert '"موقع المحل وGPS" to { gpsSettings() }' in result
+print('RC18 GPS coordinate capture fix applied; duplicate dashboard GPS card removed')
