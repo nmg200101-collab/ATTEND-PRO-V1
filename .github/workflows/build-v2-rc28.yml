@@ -27,7 +27,7 @@ jobs:
       - name: Verify frozen connection patch chain
         run: |
           set -euo pipefail
-          PIN=d0e18e705dd4e388c24f326ad91652cc8f465d0a
+          PIN=c473a200274d7cb3d652564a6eec1ed870e269d3
           git diff --exit-code "$PIN" -- \
             tools/apply-rc8-employee-pairing-fix.py \
             tools/apply-rc11-live-connection-fix.py \
