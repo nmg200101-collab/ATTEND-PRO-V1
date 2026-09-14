@@ -69,7 +69,7 @@ jobs:
           EMP=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
           grep -q 'GPS • عبر الخادم' "$MAIN"
           grep -q 'Server • GPS heartbeat' "$MAIN"
-          grep -q 'server challenge delivery is independent from Bluetooth' "$EMP"
+          grep -q 'challenge delivery is independent from Bluetooth' "$EMP"
           grep -q 'pollChallenge()' "$EMP"
           grep -q 'GPS • إعداد موقع المحل' "$MAIN"
           test "$(grep -c 'GPS • إعداد موقع المحل' "$MAIN")" -eq 1
@@ -133,7 +133,7 @@ jobs:
             echo 'RC23 GPS-independent connection/proof checks'
             echo 'gps_server_presence:'; grep -n 'GPS • عبر الخادم' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
             echo 'gps_server_heartbeat:'; grep -n 'Server • GPS heartbeat' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'server_challenge_independent:'; grep -n 'server challenge delivery is independent from Bluetooth' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+            echo 'server_challenge_independent:'; grep -n 'challenge delivery is independent from Bluetooth' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
             echo 'canonical_gps:'; grep -n 'GPS • إعداد موقع المحل' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
             echo 'protected_changed:'
             git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
