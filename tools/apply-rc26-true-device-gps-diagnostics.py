@@ -58,7 +58,6 @@ new_gps_fresh = '''        val age = now - seen
 if old_gps_fresh in store:
     store = store.replace(old_gps_fresh, new_gps_fresh, 1)
 
-# Make linked-employee details explicit: server heartbeat is not physical connectivity.
 store = store.replace('''                isServerPresenceConnected(e.employeeId, now) -> "Server Heartbeat"
                 isGpsRecognizedFresh(e.employeeId, now) -> "GPS رصد فقط"
 ''', '''                isGpsRecognizedFresh(e.employeeId, now) -> "GPS مؤكد من هاتف الموظف"
@@ -124,19 +123,31 @@ if old_observe not in service:
     raise SystemExit('RC26: GPS observation diagnostic anchor not found')
 service = service.replace(old_observe, new_observe, 1)
 
-# RC26 diagnostics around GPS upload. Match the stable call result chain instead of the whole
-# comment block because earlier RC23/RC24 patches may change whitespace/comments.
-upload_success_anchor = ').onSuccess { identity.serverLinked = true }.onFailure {'
-if upload_success_anchor not in service:
-    raise SystemExit('RC26: GPS upload result chain not found')
-service = service.replace(upload_success_anchor, ''').onSuccess {
+# RC23 turns this result chain into a multiline success block and resets challenge polling.
+# Support both the RC23 chain and the older single-line chain so RC26 stays deterministic.
+old_upload_rc23 = '''            ).onSuccess {
                 identity.serverLinked = true
+                nextChallengePollAt1981 = 0L
+            }.onFailure {
+'''
+old_upload_legacy = '''            ).onSuccess { identity.serverLinked = true }.onFailure {
+'''
+new_upload = '''            ).onSuccess {
+                identity.serverLinked = true
+                nextChallengePollAt1981 = 0L
                 getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()
                     .putLong("upload_ok_at", System.currentTimeMillis())
                     .putString("upload_state", state)
                     .putString("upload_error", "")
                     .apply()
-            }.onFailure { error ->''', 1)
+            }.onFailure { error ->
+'''
+if old_upload_rc23 in service:
+    service = service.replace(old_upload_rc23, new_upload, 1)
+elif old_upload_legacy in service:
+    service = service.replace(old_upload_legacy, new_upload, 1)
+else:
+    raise SystemExit('RC26: GPS upload result chain not found after RC23/RC25')
 
 upload_failure_comment = '''                // Do not mark the employee server link dead because a geo telemetry write failed.
                 // Challenge polling/registration remains the authoritative server connection.
@@ -151,8 +162,6 @@ service = service.replace(upload_failure_comment, '''                getSharedPr
                 // Challenge polling/registration remains the authoritative server connection.
 ''', 1)
 
-# Employee UI: server reachability is displayed separately, while GPS INSIDE/NEAR can be the
-# actual recognition channel. Add exact cloud-config / observation / upload pipeline diagnostics.
 old_primary = '''        val serverFresh = ServerDiagnostics.snapshot().isFresh(now)
         val primary = when {
             directAge < 12_000L -> "🟢 Bluetooth مباشر • ACK ${directAge / 1000}ث"
@@ -216,7 +225,6 @@ store_p.write_text(store, encoding='utf-8')
 service_p.write_text(service, encoding='utf-8')
 emp_ui_p.write_text(emp_ui, encoding='utf-8')
 
-# Static assertions for the exact bug reported from the real device screenshot.
 s = store_p.read_text(encoding='utf-8')
 e = service_p.read_text(encoding='utf-8')
 u = emp_ui_p.read_text(encoding='utf-8')
