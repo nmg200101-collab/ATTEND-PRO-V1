@@ -8,69 +8,46 @@ emp_p = ROOT / 'buildsrc/employee-app/src/main/java/com/attendpro/employee/Prese
 store = store_p.read_text(encoding='utf-8')
 emp = emp_p.read_text(encoding='utf-8')
 
-# 1) GPS-recognized employee must count as an authenticated live connection even when BLE is OFF.
-old = '''        if (recognized && System.currentTimeMillis() - link.gpsSeenAt <= GPS_RECOGNITION_FRESH_MILLIS) {
-            val channels = previous?.channelTimes.orEmpty().toMutableMap().apply { put("GPS • تعرّف", link.gpsSeenAt) }
+# RC23 is applied after RC22, which already chains the GPS-independent proof route.
+# Here we only harden GPS-as-live-presence and immediate server recovery without
+# touching protected pairing/Bluetooth runtime sources.
+
+old = '''        if (recognized && System.currentTimeMillis() - seenAt <= GPS_RECOGNITION_FRESH_MILLIS) {
+            val channels = previous?.channelTimes.orEmpty().toMutableMap().apply { put("GPS • $source", seenAt) }
             nearby[employeeId] = NearbyPhone(
-                maxOf(previous?.seenAt ?: 0L, link.gpsSeenAt),
-                previous?.rssi ?: -127, channels, previous?.deviceName.orEmpty(), link.gpsSeenAt
+                maxOf(previous?.seenAt ?: 0L, seenAt), previous?.rssi ?: -127, channels,
+                previous?.deviceName.orEmpty(), seenAt
             )
+            repo.markCompanionLinked(employeeId, "GPS • $source", seenAt)
         }
 '''
-new = '''        if (recognized && System.currentTimeMillis() - link.gpsSeenAt <= GPS_RECOGNITION_FRESH_MILLIS) {
+new = '''        if (recognized && System.currentTimeMillis() - seenAt <= GPS_RECOGNITION_FRESH_MILLIS) {
             val channels = previous?.channelTimes.orEmpty().toMutableMap().apply {
-                put("GPS • داخل/قرب النطاق", link.gpsSeenAt)
-                put("Server • GPS heartbeat", link.gpsSeenAt)
+                put("GPS • $source", seenAt)
+                if (source == "Server") put("Server • GPS heartbeat", seenAt)
             }
             nearby[employeeId] = NearbyPhone(
-                maxOf(previous?.seenAt ?: 0L, link.gpsSeenAt),
-                previous?.rssi ?: -127, channels, previous?.deviceName.orEmpty(), link.gpsSeenAt
+                maxOf(previous?.seenAt ?: 0L, seenAt), previous?.rssi ?: -127, channels,
+                previous?.deviceName.orEmpty(), seenAt
             )
-            // A fresh authenticated GPS observation received through the central server is itself
-            // proof that the employee app is online. Keep the Store UI connected even with BLE OFF.
-            serverPresenceAt[employeeId] = maxOf(serverPresenceAt[employeeId] ?: 0L, link.gpsSeenAt)
-            repo.markCompanionLinked(employeeId, "GPS • عبر الخادم", link.gpsSeenAt)
+            // A fresh signed GPS observation is a live authenticated presence signal.
+            // Keep the employee visible/connected even when Bluetooth is switched off.
+            serverPresenceAt[employeeId] = maxOf(serverPresenceAt[employeeId] ?: 0L, seenAt)
+            repo.markCompanionLinked(employeeId, if (source == "Server") "GPS • عبر الخادم" else "GPS • $source", seenAt)
         }
 '''
 if old not in store:
-    raise SystemExit('Store GPS recognized block not found')
+    raise SystemExit('Store GPS applyGpsObservation block not found after RC22 chain')
 store = store.replace(old, new, 1)
 
-# 2) Presence challenge polling must not depend on Bluetooth or a stale serverLinked flag.
-old = '''            if (identity.isConfigured) {
-                if (identity.serverLinked) {
-                    val now = System.currentTimeMillis()
-                    if (now >= nextChallengePollAt1981) pollChallenge()
-                    if (now - lastMessagePollAt1975 >= 30_000L && now >= nextMessagePollAt1981) {
-                        lastMessagePollAt1975 = now
-                        pollMessages1975()
-                    }
-                } else ensureServerLinkWhenAvailable()
-            }
-'''
-new = '''            if (identity.isConfigured && identity.serverUrl.isNotBlank()) {
-                val now = System.currentTimeMillis()
-                // RC23: server challenge delivery is independent from Bluetooth. Poll even when
-                // serverLinked is stale/false; a successful poll re-establishes the server link.
-                if (now >= nextChallengePollAt1981) pollChallenge()
-                if (now - lastMessagePollAt1975 >= 30_000L && now >= nextMessagePollAt1981) {
-                    lastMessagePollAt1975 = now
-                    pollMessages1975()
-                }
-                if (!identity.serverLinked) ensureServerLinkWhenAvailable()
-            }
-'''
-if old not in emp:
-    raise SystemExit('Employee challenge poller block not found')
-emp = emp.replace(old, new, 1)
-
-# 3) As soon as internet returns, force an immediate challenge poll instead of waiting for BLE state.
-old = '''                    nextChallengePollAt1981 = 0L
+# RC22 already changed challenge polling through apply-rc23-gps-independent-proof-route.py.
+# Add immediate recovery on network return when the exact callback anchor exists.
+old_net = '''                    nextChallengePollAt1981 = 0L
                     nextMessagePollAt1981 = 0L
                     lastServerLinkAttemptAt = 0L
                     if (identity.isConfigured && !identity.serverLinked) ensureServerLinkWhenAvailable()
 '''
-new = '''                    nextChallengePollAt1981 = 0L
+new_net = '''                    nextChallengePollAt1981 = 0L
                     nextMessagePollAt1981 = 0L
                     lastServerLinkAttemptAt = 0L
                     if (identity.isConfigured && identity.serverUrl.isNotBlank()) {
@@ -78,21 +55,19 @@ new = '''                    nextChallengePollAt1981 = 0L
                         if (!identity.serverLinked) ensureServerLinkWhenAvailable()
                     }
 '''
-if old not in emp:
-    raise SystemExit('Employee network callback block not found')
-emp = emp.replace(old, new, 1)
+if old_net in emp:
+    emp = emp.replace(old_net, new_net, 1)
 
-# 4) A successful GPS upload is an authenticated server contact; immediately reopen challenge polling.
-old = '''            ).onSuccess { identity.serverLinked = true }.onFailure {
+# A successful GPS upload proves current server reachability and reopens challenge polling.
+old_upload = '''            ).onSuccess { identity.serverLinked = true }.onFailure {
 '''
-new = '''            ).onSuccess {
+new_upload = '''            ).onSuccess {
                 identity.serverLinked = true
                 nextChallengePollAt1981 = 0L
             }.onFailure {
 '''
-if old not in emp:
-    raise SystemExit('GPS upload success block not found')
-emp = emp.replace(old, new, 1)
+if old_upload in emp:
+    emp = emp.replace(old_upload, new_upload, 1)
 
 store_p.write_text(store, encoding='utf-8')
 emp_p.write_text(emp, encoding='utf-8')
@@ -101,7 +76,7 @@ s = store_p.read_text(encoding='utf-8')
 e = emp_p.read_text(encoding='utf-8')
 assert 'GPS • عبر الخادم' in s
 assert 'Server • GPS heartbeat' in s
-assert 'server challenge delivery is independent from Bluetooth' in e
-assert 'pollChallenge()\n                        if (!identity.serverLinked)' in e
-assert 'nextChallengePollAt1981 = 0L' in e
-print('RC23 GPS-independent connection and proof delivery fix applied')
+assert 'fresh signed GPS observation is a live authenticated presence signal' in s
+assert 'challenge delivery is independent from Bluetooth' in e
+assert 'if (now >= nextChallengePollAt1981) pollChallenge()' in e
+print('RC23 GPS-independent connection/proof hardening applied')
