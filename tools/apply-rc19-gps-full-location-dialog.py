@@ -5,7 +5,6 @@ ROOT = Path('.')
 settings = ROOT / 'buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt'
 s = settings.read_text(encoding='utf-8')
 
-# Replace the compact RC16/RC17 GPS-range dialog with the full familiar location dialog.
 start = s.find('    private fun gpsSettings() {')
 if start < 0:
     raise SystemExit('gpsSettings() not found')
@@ -14,29 +13,29 @@ if end < 0:
     raise SystemExit('gpsSettings() end not found')
 
 new_func = r'''    private fun gpsSettings() {
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val palette = UiKit.palette(this)
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
             setPadding(28, 8, 28, 0)
         }
 
-        val lat = UiKit.field(this, "خط العرض Latitude").apply {
+        val lat = UiKit.field(this, palette, "خط العرض Latitude").apply {
             setText(if (repo.storeLatitude.isFinite()) String.format(java.util.Locale.US, "%.7f", repo.storeLatitude) else "")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-        val lon = UiKit.field(this, "خط الطول Longitude").apply {
+        val lon = UiKit.field(this, palette, "خط الطول Longitude").apply {
             setText(if (repo.storeLongitude.isFinite()) String.format(java.util.Locale.US, "%.7f", repo.storeLongitude) else "")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL or android.text.InputType.TYPE_NUMBER_FLAG_SIGNED
         }
-        val radius = UiKit.field(this, "نطاق التعرف بالمتر").apply {
+        val radius = UiKit.field(this, palette, "نطاق التعرف بالمتر", numeric = true).apply {
             setText(repo.gpsRadiusMeters.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val enabled = CheckBox(this).apply {
+        val enabled = android.widget.CheckBox(this).apply {
             text = "تفعيل التعرف على هاتف الموظف عبر منطقة GPS"
             isChecked = repo.gpsRecognitionEnabled
             textSize = 16f
         }
-        val status = TextView(this).apply {
+        val status = android.widget.TextView(this).apply {
             textSize = 15f
             setPadding(0, 14, 0, 8)
             text = if (repo.isGpsConfigured) {
@@ -45,12 +44,12 @@ new_func = r'''    private fun gpsSettings() {
                 "⚠ لم يتم تحديد موقع المحل بعد"
             }
         }
-        val useCurrent = Button(this).apply {
+        val useCurrent = android.widget.Button(this).apply {
             text = "استخدام موقع هذا الجهاز الآن"
             setOnClickListener {
                 val manager = getSystemService(android.location.LocationManager::class.java)
-                if (androidx.core.content.ContextCompat.checkSelfPermission(this@gpsSettings, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    androidx.core.app.ActivityCompat.requestPermissions(this@gpsSettings, arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION), 9701)
+                if (androidx.core.content.ContextCompat.checkSelfPermission(this@StoreSettingsActivity, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    androidx.core.app.ActivityCompat.requestPermissions(this@StoreSettingsActivity, arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION), 9701)
                     info("إذن الموقع", "تم طلب إذن الموقع الدقيق. بعد الموافقة اضغط الزر مرة أخرى.")
                     return@setOnClickListener
                 }
@@ -87,7 +86,7 @@ new_func = r'''    private fun gpsSettings() {
         box.addView(enabled)
         box.addView(status)
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this)
             .setTitle("موقع المحل وGPS")
             .setMessage("حدد موقع المحل الحالي ونطاق التعرف. GPS هنا للتعرف على قرب هاتف الموظف فقط ولا يسجل حضورًا تلقائيًا.")
             .setView(box)
@@ -120,6 +119,7 @@ for needle in [
     'خط الطول Longitude',
     'استخدام موقع هذا الجهاز الآن',
     'نطاق التعرف بالمتر',
+    'UiKit.field(this, palette,',
 ]:
     assert needle in result, needle
 print('RC19 full GPS location dialog applied')
