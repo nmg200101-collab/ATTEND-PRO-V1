@@ -28,6 +28,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Install Android SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
@@ -49,11 +51,7 @@ jobs:
           python3 tools/apply-rc8-employee-pairing-fix.py
           python3 tools/apply-rc11-live-connection-fix.py
           python3 tools/apply-rc12-radio-recovery.py
-          sha256sum \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+          sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
           python3 tools/apply-rc13-gps-primary-presence.py
           python3 tools/apply-rc14-gps-first-setup.py
           python3 tools/apply-rc14-gps-zone-hotfix.py
@@ -80,13 +78,7 @@ jobs:
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
           python3 tools/guard-1.9.77-core-pairing.py verify
-          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
       - name: Test and build RC26
         run: |
           set -euo pipefail
@@ -123,5 +115,3 @@ jobs:
           name: ATTEND-PRO-V2.0.0-RC26-SIGNED
           path: signed/
           retention-days: 30
-
-# RC26 trigger: true device presence is separated from server reachability.
