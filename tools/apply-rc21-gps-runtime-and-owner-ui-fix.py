@@ -81,7 +81,7 @@ save_tail = '''                status.text = "✓ تم حفظ إعدادات GPS
 new_save_tail = '''                status.text = "✓ تم حفظ وتفعيل GPS\\nخط العرض: ${String.format(java.util.Locale.US, "%.7f", la)}\\nخط الطول: ${String.format(java.util.Locale.US, "%.7f", lo)}\\nالنطاق: $r متر\\nجارٍ الرجوع لتطبيق المحل لإرسال المنطقة إلى هواتف الموظفين…"
                 gpsSettingsOpen = false
                 pendingGpsCaptureAfterPermission = false
-                android.widget.Toast.makeText(this, "تم حفظ GPS — جارٍ تفعيل التعرف وإرسال المنطقة للموظفين", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this@StoreSettingsActivity, "تم حفظ GPS — جارٍ تفعيل التعرف وإرسال المنطقة للموظفين", android.widget.Toast.LENGTH_LONG).show()
                 setResult(RESULT_OK)
                 finish()
 '''
