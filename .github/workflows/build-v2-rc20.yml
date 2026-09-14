@@ -1,0 +1,167 @@
+name: Build ATTEND-PRO V2.0.0 RC20
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [attend-pro-v2.0.0-rc2-play-compliance]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: attend-pro-v2-rc20-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Apply RC20 definitive GPS settings screen
+        run: |
+          set -euo pipefail
+          python3 tools/apply-rc8-employee-pairing-fix.py
+          python3 tools/apply-rc11-live-connection-fix.py
+          python3 tools/apply-rc12-radio-recovery.py
+
+          sha256sum \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
+            > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+
+          python3 tools/apply-rc13-gps-primary-presence.py
+          python3 tools/apply-rc14-gps-first-setup.py
+          python3 tools/apply-rc14-gps-zone-hotfix.py
+          python3 tools/apply-rc14-gps-ble-telemetry.py
+          python3 tools/apply-rc16-gps-store-zone-visible.py
+          python3 tools/apply-rc17-visible-gps-settings.py
+          python3 tools/apply-rc18-gps-coordinate-capture-fix.py
+          python3 tools/apply-rc19-gps-full-location-dialog.py
+          python3 tools/apply-rc20-gps-settings-screen.py
+
+          sed -i 's/versionCode = 104/versionCode = 110/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC20"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
+
+          sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+          grep -q 'versionCode = 110' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC20"' buildsrc/store-app/build.gradle.kts
+
+          FILE=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'private fun showGpsSettingsScreen(autoCapture: Boolean)' "$FILE"
+          grep -q 'خط العرض Latitude' "$FILE"
+          grep -q 'خط الطول Longitude' "$FILE"
+          grep -q 'نطاق التعرف بالمتر' "$FILE"
+          grep -q 'استخدام موقع هذا الجهاز الآن' "$FILE"
+          grep -q 'فتح إعدادات الموقع GPS' "$FILE"
+          grep -q 'ACTION_LOCATION_SOURCE_SETTINGS' "$FILE"
+          grep -q 'pendingGpsCaptureAfterPermission' "$FILE"
+          grep -q 'override fun onRequestPermissionsResult' "$FILE"
+          grep -q 'isFillViewport = true' "$FILE"
+          test "$(grep -Fc '"'"'"موقع المحل وGPS" to { gpsSettings() }'"'"' "$FILE")" -eq 1
+          test "$(grep -Fc 'GPS • موقع المحل ومنطقة التعرف' "$FILE" || true)" -eq 0
+
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          python3 tools/guard-1.9.77-core-pairing.py snapshot
+          python3 tools/guard-1.9.77-core-pairing.py verify
+          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+
+      - name: Test and build RC20
+        run: |
+          set -euo pipefail
+          gradle -p buildsrc \
+            :core:testDebugUnitTest :foundation:testDebugUnitTest \
+            :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest \
+            :employee-app:compileDirectDebugKotlin :store-app:compileDirectDebugKotlin \
+            :employee-app:assembleDirectRelease :store-app:assembleDirectRelease --stacktrace
+          python3 tools/guard-1.9.77-core-pairing.py verify
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+
+      - name: Sign official RC20 APKs
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed
+          KEYSTORE=/tmp/attend-pro-rc20.jks
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then
+              MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC20.apk
+            else
+              MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC20.apk
+            fi
+            UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
+            test -s "$UNSIGNED_APK"
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+              --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" \
+              --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" \
+              --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true \
+              --out "signed/$APK_OUT" "/tmp/$APP-aligned.apk"
+            ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$ACTUAL_CERT" = "$EXPECTED_CERT"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
+            grep -q "package: name='$PACKAGE' versionCode='110' versionName='2.0.0-RC20'" "/tmp/$APP-badging.txt"
+          done
+
+      - name: Package RC20 reports
+        run: |
+          set -euo pipefail
+          cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256
+          FILE=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          {
+            echo 'RC20 definitive GPS settings checks'
+            grep -n 'private fun showGpsSettingsScreen' "$FILE"
+            grep -n 'خط العرض Latitude' "$FILE"
+            grep -n 'خط الطول Longitude' "$FILE"
+            grep -n 'استخدام موقع هذا الجهاز الآن' "$FILE"
+            grep -n 'override fun onRequestPermissionsResult' "$FILE"
+            echo 'canonical_gps_entry_count:'
+            grep -Fc '"موقع المحل وGPS" to { gpsSettings() }' "$FILE"
+            echo 'duplicate_dashboard_gps_count:'
+            grep -Fc 'GPS • موقع المحل ومنطقة التعرف' "$FILE" || true
+            echo 'protected_changed:'
+            git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
+              buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+              buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+              buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
+              buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
+              buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
+              buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+          } > signed/RC20-GPS-SETTINGS-CHECK.txt
+          (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
+
+      - name: Upload RC20 signed APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V2.0.0-RC20-SIGNED
+          path: signed/
+          retention-days: 30
