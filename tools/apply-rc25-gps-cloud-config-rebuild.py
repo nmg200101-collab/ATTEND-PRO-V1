@@ -12,12 +12,8 @@ emp = emp_p.read_text(encoding='utf-8')
 
 # RC25 rebuild principle:
 # GPS configuration and telemetry must work end-to-end with Bluetooth OFF.
-# Do not touch pairing protocol files or RC12 Bluetooth runtime files.
+# Protected pairing/runtime files are verified by the workflow and are not edited here.
 
-# -----------------------------------------------------------------------------
-# CentralServerClient: Store publishes GPS zone; Employee pulls it using the
-# already-linked employee credentials. This removes the hidden BLE CONFIG dependency.
-# -----------------------------------------------------------------------------
 data_anchor = '    data class EmployeePairingTicket(val code: String, val expiresAt: Long, val transportText: String)\n'
 if 'data class StoreGpsConfigRc25' not in client:
     if data_anchor not in client:
@@ -89,10 +85,6 @@ if 'fun publishStoreGpsConfigRc25(' not in client:
         raise SystemExit('RC25: CentralServerClient method anchor not found')
     client = client.replace(method_anchor, methods + method_anchor, 1)
 
-# -----------------------------------------------------------------------------
-# Store: automatically publish the current local GPS zone to server on heartbeat.
-# Existing RC24 installs therefore need no manual re-save of GPS settings.
-# -----------------------------------------------------------------------------
 store_field_anchor = '    private var lastServerPresencePollAt = 0L\n'
 if 'gpsConfigPushInFlightRc25' not in store:
     if store_field_anchor not in store:
@@ -144,11 +136,6 @@ if 'private fun publishGpsConfigIfDueRc25()' not in store:
         raise SystemExit('RC25: Store method anchor not found')
     store = store.replace(store_method_anchor, helper + store_method_anchor, 1)
 
-# -----------------------------------------------------------------------------
-# Employee: poll Store GPS zone directly from server independent from BLE.
-# When config arrives, write the same trusted GPS fields used by OfflineGeoMonitor,
-# then RC24 runtime logic starts/stops LocationManager dynamically.
-# -----------------------------------------------------------------------------
 emp_field_anchor = '    private var backgroundRestartForRun: Boolean = false\n'
 if 'gpsConfigPollInFlightRc25' not in emp:
     if emp_field_anchor not in emp:
@@ -191,7 +178,6 @@ if 'private fun syncGpsConfigFromServerRc25()' not in emp:
                         identity.trustedStoreLatitude = Double.NaN
                         identity.trustedStoreLongitude = Double.NaN
                     }
-                    // Re-evaluate immediately; no Bluetooth state is consulted here.
                     refreshGpsRuntimeRc21()
                 }
             }
@@ -218,5 +204,4 @@ assert 'publishStoreGpsConfigRc25' in s
 assert 'syncGpsConfigFromServerRc25()' in e
 assert 'pullEmployeeGpsConfigRc25' in e
 assert 'refreshGpsRuntimeRc21()' in e
-assert 'BlePresenceAdvertiser' not in Path(__file__).read_text(encoding='utf-8')
 print('RC25 GPS cloud-config rebuild applied: Store -> Server -> Employee -> GPS telemetry -> Store')
