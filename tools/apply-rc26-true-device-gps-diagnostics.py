@@ -124,30 +124,32 @@ if old_observe not in service:
     raise SystemExit('RC26: GPS observation diagnostic anchor not found')
 service = service.replace(old_observe, new_observe, 1)
 
-old_upload = '''            ).onSuccess { identity.serverLinked = true }.onFailure {
-                // Do not mark the employee server link dead because a geo telemetry write failed.
-                // Challenge polling/registration remains the authoritative server connection.
-            }
-'''
-new_upload = '''            ).onSuccess {
+# RC26 diagnostics around GPS upload. Match the stable call result chain instead of the whole
+# comment block because earlier RC23/RC24 patches may change whitespace/comments.
+upload_success_anchor = ').onSuccess { identity.serverLinked = true }.onFailure {'
+if upload_success_anchor not in service:
+    raise SystemExit('RC26: GPS upload result chain not found')
+service = service.replace(upload_success_anchor, ''').onSuccess {
                 identity.serverLinked = true
                 getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()
                     .putLong("upload_ok_at", System.currentTimeMillis())
                     .putString("upload_state", state)
                     .putString("upload_error", "")
                     .apply()
-            }.onFailure { error ->
-                getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()
+            }.onFailure { error ->''', 1)
+
+upload_failure_comment = '''                // Do not mark the employee server link dead because a geo telemetry write failed.
+                // Challenge polling/registration remains the authoritative server connection.
+'''
+if upload_failure_comment not in service:
+    raise SystemExit('RC26: GPS upload failure comment anchor not found')
+service = service.replace(upload_failure_comment, '''                getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()
                     .putLong("upload_fail_at", System.currentTimeMillis())
                     .putString("upload_error", error.message ?: "فشل رفع قراءة GPS")
                     .apply()
                 // Do not mark the employee server link dead because a geo telemetry write failed.
                 // Challenge polling/registration remains the authoritative server connection.
-            }
-'''
-if old_upload not in service:
-    raise SystemExit('RC26: GPS upload diagnostic anchor not found')
-service = service.replace(old_upload, new_upload, 1)
+''', 1)
 
 # Employee UI: server reachability is displayed separately, while GPS INSIDE/NEAR can be the
 # actual recognition channel. Add exact cloud-config / observation / upload pipeline diagnostics.
