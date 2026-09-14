@@ -1,4 +1,4 @@
-name: Build ATTEND-PRO V2.0.0 RC24
+name: Build ATTEND-PRO V2.0.0 RC25
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: attend-pro-v2-rc24-${{ github.ref }}
+  group: attend-pro-v2-rc25-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -29,38 +29,31 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-
       - name: Bootstrap Gradle 8.11.1 with fallback
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          GRADLE_VERSION=8.11.1
-          DIST="gradle-${GRADLE_VERSION}-bin.zip"
-          PRIMARY="https://services.gradle.org/distributions/${DIST}"
-          MIRROR="https://github.com/gradle/gradle-distributions/releases/download/v${GRADLE_VERSION}.0/${DIST}"
-          if ! curl --fail --location --retry 2 --retry-all-errors --retry-delay 2 --connect-timeout 15 "$PRIMARY" -o "/tmp/$DIST"; then
-            rm -f "/tmp/$DIST"
-            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "$MIRROR" -o "/tmp/$DIST"
+          V=8.11.1
+          D="gradle-${V}-bin.zip"
+          if ! curl --fail --location --retry 3 --retry-all-errors --retry-delay 2 --connect-timeout 15 "https://services.gradle.org/distributions/${D}" -o "/tmp/${D}"; then
+            rm -f "/tmp/${D}"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/octet-stream" "https://github.com/gradle/gradle-distributions/releases/download/v${V}.0/${D}" -o "/tmp/${D}"
           fi
-          unzip -q "/tmp/$DIST" -d /opt/gradle
-          echo "/opt/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
-          /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle --version
-
-      - name: Apply RC24 GPS runtime recognition fix
+          unzip -q "/tmp/${D}" -d /opt/gradle
+          echo "/opt/gradle/gradle-${V}/bin" >> "$GITHUB_PATH"
+          /opt/gradle/gradle-${V}/bin/gradle --version
+      - name: Apply RC25 GPS independent rebuild
         run: |
           set -euo pipefail
           python3 tools/apply-rc8-employee-pairing-fix.py
           python3 tools/apply-rc11-live-connection-fix.py
           python3 tools/apply-rc12-radio-recovery.py
-
           sha256sum \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
-            > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
-
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
           python3 tools/apply-rc13-gps-primary-presence.py
           python3 tools/apply-rc14-gps-first-setup.py
           python3 tools/apply-rc14-gps-zone-hotfix.py
@@ -74,25 +67,17 @@ jobs:
           python3 tools/apply-rc22-gps-single-path-final.py
           python3 tools/apply-rc23-gps-independent-proof-fix.py
           python3 tools/apply-rc24-gps-runtime-recognition-fix.py
-
-          sed -i 's/versionCode = 104/versionCode = 114/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC24"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
-
+          python3 tools/apply-rc25-gps-cloud-config-rebuild.py
+          sed -i 's/versionCode = 104/versionCode = 115/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC25"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
-          grep -q 'versionCode = 114' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 114' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC24"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC24"' buildsrc/employee-app/build.gradle.kts
-          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          EMP=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-          grep -q 'refreshLocationMonitoringAllowedRc24()' "$EMP"
-          grep -q 'ensureLocationForegroundTypeRc24()' "$EMP"
-          grep -q 'This is independent from BLE state' "$EMP"
-          grep -Fq 'GPS_RECOGNITION_FRESH_MILLIS = 5 * 60_000L' "$MAIN"
-          grep -q 'GPS • عبر الخادم' "$MAIN"
-          grep -q 'Server • GPS heartbeat' "$MAIN"
-          grep -q 'GPS • إعداد موقع المحل' "$MAIN"
-          test "$(grep -c 'GPS • إعداد موقع المحل' "$MAIN")" -eq 1
-
+          grep -q '/api/v1/store/gps-config' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          grep -q '/api/v1/employee/gps-config' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          grep -q 'publishGpsConfigIfDueRc25' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'syncGpsConfigFromServerRc25' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'versionCode = 115' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 115' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC25"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC25"' buildsrc/employee-app/build.gradle.kts
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
           python3 tools/guard-1.9.77-core-pairing.py verify
@@ -103,8 +88,7 @@ jobs:
             buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
             buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-
-      - name: Test and build RC24
+      - name: Test and build RC25
         run: |
           set -euo pipefail
           gradle -p buildsrc \
@@ -115,8 +99,7 @@ jobs:
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
-
-      - name: Sign official RC24 APKs
+      - name: Sign official RC25 APKs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -125,44 +108,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p signed
-          KEYSTORE=/tmp/attend-pro-rc24.jks
+          KEYSTORE=/tmp/attend-pro-rc25.jks
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
-            if [ "$APP" = employee ]; then
-              MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC24.apk
-            else
-              MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC24.apk
-            fi
-            UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
-            test -s "$UNSIGNED_APK"
-            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
-            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out "signed/$APK_OUT" "/tmp/$APP-aligned.apk"
-            ACTUAL_CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$APK_OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
-            test "$ACTUAL_CERT" = "$EXPECTED_CERT"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$APK_OUT" > "/tmp/$APP-badging.txt"
-            grep -q "package: name='$PACKAGE' versionCode='114' versionName='2.0.0-RC24'" "/tmp/$APP-badging.txt"
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V2.0.0-RC25.apk; else MOD=store-app; PACKAGE=com.attendpro.store; OUT=ATTEND-PRO-Store-V2.0.0-RC25.apk; fi
+            UNSIGNED=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
+            test -s "$UNSIGNED"
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED" "/tmp/$APP-aligned.apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out "signed/$OUT" "/tmp/$APP-aligned.apk"
+            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$CERT" = "$EXPECTED_CERT"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$OUT" | grep -q "package: name='$PACKAGE' versionCode='115' versionName='2.0.0-RC25'"
           done
-
-      - name: Package RC24 verification
-        run: |
-          set -euo pipefail
-          cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256
-          {
-            echo 'RC24 GPS runtime-recognition checks'
-            echo 'runtime_recheck:'; grep -n 'refreshLocationMonitoringAllowedRc24' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-            echo 'fgs_location_type:'; grep -n 'ensureLocationForegroundTypeRc24' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-            echo 'gps_fresh_timeout:'; grep -n 'GPS_RECOGNITION_FRESH_MILLIS' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt | head -8
-            echo 'gps_server_presence:'; grep -n 'GPS • عبر الخادم' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'canonical_gps:'; grep -n 'GPS • إعداد موقع المحل' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'protected_changed:'
-            git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-          } > signed/RC24-GPS-RUNTIME-RECOGNITION-CHECK.txt
+          cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 signed/
           (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
-
-      - name: Upload RC24 signed APKs
+      - name: Upload RC25 signed APKs
         uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V2.0.0-RC24-SIGNED
+          name: ATTEND-PRO-V2.0.0-RC25-SIGNED
           path: signed/
           retention-days: 30
