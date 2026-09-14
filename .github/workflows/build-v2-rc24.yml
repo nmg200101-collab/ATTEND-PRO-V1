@@ -29,10 +29,18 @@ jobs:
         run: |
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.11.1'
-          # RC23 uses the same pinned Gradle; retrying RC24 after an external CDN 504.
+
+      - name: Bootstrap Gradle 8.11.1 with retries
+        run: |
+          set -euo pipefail
+          GRADLE_VERSION=8.11.1
+          DIST="gradle-${GRADLE_VERSION}-bin.zip"
+          URL="https://services.gradle.org/distributions/${DIST}"
+          curl --fail --location --retry 8 --retry-all-errors --retry-delay 3 --connect-timeout 20 \
+            "$URL" -o "/tmp/$DIST"
+          unzip -q "/tmp/$DIST" -d /opt/gradle
+          echo "/opt/gradle/gradle-${GRADLE_VERSION}/bin" >> "$GITHUB_PATH"
+          /opt/gradle/gradle-${GRADLE_VERSION}/bin/gradle --version
 
       - name: Apply RC24 GPS runtime recognition fix
         run: |
