@@ -30,11 +30,11 @@ if 'cacheGpsConfigRc27(' not in service:
         raise SystemExit('RC27: config success anchor missing')
     service = service.replace(success_anchor, '''                    if (cfg.enabled && cfg.latitude.isFinite() && cfg.longitude.isFinite()) {\n                        identity.trustedStoreLatitude = cfg.latitude\n                        identity.trustedStoreLongitude = cfg.longitude\n                        identity.trustedStoreGpsRadius = cfg.radiusMeters\n                        cacheGpsConfigRc27(cfg.latitude, cfg.longitude, cfg.radiusMeters, cfg.revision)\n''', 1)
 
-obs_anchor = '''        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n'''
+obs_anchor = '''        identity.lastGpsAccuracyMeters = accuracy\n        getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()\n            .putLong("observation_at", observedAt)\n            .putString("observation_state", state)\n            .putInt("observation_distance", distance)\n            .putInt("observation_accuracy", accuracy)\n            .apply()\n        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n'''
 if 'queueGpsObservationRc27(' not in service:
     if obs_anchor not in service:
         raise SystemExit('RC27: observation anchor missing')
-    service = service.replace(obs_anchor, '''        queueGpsObservationRc27(state, distance, accuracy, observedAt)\n        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n''', 1)
+    service = service.replace(obs_anchor, '''        identity.lastGpsAccuracyMeters = accuracy\n        getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()\n            .putLong("observation_at", observedAt)\n            .putString("observation_state", state)\n            .putInt("observation_distance", distance)\n            .putInt("observation_accuracy", accuracy)\n            .apply()\n        queueGpsObservationRc27(state, distance, accuracy, observedAt)\n        if (!identity.isConfigured || identity.serverUrl.isBlank()) return\n        Thread {\n            CentralServerClient.sendEmployeeGeoObservation(\n''', 1)
 
 upload_ok_anchor = '''                getSharedPreferences("gps_rc26_diag", MODE_PRIVATE).edit()\n                    .putLong("upload_ok_at", System.currentTimeMillis())\n                    .putString("upload_state", state)\n                    .putString("upload_error", "")\n                    .apply()\n'''
 if 'clearQueuedGpsObservationRc27(observedAt)' not in service:
