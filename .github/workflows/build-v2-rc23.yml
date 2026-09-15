@@ -1,8 +1,8 @@
-name: Build ATTEND-PRO Report Permissions Final
+name: Build ATTEND-PRO V122 Employee Management
 
 on:
   push:
-    branches: [attend-pro-report-center-final]
+    branches: [attend-pro-v122-remote-employees]
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,15 +25,16 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"; echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Apply final receiver permissions center
+      - name: Apply V122 receiver and employee management
         run: |
           set -euo pipefail
           python3 tools/unify-report-receiver-center.py
-          sed -i 's/versionCode = 97/versionCode = 121/g; s/versionName = "2.0.0-RC7"/versionName = "2.0.0-RC29-REPORT2"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
+          python3 tools/patch-v122-employee-management.py
+          sed -i 's/versionCode = 97/versionCode = 122/g; s/versionName = "2.0.0-RC7"/versionName = "2.0.0-RC29-EMP-MGMT1"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
           grep -q 'هواتف الاستلام والصلاحيات' buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
-          grep -q 'editReceiverPermissions' buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
-          grep -q 'canManageStore' buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
-          grep -q 'REQUEST_REPORT_RECEIVER_QR' buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
+          grep -q 'فتح إدارة الموظفين' buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
+          grep -q 'receiverManagedEmployees' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          ! grep -q 'فتح إعدادات المحل عن بُعد' buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt || { echo 'Legacy general Store settings UI still reachable'; exit 1; }
           grep -q 'APRRI1:' buildsrc/core/src/main/java/com/attendpro/core/QrScannerActivity.kt
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt
       - name: Test and build
@@ -46,10 +47,10 @@ jobs:
           ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
         run: |
           set -euo pipefail; mkdir signed; printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode >/tmp/a.jks; EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
-          for APP in employee store; do if [ "$APP" = employee ]; then MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V121.apk; else MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V121-REPORT-PERMISSIONS.apk; fi; U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit); "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$U" /tmp/$APP.apk; "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks /tmp/a.jks --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass env:ATTEND_PRO_STORE_PASSWORD --key-pass env:ATTEND_PRO_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk; CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'|head -1|tr A-F a-f); test "$CERT" = "$EXPECTED"; "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='121' versionName='2.0.0-RC29-REPORT2'"; done
+          for APP in employee store; do if [ "$APP" = employee ]; then MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V122.apk; else MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V122-EMPLOYEE-MANAGEMENT.apk; fi; U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit); "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$U" /tmp/$APP.apk; "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks /tmp/a.jks --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass env:ATTEND_PRO_STORE_PASSWORD --key-pass env:ATTEND_PRO_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$OUT /tmp/$APP.apk; CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'|head -1|tr A-F a-f); test "$CERT" = "$EXPECTED"; "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='122' versionName='2.0.0-RC29-EMP-MGMT1'"; done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V121-REPORT-PERMISSIONS-SIGNED
+          name: ATTEND-PRO-V122-EMPLOYEE-MANAGEMENT-SIGNED
           path: signed/
           retention-days: 30
