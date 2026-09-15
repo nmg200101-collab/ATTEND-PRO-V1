@@ -24,11 +24,23 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER=""
+          for candidate in "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "$ANDROID_HOME/cmdline-tools/bin/sdkmanager" "$ANDROID_HOME/tools/bin/sdkmanager"; do
+            if [ -x "$candidate" ]; then SDKMANAGER="$candidate"; break; fi
+          done
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 -print -quit || true); fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
+          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
@@ -39,14 +51,7 @@ jobs:
           python3 tools/apply-rc8-employee-pairing-fix.py
           python3 tools/apply-rc11-live-connection-fix.py
           python3 tools/apply-rc12-radio-recovery.py
-
-          sha256sum \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
-            > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
-
+          sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
           python3 tools/apply-rc13-gps-primary-presence.py
           python3 tools/apply-rc14-gps-first-setup.py
           python3 tools/apply-rc14-gps-zone-hotfix.py
@@ -59,9 +64,7 @@ jobs:
           python3 tools/apply-rc21-gps-runtime-and-owner-ui-fix.py
           python3 tools/apply-rc22-gps-single-path-final.py
           python3 tools/apply-rc23-gps-independent-proof-fix.py
-
           sed -i 's/versionCode = 104/versionCode = 113/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC23"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
-
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
           grep -q 'versionCode = 113' buildsrc/store-app/build.gradle.kts
           grep -q 'versionName = "2.0.0-RC23"' buildsrc/store-app/build.gradle.kts
@@ -73,26 +76,15 @@ jobs:
           grep -q 'pollChallenge()' "$EMP"
           grep -q 'GPS • إعداد موقع المحل' "$MAIN"
           test "$(grep -c 'GPS • إعداد موقع المحل' "$MAIN")" -eq 1
-
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           python3 tools/guard-1.9.77-core-pairing.py snapshot
           python3 tools/guard-1.9.77-core-pairing.py verify
-          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- \
-            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
-            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
-            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+          git diff --exit-code 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
 
       - name: Test and build RC23
         run: |
           set -euo pipefail
-          gradle -p buildsrc \
-            :core:testDebugUnitTest :foundation:testDebugUnitTest \
-            :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest \
-            :employee-app:compileDirectDebugKotlin :store-app:compileDirectDebugKotlin \
-            :employee-app:assembleDirectRelease :store-app:assembleDirectRelease --stacktrace
+          gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:compileDirectDebugKotlin :store-app:compileDirectDebugKotlin :employee-app:assembleDirectRelease :store-app:assembleDirectRelease --stacktrace
           python3 tools/guard-1.9.77-core-pairing.py verify
           sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
           sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
@@ -110,11 +102,7 @@ jobs:
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
           EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
-            if [ "$APP" = employee ]; then
-              MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC23.apk
-            else
-              MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC23.apk
-            fi
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V2.0.0-RC23.apk; else MOD=store-app; PACKAGE=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V2.0.0-RC23.apk; fi
             UNSIGNED_APK=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
             test -s "$UNSIGNED_APK"
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED_APK" "/tmp/$APP-aligned.apk"
@@ -129,15 +117,7 @@ jobs:
         run: |
           set -euo pipefail
           cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 signed/RC12-BLUETOOTH-RUNTIME-LOCK.sha256
-          {
-            echo 'RC23 GPS-independent connection/proof checks'
-            echo 'gps_server_presence:'; grep -n 'GPS • عبر الخادم' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'gps_server_heartbeat:'; grep -n 'Server • GPS heartbeat' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'server_challenge_independent:'; grep -n 'challenge delivery is independent from Bluetooth' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
-            echo 'canonical_gps:'; grep -n 'GPS • إعداد موقع المحل' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-            echo 'protected_changed:'
-            git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
-          } > signed/RC23-GPS-INDEPENDENT-PROOF-CHECK.txt
+          { echo 'RC23 GPS-independent connection/proof checks'; echo 'gps_server_presence:'; grep -n 'GPS • عبر الخادم' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt; echo 'gps_server_heartbeat:'; grep -n 'Server • GPS heartbeat' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt; echo 'server_challenge_independent:'; grep -n 'challenge delivery is independent from Bluetooth' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt; echo 'canonical_gps:'; grep -n 'GPS • إعداد موقع المحل' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt; echo 'protected_changed:'; git diff --name-only 3b479e310d06bdaec96205aae8787fb264fa02c9 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt; } > signed/RC23-GPS-INDEPENDENT-PROOF-CHECK.txt
           (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
 
       - name: Upload RC23 signed APKs
