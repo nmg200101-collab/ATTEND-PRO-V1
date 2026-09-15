@@ -1,0 +1,112 @@
+name: Build ATTEND-PRO V2.0.0 RC29 Original Baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [attend-pro-v2.0.0-rc2-play-compliance]
+    paths:
+      - '.github/workflows/build-v2-rc29-original-baseline.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+      - name: Bootstrap Gradle
+        run: |
+          set -euo pipefail
+          V=8.11.1
+          curl --fail --location --retry 5 "https://services.gradle.org/distributions/gradle-${V}-bin.zip" -o /tmp/gradle.zip
+          unzip -q /tmp/gradle.zip -d /opt/gradle
+          echo "/opt/gradle/gradle-${V}/bin" >> "$GITHUB_PATH"
+      - name: Apply frozen connection baseline
+        run: |
+          set -euo pipefail
+          python3 tools/apply-rc8-employee-pairing-fix.py
+          python3 tools/apply-rc11-live-connection-fix.py
+          python3 tools/apply-rc12-radio-recovery.py
+          sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt > /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+          python3 tools/apply-rc13-gps-primary-presence.py
+          python3 tools/apply-rc14-gps-first-setup.py
+          python3 tools/apply-rc14-gps-zone-hotfix.py
+          python3 tools/apply-rc14-gps-ble-telemetry.py
+          python3 tools/apply-rc16-gps-store-zone-visible.py
+          python3 tools/apply-rc17-visible-gps-settings.py
+          python3 tools/apply-rc18-gps-coordinate-capture-fix.py
+          python3 tools/apply-rc19-gps-full-location-dialog.py
+          python3 tools/apply-rc20-gps-settings-screen.py
+          python3 tools/apply-rc21-gps-runtime-and-owner-ui-fix.py
+          python3 tools/apply-rc22-gps-single-path-final.py
+          python3 tools/apply-rc23-gps-independent-proof-fix.py
+          python3 tools/apply-rc24-gps-runtime-recognition-fix.py
+          python3 tools/apply-rc25-gps-cloud-config-rebuild.py
+          python3 tools/apply-rc26-true-device-gps-diagnostics.py
+          python3 tools/apply-rc27-offline-gps-final.py
+          python3 tools/apply-rc28-connection-final-lock-ui-cleanup.py
+          sed -i 's/versionCode = 104/versionCode = 119/g; s/versionName = "2.0.0-RC14"/versionName = "2.0.0-RC29"/g' buildsrc/store-app/build.gradle.kts buildsrc/employee-app/build.gradle.kts
+          sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          python3 tools/guard-1.9.77-core-pairing.py snapshot
+          python3 tools/guard-1.9.77-core-pairing.py verify
+          grep -q 'restoreCachedGpsConfigRc27()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'flushQueuedGpsObservationRc27()' buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+          grep -q 'bluetoothApproxDistanceRc28' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'الخادم فقط — لا يُعد جهازًا متصلًا' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          test -f CONNECTION_CORE_FINAL_LOCK_RC29.md
+          test -f USER_GUIDE_CONNECTION_RC29_AR.md
+          sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt > /tmp/CONNECTION_CORE_FINAL_LOCK_RC29.sha256
+      - name: Test and build RC29
+        run: |
+          gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:compileDirectDebugKotlin :store-app:compileDirectDebugKotlin :employee-app:assembleDirectRelease :store-app:assembleDirectRelease --stacktrace
+          python3 tools/guard-1.9.77-core-pairing.py verify
+          sha256sum -c CONNECTION_CORE_LOCK_V2_FOUNDATION.sha256
+          sha256sum -c /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256
+          sha256sum -c /tmp/CONNECTION_CORE_FINAL_LOCK_RC29.sha256
+      - name: Sign official RC29 APKs
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p signed
+          KEYSTORE=/tmp/attend-pro-rc29.jks
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          EXPECTED_CERT=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then MOD=employee-app; PACKAGE=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V2.0.0-RC29-ORIGINAL.apk; else MOD=store-app; PACKAGE=com.attendpro.store; OUT=ATTEND-PRO-Store-V2.0.0-RC29-ORIGINAL.apk; fi
+            UNSIGNED=$(find "buildsrc/$MOD/build/outputs/apk/direct/release" -name '*-unsigned.apk' -print -quit)
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$UNSIGNED" "/tmp/$APP-aligned.apk"
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks "$KEYSTORE" --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass "env:ATTEND_PRO_STORE_PASSWORD" --key-pass "env:ATTEND_PRO_KEY_PASSWORD" --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out "signed/$OUT" "/tmp/$APP-aligned.apk"
+            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "signed/$OUT" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$CERT" = "$EXPECTED_CERT"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "signed/$OUT" | grep -q "package: name='$PACKAGE' versionCode='119' versionName='2.0.0-RC29'"
+          done
+          cp CONNECTION_CORE_FINAL_LOCK_RC29.md USER_GUIDE_CONNECTION_RC29_AR.md signed/
+          cp /tmp/RC12_BLUETOOTH_RUNTIME_LOCK.sha256 /tmp/CONNECTION_CORE_FINAL_LOCK_RC29.sha256 signed/
+          printf '%s\n' 'ATTEND-PRO V2.0.0 RC29 ORIGINAL BASELINE' 'Connection core: FIELD VERIFIED / FROZEN. Future feature updates must preserve this baseline.' > signed/ORIGINAL_BASELINE_README.txt
+          (cd signed && sha256sum * > ALL-SHA256SUMS.txt)
+      - name: Upload RC29 original baseline
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V2.0.0-RC29-ORIGINAL-BASELINE
+          path: signed/
+          retention-days: 30
