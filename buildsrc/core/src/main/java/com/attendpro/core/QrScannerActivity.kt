@@ -23,6 +23,10 @@ import com.journeyapps.barcodescanner.DecoratedBarcodeView
  * ماسح QR داخلي خاص بـ ATTEND PRO.
  * لا يعتمد على Activity خارجية ولا على IntentIntegrator، وهذا يمنع مشكلة خروج/إغلاق التطبيق
  * التي ظهرت على بعض إصدارات Samsung / Android الحديثة عند فتح الماسح القديم.
+ *
+ * ملاحظة RC30: رموز هواتف استلام التقارير APRRI1 و APRRG1 مسموح بتمريرها من الماسح
+ * فقط. التحقق من الهوية والصلاحية والانتهاء يبقى لدى ReportProtocol والواجهة المستدعية.
+ * لم يتم تغيير أي مسار من PairingProtocol أو ACK أو BLE/GATT.
  */
 class QrScannerActivity : Activity() {
     companion object {
@@ -71,7 +75,7 @@ class QrScannerActivity : Activity() {
         root.addView(prompt)
         root.addView(barcodeView)
         root.addView(Button(this).apply {
-            text = "تعذر المسح؟ أدخل رمز الربط يدويًا"
+            text = "تعذر المسح؟ أدخل رمز ATTEND PRO يدويًا"
             isAllCaps = false
             setOnClickListener { showManualCode() }
         }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(54)).apply { topMargin = dp(10) })
@@ -88,18 +92,18 @@ class QrScannerActivity : Activity() {
     private fun showManualCode() {
         runCatching { barcodeView.pause() }
         val input = EditText(this).apply {
-            hint = "الصق رمز الربط AP5Q أو AP4P أو AP3P أو APPAIR"
+            hint = "الصق رمز ATTEND PRO كاملًا"
             minLines = 3
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
         }
-        val dialog = AlertDialog.Builder(this).setTitle("إدخال رمز الربط")
+        val dialog = AlertDialog.Builder(this).setTitle("إدخال رمز ATTEND PRO")
             .setView(input).setPositiveButton("استخدام الرمز", null)
             .setNegativeButton("العودة للكاميرا") { _, _ -> runCatching { barcodeView.resume() } }.create()
         dialog.setOnCancelListener { runCatching { barcodeView.resume() } }
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
                 val value = input.text.toString().trim()
-                if (value.isBlank()) { input.error = "ألصق رمز الربط كاملًا"; return@setOnClickListener }
+                if (value.isBlank()) { input.error = "ألصق الرمز كاملًا"; return@setOnClickListener }
                 finishedWithResult = true
                 dialog.dismiss()
                 setResult(RESULT_OK, Intent().putExtra(EXTRA_RESULT, value))
@@ -119,8 +123,12 @@ class QrScannerActivity : Activity() {
                 val provision = PairingProtocol.decodeEmployeeProvision(text) != null
                 val shortPairing = text.removePrefix("APPAIR:").replace(Regex("[^A-Za-z0-9]"), "").length == 8 && text.startsWith("APPAIR:")
                 val attendance = AttendanceQrProtocol.isAttendanceQr(text)
-                if (!pairingEnvelope && !provision && !shortPairing && !attendance) {
-                    barcodeView.setStatusText("هذا ليس QR خاصًا بـ ATTEND PRO — وجّه الكاميرا إلى رمز الربط الظاهر في جهاز المحل")
+                // Report receiver QR families are intentionally separate from employee pairing.
+                // The caller performs the authoritative ReportProtocol validation after scan.
+                val reportReceiverInvite = text.startsWith("APRRI1:")
+                val reportRemoteGrant = text.startsWith("APRRG1:")
+                if (!pairingEnvelope && !provision && !shortPairing && !attendance && !reportReceiverInvite && !reportRemoteGrant) {
+                    barcodeView.setStatusText("هذا ليس QR صالحًا لـ ATTEND PRO — استخدم الرمز الظاهر داخل التطبيق")
                     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ beginScan() }, 500L)
                     return
                 }
