@@ -1,0 +1,37 @@
+package com.attendpro.core
+
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.io.OutputStreamWriter
+import java.net.HttpURLConnection
+import java.net.URL
+
+/** V125 isolated remote employee administration client. Does not touch pairing/BLE/GPS. */
+object ReceiverEmployeeAdminClient {
+    data class Employee(val employeeId:String,val employeeName:String,val branchId:String,val lastSeenAt:Long,val enabled:Boolean,val pendingLink:Boolean)
+
+    fun list(serverUrl:String, receiverId:String, secret:String):Result<List<Employee>> = runCatching {
+        val o=post(serverUrl,"/api/v1/monitor/employees/manage-list",JSONObject().apply{put("receiverId",receiverId);put("secret",secret)})
+        val a=o.optJSONArray("employees")?:JSONArray()
+        (0 until a.length()).map { i -> val x=a.getJSONObject(i); Employee(x.optString("employeeId"),x.optString("employeeName"),x.optString("branchId","MAIN"),x.optLong("lastSeenAt",0L),x.optBoolean("enabled",true),x.optBoolean("pendingLink",false)) }
+    }
+    fun add(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/add",receiverId,secret,id,name,branch,null)
+    fun update(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/update",receiverId,secret,id,name,branch,null)
+    fun setEnabled(serverUrl:String,receiverId:String,secret:String,id:String,enabled:Boolean)=command(serverUrl,"/api/v1/monitor/employees/status",receiverId,secret,id,"","",enabled)
+
+    private fun command(url:String,path:String,rid:String,secret:String,id:String,name:String,branch:String,enabled:Boolean?):Result<Unit> = runCatching {
+        val body=JSONObject().apply{put("receiverId",rid);put("secret",secret);put("employeeId",id);if(name.isNotBlank())put("employeeName",name);if(branch.isNotBlank())put("branchId",branch);if(enabled!=null)put("enabled",enabled)}
+        post(url,path,body); Unit
+    }
+    private fun post(base:String,path:String,body:JSONObject):JSONObject {
+        require(base.startsWith("https://")){"HTTPS required"}
+        val c=(URL(base.trimEnd('/')+path).openConnection() as HttpURLConnection).apply{requestMethod="POST";connectTimeout=12000;readTimeout=15000;doOutput=true;setRequestProperty("Content-Type","application/json; charset=utf-8")}
+        OutputStreamWriter(c.outputStream,Charsets.UTF_8).use{it.write(body.toString())}
+        val code=c.responseCode; val stream=if(code in 200..299)c.inputStream else c.errorStream
+        val text=BufferedReader(InputStreamReader(stream,Charsets.UTF_8)).use{it.readText()}; c.disconnect()
+        if(code !in 200..299) throw IllegalStateException(runCatching{JSONObject(text).optString("error",text)}.getOrDefault(text))
+        return if(text.isBlank()) JSONObject() else JSONObject(text)
+    }
+}
