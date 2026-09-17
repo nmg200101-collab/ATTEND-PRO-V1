@@ -37,6 +37,7 @@
                 <data android:mimeType="text/plain" />
             </intent-filter>
         </activity>
+        <activity android:name=".StoreReceiverPermissionsActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".ReportsActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".StoreSettingsActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".PresenceProofControlActivity" android:screenOrientation="portrait" android:exported="false" />
@@ -65,7 +66,7 @@
         <activity android:name=".MainActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name="com.attendpro.core.PrivacyDataActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".StoreUserGuideActivity" android:screenOrientation="portrait" android:exported="false" />
-            <provider
+        <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
             android:exported="false"
