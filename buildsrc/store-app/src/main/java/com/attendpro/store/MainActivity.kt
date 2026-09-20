@@ -84,7 +84,16 @@ class MainActivity : Activity() {
         val cm = getSystemService(android.net.ConnectivityManager::class.java) ?: return
         val cb = object : android.net.ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: android.net.Network) {
-                runOnUiThread { autoSyncIfReady(); refreshDashboard() }
+                runOnUiThread {
+                    if (::repo.isInitialized && !repo.isCentralActivationActive()) {
+                        recoveryAttempted = false
+                        recoveryRetryCount = 0
+                        startAutomaticActivationRecovery()
+                    } else {
+                        autoSyncIfReady()
+                        refreshDashboard()
+                    }
+                }
             }
             override fun onLost(network: android.net.Network) { runOnUiThread { refreshDashboard() } }
         }
@@ -127,6 +136,7 @@ class MainActivity : Activity() {
     private var employeeManagerMode = false
     private var recoveryAttempted = false
     private var recoveryRetryCount = 0
+    @Volatile private var activationRecoveryInFlight = false
     private var lastLateScheduleSyncAt = 0L
     private data class NearbyPhone(
         val seenAt: Long,
@@ -164,7 +174,8 @@ class MainActivity : Activity() {
             if (::counts.isInitialized || ::connectionSummaryView.isInitialized) refreshDashboard()
             ensurePresenceDiscoveryRunning()
             pollServerPresenceIfDue()
-            syncRemoteControlIfDue()
+            // Remote receiver permissions are limited to reports, employee messaging and employee management.
+            // General Store settings are never pulled from receiver phones.
             autoSyncIfReady()
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
@@ -260,12 +271,7 @@ class MainActivity : Activity() {
             runCatching { scanner.stop() }
             runCatching { networkListener.stop() }
             buildActivationLockUi()
-            if (repo.hasCentralCredentials() && repo.serverUrl.isNotBlank()) {
-                validateCentralActivation(silent = true)
-            } else if (!recoveryAttempted && repo.serverUrl.isNotBlank()) {
-                recoveryAttempted = true
-                recoverCentralActivation(silent = true)
-            }
+            startAutomaticActivationRecovery()
             return
         }
         if (employeeManagerMode) {
@@ -490,9 +496,9 @@ class MainActivity : Activity() {
         root.addView(activation)
 
         val receiverCard = UiKit.card(this, p, 13)
-        receiverCard.addView(UiKit.sectionLabel(this, p, "هاتف المراقبة"))
-        receiverCard.addView(UiKit.subtitle(this, p, "يمكن استخدام هذا الهاتف لاستلام تقارير محل آخر دون تفعيله كجهاز محل."))
-        receiverCard.addView(UiKit.button(this, p, "فتح استلام التقارير", false).apply { setOnClickListener { startActivity(Intent(this@MainActivity, ReportReceiverActivity::class.java)) } })
+        receiverCard.addView(UiKit.sectionLabel(this, p, "هاتف الاستلام وإدارة الموظفين"))
+        receiverCard.addView(UiKit.subtitle(this, p, "يمكن استخدام هذا الهاتف لاستلام تقارير محل آخر، ومراسلة موظفيه أو إدارة موظفيه فقط حسب الصلاحيات الممنوحة."))
+        receiverCard.addView(UiKit.button(this, p, "فتح هاتف الاستلام", false).apply { setOnClickListener { startActivity(Intent(this@MainActivity, ReportReceiverActivity::class.java)) } })
         root.addView(receiverCard)
 
         val advancedAdmin = TextView(this).apply {
@@ -1338,21 +1344,37 @@ class MainActivity : Activity() {
         dialog.show()
     }
 
+    private fun startAutomaticActivationRecovery() {
+        if (repo.isCentralActivationActive() || repo.serverUrl.isBlank() || activationRecoveryInFlight) return
+        if (recoveryAttempted) return
+        recoveryAttempted = true
+        recoveryRetryCount = 0
+        recoverCentralActivation(silent = true)
+    }
+
     private fun recoverCentralActivation(silent: Boolean) {
-        if (::status.isInitialized) status.text = if (silent) "جاري التعرف تلقائيًا على تفعيل سابق لهذا الجهاز..." else "جاري البحث عن تفعيل سابق لهذا الجهاز..."
+        if (activationRecoveryInFlight) return
+        activationRecoveryInFlight = true
+        if (::status.isInitialized) status.text = if (silent) "جاري استعادة التفعيل السابق تلقائيًا..." else "جاري البحث عن تفعيل سابق لهذا الجهاز..."
         Thread {
             val identity = DeviceIdentity(this)
             val result = CentralServerClient.recoverActivation(repo.serverUrl, identity)
             runOnUiThread {
                 if (result.isFailure) {
+                    activationRecoveryInFlight = false
                     val error = result.exceptionOrNull()
                     val message = activationConnectionMessage(error)
                     if (::status.isInitialized) status.text = message
-                    if (silent && !repo.isCentralActivationActive() && recoveryRetryCount < 2) {
+                    if (silent && repo.hasCentralCredentials() && !isDnsResolutionError(error)) {
+                        validateCentralActivation(silent = true)
+                    } else if (silent && !repo.isCentralActivationActive() && recoveryRetryCount < 2) {
                         recoveryRetryCount += 1
                         if (::status.isInitialized) status.text = "$message • ستتم إعادة المحاولة تلقائيًا"
                         nearbyRefreshHandler.postDelayed({
-                            if (!repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) recoverCentralActivation(silent = true)
+                            if (!repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                                activationRecoveryInFlight = false
+                                recoverCentralActivation(silent = true)
+                            }
                         }, if (recoveryRetryCount == 1) 5_000L else 15_000L)
                     } else if (!silent) {
                         if (isDnsResolutionError(error)) showDnsRecoveryDialog(error)
@@ -1360,12 +1382,13 @@ class MainActivity : Activity() {
                     }
                     return@runOnUiThread
                 }
+                activationRecoveryInFlight = false
                 recoveryRetryCount = 0
                 val x = result.getOrThrow()
                 repo.adoptRecoveredStore(x.storeId, x.storeName, x.branchId)
                 repo.saveCentralActivation(x.licenseId, x.accessToken, x.expiresAt, x.maxEmployees, x.leaseUntil, x.serverTime)
                 buildElegantUi(); refreshDashboard()
-                info("تمت استعادة التفعيل تلقائيًا ✓", "تعرف الخادم على ${identity.deviceLabel()} كتثبيت سابق لنفس الجهاز، واستعاد الاشتراك وبيانات المحل دون إنشاء تفعيل جديد. تم تسجيل العملية في إشعارات إدارة النظام.")
+                if (!silent) info("تمت استعادة التفعيل تلقائيًا ✓", "تعرف الخادم على ${identity.deviceLabel()} كتثبيت سابق لنفس الجهاز، واستعاد الاشتراك وبيانات المحل دون إنشاء تفعيل جديد. تم تسجيل العملية في إشعارات إدارة النظام.")
             }
         }.apply { isDaemon = true }.start()
     }
