@@ -29,6 +29,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.speech.RecognizerIntent
 import android.text.InputType
 import android.view.Gravity
@@ -522,17 +523,38 @@ class MainActivity : Activity() {
         d.show()
     }
 
+    private fun isDnsResolutionError(error: Throwable?): Boolean {
+        val raw = error?.message.orEmpty()
+        return raw.contains("Unable to resolve host", ignoreCase = true) ||
+            raw.contains("No address associated with hostname", ignoreCase = true)
+    }
+
     private fun activationConnectionMessage(error: Throwable?): String {
         val raw = error?.message.orEmpty()
         return when {
-            raw.contains("Unable to resolve host", ignoreCase = true) ||
-                raw.contains("No address associated with hostname", ignoreCase = true) ->
-                "تعذر الوصول إلى عنوان الخادم. تحقق من اتصال الإنترنت ثم أعد المحاولة؛ ستظل خيارات الاستعادة وتسجيل محل جديد متاحة."
+            isDnsResolutionError(error) ->
+                "تعذر العثور على عنوان الخادم عبر DNS. تحقق من الإنترنت أو غيّر DNS الخاص ثم أعد المحاولة."
             raw.contains("timeout", ignoreCase = true) ->
                 "انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة."
             raw.isBlank() -> "تعذر الاتصال بالخادم."
             else -> raw
         }
+    }
+
+    private fun showDnsRecoveryDialog(error: Throwable?) {
+        val message = activationConnectionMessage(error) +
+            "\n\nالخادم: ${repo.serverUrl}\n\nيمكنك فتح إعدادات DNS الخاصة مباشرة، أو تغيير بيانات المحل والخادم."
+        AlertDialog.Builder(this)
+            .setTitle("تعذر الوصول إلى الخادم")
+            .setMessage(message)
+            .setPositiveButton("فتح إعدادات DNS") { _, _ ->
+                val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) Settings.ACTION_PRIVATE_DNS_SETTINGS else Settings.ACTION_WIRELESS_SETTINGS
+                runCatching { startActivity(Intent(action)) }
+                    .onFailure { runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
+            }
+            .setNeutralButton("إعداد بيانات الخادم") { _, _ -> editActivationSetup() }
+            .setNegativeButton("إغلاق", null)
+            .show()
     }
 
     private fun validateCentralActivation(silent: Boolean) {
@@ -1323,14 +1345,18 @@ class MainActivity : Activity() {
             val result = CentralServerClient.recoverActivation(repo.serverUrl, identity)
             runOnUiThread {
                 if (result.isFailure) {
+                    val error = result.exceptionOrNull()
+                    val message = activationConnectionMessage(error)
+                    if (::status.isInitialized) status.text = message
                     if (silent && !repo.isCentralActivationActive() && recoveryRetryCount < 2) {
                         recoveryRetryCount += 1
-                        if (::status.isInitialized) status.text = "لم يكتمل التعرف بعد • ستتم إعادة المحاولة تلقائيًا"
+                        if (::status.isInitialized) status.text = "$message • ستتم إعادة المحاولة تلقائيًا"
                         nearbyRefreshHandler.postDelayed({
                             if (!repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) recoverCentralActivation(silent = true)
                         }, if (recoveryRetryCount == 1) 5_000L else 15_000L)
                     } else if (!silent) {
-                        info("استعادة التفعيل", result.exceptionOrNull()?.message ?: "لا يوجد تفعيل سابق مطابق وآمن لهذا الجهاز أو أن الاستعادة موقوفة من إدارة النظام")
+                        if (isDnsResolutionError(error)) showDnsRecoveryDialog(error)
+                        else info("استعادة التفعيل", message.ifBlank { "لا يوجد تفعيل سابق مطابق وآمن لهذا الجهاز أو أن الاستعادة موقوفة من إدارة النظام" })
                     }
                     return@runOnUiThread
                 }
