@@ -54,7 +54,7 @@ jobs:
           grep -q 'isDnsResolutionError' "$MAIN"
           grep -q 'showDnsRecoveryDialog' "$MAIN"
           grep -q 'ACTION_PRIVATE_DNS_SETTINGS' "$MAIN"
-          grep -q 'ستظل خيارات الاستعادة وتسجيل محل جديد متاحة' "$MAIN"
+          grep -q 'تعذر العثور على عنوان الخادم عبر DNS' "$MAIN"
           ! grep -q 'إعدادات مدير المحل' "$CENTER"
           ! grep -q 'python3 tools/unify-report-receiver-center.py' .github/workflows/build-v2-rc23.yml
           grep -q 'versionCode = 129' buildsrc/store-app/build.gradle.kts
