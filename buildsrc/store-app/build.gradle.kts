@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 129
-        versionName = "2.0.0-RC29-DNS-RECOVERY1"
+        versionCode = 130
+        versionName = "2.0.0-RC29-AUTO-RECOVERY-RECEIVER1"
     }
 
     compileOptions {
