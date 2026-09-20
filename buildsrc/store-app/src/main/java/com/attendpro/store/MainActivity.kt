@@ -548,7 +548,7 @@ class MainActivity : Activity() {
             .setTitle("تعذر الوصول إلى الخادم")
             .setMessage(message)
             .setPositiveButton("فتح إعدادات DNS") { _, _ ->
-                val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) Settings.ACTION_PRIVATE_DNS_SETTINGS else Settings.ACTION_WIRELESS_SETTINGS
+                val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "android.settings.PRIVATE_DNS_SETTINGS" else Settings.ACTION_WIRELESS_SETTINGS
                 runCatching { startActivity(Intent(action)) }
                     .onFailure { runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
             }
