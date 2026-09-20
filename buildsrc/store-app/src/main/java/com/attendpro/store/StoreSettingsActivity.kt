@@ -240,7 +240,7 @@ class StoreSettingsActivity : Activity() {
     private fun showStoreReportsSecurity1976() {
         showLayeredMenu1977("التقارير والحماية", listOf(
             "التقارير والمشاركة" to { startActivity(Intent(this, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) },
-            "هواتف استلام التقارير" to { manageReportReceivers() },
+            "هواتف الاستلام والصلاحيات" to { startActivity(Intent(this, StoreReceiverPermissionsActivity::class.java)) },
             (if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية") to { changeStorePin() },
             "قفل التطبيق والبصمة" to { showAppLockSettings() },
             "النسخ الاحتياطي والاستعادة" to { showBackupCenter() },
@@ -473,38 +473,14 @@ class StoreSettingsActivity : Activity() {
     }
 
     private fun manageReportReceivers() {
-        val receivers = repo.authorizedReportReceivers()
-        val labels = mutableListOf(t("＋ إضافة هاتف استلام عبر QR", "＋ Add receiver phone by QR"))
-        labels.addAll(receivers.map {
-            val permissions = buildList {
-                if (it.canReceiveReports) add(t("تقارير", "Reports"))
-                if (it.canMessageEmployees) add(t("رسائل", "Messages"))
-                if (it.canManageStore) add(t("إدارة", "Management"))
-            }.joinToString(" + ").ifBlank { t("بدون صلاحيات", "No permissions") }
-            "${if (it.active) "●" else "○"} ${it.name} • $permissions"
-        })
-        AlertDialog.Builder(this)
-            .setTitle(t("هواتف الاستلام والصلاحيات (${receivers.size})", "Receiver phones and permissions (${receivers.size})"))
-            .setItems(labels.toTypedArray()) { _, which ->
-                if (which == 0) {
-                    startActivityForResult(
-                        Intent(this, QrScannerActivity::class.java)
-                            .putExtra(QrScannerActivity.EXTRA_PROMPT, t("امسح QR هاتف استلام التقارير", "Scan the receiver phone QR")),
-                        REQUEST_REPORT_RECEIVER_QR
-                    )
-                } else {
-                    showReceiverControl(receivers[which - 1])
-                }
-            }
-            .setNegativeButton(t("إغلاق", "Close"), null)
-            .show()
+        startActivity(Intent(this, StoreReceiverPermissionsActivity::class.java))
     }
 
     private fun showReceiverControl(receiver: com.attendpro.core.AuthorizedReportReceiver) {
         val permissionsText = listOf(
             t("استلام التقارير", "Receive reports") to receiver.canReceiveReports,
             t("مراسلة الموظفين", "Message employees") to receiver.canMessageEmployees,
-            t("إعدادات مدير المحل", "Store Manager settings") to receiver.canManageStore
+            t("إدارة الموظفين", "Employee management") to receiver.canManageStore
         ).joinToString("\n") { (name, enabled) -> "${if (enabled) "✓" else "○"} $name" }
         AlertDialog.Builder(this)
             .setTitle(receiver.name)
@@ -534,7 +510,7 @@ class StoreSettingsActivity : Activity() {
         val labels = arrayOf(
             t("استلام التقارير", "Receive reports"),
             t("مراسلة الموظفين عبر الخادم", "Message employees through server"),
-            t("تعديل إعدادات مدير المحل عن بُعد", "Manage Store settings remotely")
+            t("إدارة الموظفين عن بُعد", "Manage employees remotely")
         )
         val checked = booleanArrayOf(
             receiver.canReceiveReports,
