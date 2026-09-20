@@ -167,7 +167,7 @@ class StoreReceiverPermissionsActivity : Activity() {
         val checked = booleanArrayOf(true, false, false)
         AlertDialog.Builder(this)
             .setTitle(t("إعداد الهاتف الجديد — ${invite.name}", "Configure new phone — ${invite.name}"))
-            .setMessage(t("اختر الصلاحيات. يمكن اختيار صلاحية واحدة أو أكثر.", "Choose permissions. One or more may be selected."))
+            .setMessage(t("اختر صلاحية واحدة أو أكثر. «إدارة الموظفين» تسمح بإضافة الموظفين وتعديلهم وتفعيلهم/إيقافهم فقط، ولا تمنح إعدادات المحل أو إدارة النظام.", "Choose one or more permissions. Employee management allows employee add/edit/enable/disable only and does not grant Store or system settings."))
             .setMultiChoiceItems(labels, checked) { _, which, value -> checked[which] = value }
             .setPositiveButton(t("حفظ وربط الهاتف", "Save and link phone")) { _, _ ->
                 if (!checked.any { it }) {
@@ -224,6 +224,7 @@ class StoreReceiverPermissionsActivity : Activity() {
         val checked = booleanArrayOf(phone.canReceiveReports, phone.canMessageEmployees, phone.canManageStore)
         AlertDialog.Builder(this)
             .setTitle(t("صلاحيات: ${phone.name}", "Permissions: ${phone.name}"))
+            .setMessage(t("إدارة الموظفين لا تمنح صلاحية إعدادات المحل أو المالك أو النظام.", "Employee management does not grant Store, owner, or system settings."))
             .setMultiChoiceItems(labels, checked) { _, which, value -> checked[which] = value }
             .setPositiveButton(t("حفظ التغييرات", "Save changes")) { _, _ -> savePermissions(phone, checked[0], checked[1], checked[2]) }
             .setNegativeButton(t("إلغاء", "Cancel"), null)
