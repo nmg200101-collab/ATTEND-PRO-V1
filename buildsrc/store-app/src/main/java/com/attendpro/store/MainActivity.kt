@@ -259,8 +259,9 @@ class MainActivity : Activity() {
             runCatching { scanner.stop() }
             runCatching { networkListener.stop() }
             buildActivationLockUi()
-            if (repo.hasCentralCredentials() && repo.serverUrl.isNotBlank()) validateCentralActivation(silent = true)
-            else if (!recoveryAttempted && repo.serverUrl.isNotBlank()) {
+            if (repo.hasCentralCredentials() && repo.serverUrl.isNotBlank()) {
+                validateCentralActivation(silent = true)
+            } else if (!recoveryAttempted && repo.serverUrl.isNotBlank()) {
                 recoveryAttempted = true
                 recoverCentralActivation(silent = true)
             }
@@ -456,20 +457,29 @@ class MainActivity : Activity() {
         root.addView(identity)
 
         val activation = UiKit.card(this, p)
-        activation.addView(UiKit.sectionLabel(this, p, "التفعيل المركزي"))
-        if (repo.centralActivationRequestId.isBlank() && !repo.hasCentralCredentials()) {
-            activation.addView(UiKit.button(this, p, "استعادة تفعيل هذا الجهاز", false).apply { setOnClickListener { recoverCentralActivation(silent = false) } })
-            activation.addView(UiKit.button(this, p, "استعادة بتصريح صاحب النظام", false).apply { setOnClickListener { showApprovedRecoveryDialog() } })
-            activation.addView(UiKit.button(this, p, "تسجيل محل جديد مباشرة — تجربة 3 أيام").apply {
-                setOnClickListener { requestCentralActivation(selfRegister = true) }
-            })
-            activation.addView(UiKit.button(this, p, "إرسال طلب التفعيل لإدارة النظام").apply { setOnClickListener { requestCentralActivation() } })
-        } else if (repo.centralActivationRequestId.isNotBlank()) {
+        activation.addView(UiKit.sectionLabel(this, p, "التفعيل والاستعادة"))
+        activation.addView(UiKit.subtitle(this, p,
+            "يمكنك استعادة محل سابق تلقائيًا، أو تسجيل محل جديد. تبقى هذه الخيارات ظاهرة حتى عند وجود بيانات تفعيل قديمة أو منتهية."))
+        activation.addView(UiKit.button(this, p, "استعادة التفعيل تلقائيًا", false).apply {
+            setOnClickListener {
+                recoveryAttempted = true
+                recoveryRetryCount = 0
+                recoverCentralActivation(silent = false)
+            }
+        })
+        activation.addView(UiKit.button(this, p, "استعادة بتصريح صاحب النظام", false).apply { setOnClickListener { showApprovedRecoveryDialog() } })
+        if (repo.centralActivationRequestId.isNotBlank()) {
             activation.addView(UiKit.button(this, p, "فحص موافقة إدارة النظام").apply { setOnClickListener { checkCentralActivation() } })
             activation.addView(UiKit.subtitle(this, p, "رقم الطلب: ${repo.centralActivationRequestId}"))
         }
         if (repo.hasCentralCredentials()) {
             activation.addView(UiKit.button(this, p, "التحقق من صلاحية المحل الآن").apply { setOnClickListener { validateCentralActivation(silent = false) } })
+        }
+        activation.addView(UiKit.button(this, p, "تسجيل محل جديد مباشرة — تجربة 3 أيام").apply {
+            setOnClickListener { requestCentralActivation(selfRegister = true) }
+        })
+        if (repo.centralActivationRequestId.isBlank()) {
+            activation.addView(UiKit.button(this, p, "إرسال طلب التفعيل لإدارة النظام", false).apply { setOnClickListener { requestCentralActivation() } })
         }
         status = TextView(this).apply { text = "بانتظار التفعيل المركزي"; textSize = 15f; setTextColor(p.muted); gravity = Gravity.CENTER; setPadding(0, UiKit.dp(this@MainActivity, 8), 0, 0) }
         activation.addView(status)
@@ -512,6 +522,19 @@ class MainActivity : Activity() {
         d.show()
     }
 
+    private fun activationConnectionMessage(error: Throwable?): String {
+        val raw = error?.message.orEmpty()
+        return when {
+            raw.contains("Unable to resolve host", ignoreCase = true) ||
+                raw.contains("No address associated with hostname", ignoreCase = true) ->
+                "تعذر الوصول إلى عنوان الخادم. تحقق من اتصال الإنترنت ثم أعد المحاولة؛ ستظل خيارات الاستعادة وتسجيل محل جديد متاحة."
+            raw.contains("timeout", ignoreCase = true) ->
+                "انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة."
+            raw.isBlank() -> "تعذر الاتصال بالخادم."
+            else -> raw
+        }
+    }
+
     private fun validateCentralActivation(silent: Boolean) {
         if (repo.serverUrl.isBlank() || !repo.hasCentralCredentials()) { if (!silent) info("التفعيل المركزي", "بيانات الخادم أو الترخيص المركزي غير مكتملة."); return }
         if (::status.isInitialized && !silent) status.text = "جاري التحقق الآمن من الخادم..."
@@ -523,7 +546,13 @@ class MainActivity : Activity() {
             }
             runOnUiThread {
                 if (result.isFailure) {
-                    if (!silent && ::status.isInitialized) status.text = "تعذر التحقق: ${result.exceptionOrNull()?.message ?: "خطأ اتصال"}"
+                    val message = activationConnectionMessage(result.exceptionOrNull())
+                    if (::status.isInitialized) status.text = if (silent) message else "تعذر التحقق: $message"
+                    if (silent && !repo.isCentralActivationActive() && !recoveryAttempted && repo.serverUrl.isNotBlank()) {
+                        recoveryAttempted = true
+                        recoveryRetryCount = 0
+                        recoverCentralActivation(silent = true)
+                    }
                     return@runOnUiThread
                 }
                 val v = result.getOrThrow()
@@ -1205,7 +1234,10 @@ class MainActivity : Activity() {
 
     private fun showActivationCenter() {
         val items = mutableListOf<String>()
-        if (repo.centralActivationRequestId.isBlank() && !repo.hasCentralCredentials()) items.add("إرسال طلب تفعيل مركزي")
+        items.add("استعادة التفعيل تلقائيًا")
+        items.add("استعادة بتصريح صاحب النظام")
+        items.add("تسجيل محل جديد — تجربة 3 أيام")
+        if (repo.centralActivationRequestId.isBlank()) items.add("إرسال طلب تفعيل مركزي")
         if (repo.centralActivationRequestId.isNotBlank()) items.add("فحص موافقة إدارة النظام")
         if (repo.hasCentralCredentials()) items.add("التحقق من صلاحية المحل الآن")
         if (repo.isCentralActivationActive()) items.add("عرض بيانات التفعيل المركزي")
@@ -1213,6 +1245,13 @@ class MainActivity : Activity() {
         items.add("نسخ معرّف جهاز المحل")
         AlertDialog.Builder(this).setTitle("التفعيل المركزي — ATTEND PRO").setItems(items.toTypedArray()) { _, which ->
             when (items[which]) {
+                "استعادة التفعيل تلقائيًا" -> {
+                    recoveryAttempted = true
+                    recoveryRetryCount = 0
+                    recoverCentralActivation(silent = false)
+                }
+                "استعادة بتصريح صاحب النظام" -> showApprovedRecoveryDialog()
+                "تسجيل محل جديد — تجربة 3 أيام" -> requestCentralActivation(selfRegister = true)
                 "إرسال طلب تفعيل مركزي" -> requestCentralActivation()
                 "فحص موافقة إدارة النظام" -> checkCentralActivation()
                 "التحقق من صلاحية المحل الآن" -> validateCentralActivation(silent = false)
