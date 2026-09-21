@@ -309,7 +309,7 @@ class StoreSettingsActivity : Activity() {
         val reports = UiKit.card(this, p)
         reports.addView(UiKit.sectionLabel(this, p, "التقارير والمراقبة"))
         reports.addView(UiKit.button(this, p, "فتح التقارير والمشاركة").apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) } })
-        reports.addView(UiKit.button(this, p, "هواتف استلام التقارير والصلاحيات", false).apply { setOnClickListener { manageReportReceivers() } })
+        reports.addView(UiKit.button(this, p, "هواتف الاستلام والصلاحيات", false).apply { setOnClickListener { manageReportReceivers() } })
         root.addView(reports)
 
         val security = UiKit.card(this, p, 13)
@@ -609,11 +609,11 @@ class StoreSettingsActivity : Activity() {
     private fun showReceiverRemoteGrant(invite: ReportProtocol.ReceiverInvite) {
         val grant = ReportProtocol.RemoteReceiverGrant(invite.receiverId, repo.serverUrl, repo.storeName, repo.branchId, System.currentTimeMillis() + 10 * 60_000L)
         val raw = ReportProtocol.encodeRemoteGrant(grant)
-        val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrElse { info("تم منح الصلاحية ✓", "تم تسجيل الهاتف على الخادم، لكن تعذر إنشاء QR الربط. يمكن إدخال رابط الخادم يدويًا في هاتف المراقبة."); return }
+        val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrElse { info("تم منح الصلاحية ✓", "تم تسجيل الهاتف على الخادم، لكن تعذر إنشاء QR الربط. يمكن إدخال رابط الخادم يدويًا في هاتف الاستلام."); return }
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(20, 12, 20, 8) }
-        box.addView(UiKit.subtitle(this, p, "تم منح الصلاحية للهاتف «${invite.name}» محليًا وعبر الإنترنت. الآن من هاتف المالك: استلام التقارير ← مسح QR ربط الخادم.").apply { gravity = Gravity.CENTER })
+        box.addView(UiKit.subtitle(this, p, "تم منح الصلاحية للهاتف «${invite.name}» محليًا وعبر الإنترنت. الآن من هاتف الاستلام: التفعيل ← مسح QR الربط النهائي.").apply { gravity = Gravity.CENTER })
         box.addView(ImageView(this).apply { setImageBitmap(qr); adjustViewBounds = true; layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this@StoreSettingsActivity, 340)) })
-        AlertDialog.Builder(this).setTitle("✓ ربط هاتف المراقبة بالخادم").setView(box).setPositiveButton("إغلاق", null).show()
+        AlertDialog.Builder(this).setTitle("✓ ربط هاتف الاستلام بالخادم").setView(box).setPositiveButton("إغلاق", null).show()
     }
 
     private fun fingerprintSettings() {
