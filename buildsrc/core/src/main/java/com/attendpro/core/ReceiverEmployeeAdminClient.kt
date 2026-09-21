@@ -27,10 +27,16 @@ object ReceiverEmployeeAdminClient {
     }
     private fun post(base:String,path:String,body:JSONObject):JSONObject {
         require(base.startsWith("https://")){"HTTPS required"}
-        val c=(URL(base.trimEnd('/')+path).openConnection() as HttpURLConnection).apply{requestMethod="POST";connectTimeout=12000;readTimeout=15000;doOutput=true;setRequestProperty("Content-Type","application/json; charset=utf-8")}
-        OutputStreamWriter(c.outputStream,Charsets.UTF_8).use{it.write(body.toString())}
-        val code=c.responseCode; val stream=if(code in 200..299)c.inputStream else c.errorStream
-        val text=BufferedReader(InputStreamReader(stream,Charsets.UTF_8)).use{it.readText()}; c.disconnect()
+        val response = ResilientHttp.execute(
+            base.trimEnd('/') + path,
+            "POST",
+            mapOf("Content-Type" to "application/json; charset=utf-8", "Accept" to "application/json"),
+            body.toString(),
+            connectTimeoutMs = 12_000,
+            readTimeoutMs = 15_000
+        )
+        val code = response.code
+        val text = response.body
         if(code !in 200..299) throw IllegalStateException(runCatching{JSONObject(text).optString("error",text)}.getOrDefault(text))
         return if(text.isBlank()) JSONObject() else JSONObject(text)
     }
