@@ -137,6 +137,7 @@ class MainActivity : Activity() {
     private var recoveryAttempted = false
     private var recoveryRetryCount = 0
     @Volatile private var activationRecoveryInFlight = false
+    @Volatile private var activationRecoveryAttemptId = 0L
     private var lastLateScheduleSyncAt = 0L
     private data class NearbyPhone(
         val seenAt: Long,
@@ -468,11 +469,7 @@ class MainActivity : Activity() {
         activation.addView(UiKit.subtitle(this, p,
             "يمكنك استعادة محل سابق تلقائيًا، أو تسجيل محل جديد. تبقى هذه الخيارات ظاهرة حتى عند وجود بيانات تفعيل قديمة أو منتهية."))
         activation.addView(UiKit.button(this, p, "استعادة التفعيل تلقائيًا", false).apply {
-            setOnClickListener {
-                recoveryAttempted = true
-                recoveryRetryCount = 0
-                recoverCentralActivation(silent = false)
-            }
+            setOnClickListener { forceCentralActivationRecovery() }
         })
         activation.addView(UiKit.button(this, p, "استعادة بتصريح صاحب النظام", false).apply { setOnClickListener { showApprovedRecoveryDialog() } })
         if (repo.centralActivationRequestId.isNotBlank()) {
@@ -1273,11 +1270,7 @@ class MainActivity : Activity() {
         items.add("نسخ معرّف جهاز المحل")
         AlertDialog.Builder(this).setTitle("التفعيل المركزي — ATTEND PRO").setItems(items.toTypedArray()) { _, which ->
             when (items[which]) {
-                "استعادة التفعيل تلقائيًا" -> {
-                    recoveryAttempted = true
-                    recoveryRetryCount = 0
-                    recoverCentralActivation(silent = false)
-                }
+                "استعادة التفعيل تلقائيًا" -> forceCentralActivationRecovery()
                 "استعادة بتصريح صاحب النظام" -> showApprovedRecoveryDialog()
                 "تسجيل محل جديد — تجربة 3 أيام" -> requestCentralActivation(selfRegister = true)
                 "إرسال طلب تفعيل مركزي" -> requestCentralActivation()
@@ -1352,14 +1345,34 @@ class MainActivity : Activity() {
         recoverCentralActivation(silent = true)
     }
 
-    private fun recoverCentralActivation(silent: Boolean) {
-        if (activationRecoveryInFlight) return
+    private fun forceCentralActivationRecovery() {
+        recoveryAttempted = true
+        recoveryRetryCount = 0
+        if (repo.serverUrl.isBlank()) {
+            if (::status.isInitialized) status.text = "حدد عنوان الخادم أولًا"
+            editActivationSetup()
+            return
+        }
+        // A manual press must win over any background auto-recovery attempt.
+        activationRecoveryInFlight = false
+        if (::status.isInitialized) status.text = "جاري الاستعادة الآن..."
+        recoverCentralActivation(silent = false, force = true)
+    }
+
+    private fun recoverCentralActivation(silent: Boolean, force: Boolean = false) {
+        if (activationRecoveryInFlight && !force) return
+        val attemptId = synchronized(this) {
+            activationRecoveryAttemptId += 1L
+            activationRecoveryAttemptId
+        }
         activationRecoveryInFlight = true
-        if (::status.isInitialized) status.text = if (silent) "جاري استعادة التفعيل السابق تلقائيًا..." else "جاري البحث عن تفعيل سابق لهذا الجهاز..."
+        if (::status.isInitialized) status.text = if (silent) "جاري استعادة التفعيل السابق تلقائيًا..." else "جاري الاستعادة الآن..."
         Thread {
             val identity = DeviceIdentity(this)
             val result = CentralServerClient.recoverActivation(repo.serverUrl, identity)
             runOnUiThread {
+                // Ignore an older automatic request if the user pressed Restore after it started.
+                if (attemptId != activationRecoveryAttemptId) return@runOnUiThread
                 if (result.isFailure) {
                     activationRecoveryInFlight = false
                     val error = result.exceptionOrNull()
@@ -1371,7 +1384,8 @@ class MainActivity : Activity() {
                         recoveryRetryCount += 1
                         if (::status.isInitialized) status.text = "$message • ستتم إعادة المحاولة تلقائيًا"
                         nearbyRefreshHandler.postDelayed({
-                            if (!repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                            if (attemptId == activationRecoveryAttemptId &&
+                                !repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
                                 activationRecoveryInFlight = false
                                 recoverCentralActivation(silent = true)
                             }
@@ -1388,7 +1402,7 @@ class MainActivity : Activity() {
                 repo.adoptRecoveredStore(x.storeId, x.storeName, x.branchId)
                 repo.saveCentralActivation(x.licenseId, x.accessToken, x.expiresAt, x.maxEmployees, x.leaseUntil, x.serverTime)
                 buildElegantUi(); refreshDashboard()
-                if (!silent) info("تمت استعادة التفعيل تلقائيًا ✓", "تعرف الخادم على ${identity.deviceLabel()} كتثبيت سابق لنفس الجهاز، واستعاد الاشتراك وبيانات المحل دون إنشاء تفعيل جديد. تم تسجيل العملية في إشعارات إدارة النظام.")
+                if (!silent) info("تمت استعادة التفعيل ✓", "تم التعرف على هذا الجهاز واستعادة اشتراك وبيانات المحل مباشرة.")
             }
         }.apply { isDaemon = true }.start()
     }
