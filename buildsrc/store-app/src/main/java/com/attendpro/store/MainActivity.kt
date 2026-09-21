@@ -1607,7 +1607,7 @@ class MainActivity : Activity() {
         OwnerShortcut("live_attendance", "الحضور الآن"),
         OwnerShortcut("today_log", "سجل اليوم"),
         OwnerShortcut("reports", "تقارير الحضور"),
-        OwnerShortcut("report_receiver", "استلام التقارير"),
+        OwnerShortcut("report_receiver", "هواتف الاستلام والصلاحيات"),
         OwnerShortcut("connections", "الأجهزة والاتصال"),
         OwnerShortcut("app_settings", "إعدادات التطبيق"),
         OwnerShortcut("license", "التفعيل والاشتراك")
@@ -1639,7 +1639,7 @@ class MainActivity : Activity() {
             "live_attendance" -> showLiveAttendanceNow()
             "today_log" -> showConnectionAttendanceHistory()
             "reports" -> startActivity(Intent(this, ReportsActivity::class.java))
-            "report_receiver" -> startActivity(Intent(this, ReportReceiverActivity::class.java))
+            "report_receiver" -> startActivity(Intent(this, StoreReceiverPermissionsActivity::class.java))
             "connections" -> showConnectionCenter()
             "app_settings" -> showAppSettingsHub()
             "license" -> showLicenseDetails()
