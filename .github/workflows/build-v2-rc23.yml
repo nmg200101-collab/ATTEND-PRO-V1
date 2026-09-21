@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V133 Resilient DNS
+name: Build ATTEND-PRO V134 Complete DNS Recovery
 on:
   push:
-    branches: [attend-pro-v133-resilient-dns]
+    branches: [attend-pro-v134-complete-dns-recovery]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V133 native source
+      - name: Verify V134 native source
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -84,10 +84,10 @@ jobs:
           grep -q 'تعذر العثور على عنوان الخادم عبر DNS' "$MAIN"
           ! grep -q 'إعدادات مدير المحل' "$CENTER"
           ! grep -q 'python3 tools/unify-report-receiver-center.py' .github/workflows/build-v2-rc23.yml
-          grep -q 'versionCode = 133' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-RESILIENT-DNS1"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 133' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-RESILIENT-DNS1"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 134' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-DNS-RECOVERY2"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 134' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-DNS-RECOVERY2"' buildsrc/employee-app/build.gradle.kts
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -104,14 +104,18 @@ jobs:
           set -euo pipefail
           HOST='attend-pro-central.nmg200101.workers.dev'
           OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A" || true)
-          if ! printf '%s' "$OUT" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'; then
-            OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://8.8.8.8/resolve?name=$HOST&type=A")
+          echo "CF_A=$OUT"
+          OUT6=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=AAAA" || true)
+          echo "CF_AAAA=$OUT6"
+          G=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://8.8.8.8/resolve?name=$HOST&type=A" || true)
+          echo "GOOGLE_A=$G"
+          if ! printf '%s\n%s' "$OUT" "$G" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'; then
+            printf '%s' "$OUT6" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9A-Fa-f:]+"'
           fi
-          printf '%s' "$OUT" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V133
+      - name: Sign V134
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -124,9 +128,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V133.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V134.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V133.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V134.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -142,11 +146,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='133' versionName='2.0.0-RC29-RESILIENT-DNS1'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='134' versionName='2.0.0-RC29-DNS-RECOVERY2'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V133-RESILIENT-DNS-SIGNED
+          name: ATTEND-PRO-V134-COMPLETE-DNS-RECOVERY-SIGNED
           path: signed/
           retention-days: 30
