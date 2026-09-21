@@ -911,31 +911,34 @@ object CentralServerClient {
 
     private fun request(serverUrl: String, path: String, method: String, body: JSONObject?, bearer: String = "", deviceIdentity: DeviceIdentity? = null, storeId: String = ""): JSONObject {
         val bodyText = body?.toString().orEmpty()
-        var connection: HttpURLConnection? = null
         var httpFailureRecorded = false
         try {
-            connection = (URL(serverUrl.trimEnd('/') + path).openConnection() as HttpURLConnection).apply {
-                requestMethod = method; connectTimeout = 10_000; readTimeout = 10_000
-                setRequestProperty("Accept", "application/json")
-                if (bearer.isNotBlank()) setRequestProperty("Authorization", "Bearer $bearer")
-                if (deviceIdentity != null && storeId.isNotBlank()) {
-                    val ts = System.currentTimeMillis().toString()
-                    val nonce = randomToken(18)
-                    val bodyHash = sha256Hex(bodyText)
-                    val canonical = "$method\n$path\n$ts\n$nonce\n$bodyHash"
-                    setRequestProperty("X-AP-Store", storeId)
-                    setRequestProperty("X-AP-Time", ts)
-                    setRequestProperty("X-AP-Nonce", nonce)
-                    setRequestProperty("X-AP-Body-SHA256", bodyHash)
-                    setRequestProperty("X-AP-Signature", deviceIdentity.sign(canonical))
-                }
-                if (body != null) { doOutput = true; setRequestProperty("Content-Type", "application/json; charset=utf-8") }
+            val headers = linkedMapOf<String, String>()
+            headers["Accept"] = "application/json"
+            if (bearer.isNotBlank()) headers["Authorization"] = "Bearer $bearer"
+            if (deviceIdentity != null && storeId.isNotBlank()) {
+                val ts = System.currentTimeMillis().toString()
+                val nonce = randomToken(18)
+                val bodyHash = sha256Hex(bodyText)
+                val canonical = "$method\n$path\n$ts\n$nonce\n$bodyHash"
+                headers["X-AP-Store"] = storeId
+                headers["X-AP-Time"] = ts
+                headers["X-AP-Nonce"] = nonce
+                headers["X-AP-Body-SHA256"] = bodyHash
+                headers["X-AP-Signature"] = deviceIdentity.sign(canonical)
             }
-            if (body != null) OutputStreamWriter(connection.outputStream, Charsets.UTF_8).use { it.write(bodyText) }
-            val code = connection.responseCode
-            val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.let { BufferedReader(InputStreamReader(it, Charsets.UTF_8)).use { reader -> reader.readText() } }.orEmpty()
-            val parsed = runCatching { JSONObject(text.ifBlank { "{}" }) }.getOrElse { JSONObject() }
+            if (body != null) headers["Content-Type"] = "application/json; charset=utf-8"
+
+            val response = ResilientHttp.execute(
+                serverUrl.trimEnd('/') + path,
+                method,
+                headers,
+                if (body != null) bodyText else null,
+                connectTimeoutMs = 10_000,
+                readTimeoutMs = 10_000
+            )
+            val code = response.code
+            val parsed = runCatching { JSONObject(response.body.ifBlank { "{}" }) }.getOrElse { JSONObject() }
             if (code !in 200..299) {
                 val message = parsed.optString("error", "HTTP $code")
                 ServerDiagnostics.failure(code, path, message)
@@ -947,8 +950,6 @@ object CentralServerClient {
         } catch (t: Throwable) {
             if (!httpFailureRecorded) ServerDiagnostics.failure(0, path, t.message ?: t.javaClass.simpleName)
             throw t
-        } finally {
-            connection?.disconnect()
         }
     }
 
