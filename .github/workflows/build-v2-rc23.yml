@@ -66,8 +66,12 @@ jobs:
           DNS=buildsrc/core/src/main/java/com/attendpro/core/ResilientHttp.kt
           test -f "$DNS"
           grep -q 'SecureFallbackDns' "$DNS"
-          grep -q 'https://1.1.1.1/dns-query' "$DNS"
-          grep -q 'https://8.8.8.8/resolve' "$DNS"
+          grep -q 'https://cloudflare-dns.com/dns-query' "$DNS"
+          grep -q 'https://dns.google/resolve' "$DNS"
+          grep -q '104.21.44.99' "$DNS"
+          grep -q '172.67.198.135' "$DNS"
+          grep -q '2606:4700:3033::6815:2c63' "$DNS"
+          grep -q '2606:4700:3035::ac43:c687' "$DNS"
           grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
           grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
@@ -103,15 +107,15 @@ jobs:
         run: |
           set -euo pipefail
           HOST='attend-pro-central.nmg200101.workers.dev'
-          OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A" || true)
-          echo "CF_A=$OUT"
-          OUT6=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=AAAA" || true)
-          echo "CF_AAAA=$OUT6"
-          G=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://8.8.8.8/resolve?name=$HOST&type=A" || true)
-          echo "GOOGLE_A=$G"
-          if ! printf '%s\n%s' "$OUT" "$G" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'; then
-            printf '%s' "$OUT6" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9A-Fa-f:]+"'
+          OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A")
+          printf '%s' "$OUT" | grep -q '"data":"104.21.44.99"'
+          printf '%s' "$OUT" | grep -q '"data":"172.67.198.135"'
+          CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:104.21.44.99" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
+          if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
+            CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:172.67.198.135" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
           fi
+          test -n "$CODE"
+          test "$CODE" != "000"
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
