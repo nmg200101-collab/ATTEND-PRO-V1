@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.employee"
         minSdk = 26
         targetSdk = 36
-        versionCode = 133
-        versionName = "2.0.0-RC29-RESILIENT-DNS1"
+        versionCode = 134
+        versionName = "2.0.0-RC29-DNS-RECOVERY2"
     }
 
     compileOptions {
