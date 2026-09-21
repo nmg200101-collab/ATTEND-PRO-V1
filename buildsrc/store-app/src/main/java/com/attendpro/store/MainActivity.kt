@@ -1342,7 +1342,7 @@ class MainActivity : Activity() {
         if (recoveryAttempted) return
         recoveryAttempted = true
         recoveryRetryCount = 0
-        recoverCentralActivation(silent = true)
+        restoreCentralActivationSmart(silent = true, force = false)
     }
 
     private fun forceCentralActivationRecovery() {
@@ -1353,10 +1353,145 @@ class MainActivity : Activity() {
             editActivationSetup()
             return
         }
-        // A manual press must win over any background auto-recovery attempt.
         activationRecoveryInFlight = false
-        if (::status.isInitialized) status.text = "جاري الاستعادة الآن..."
-        recoverCentralActivation(silent = false, force = true)
+        restoreCentralActivationSmart(silent = false, force = true)
+    }
+
+    private fun restoreCentralActivationSmart(silent: Boolean, force: Boolean) {
+        if (activationRecoveryInFlight && !force) return
+        val attemptId = synchronized(this) {
+            activationRecoveryAttemptId += 1L
+            activationRecoveryAttemptId
+        }
+        activationRecoveryInFlight = true
+
+        fun stage(message: String) {
+            runOnUiThread {
+                if (attemptId == activationRecoveryAttemptId && ::status.isInitialized) status.text = message
+            }
+        }
+
+        stage(if (silent) "جاري التعرف على التفعيل السابق..." else "جاري الاستعادة الآن • فحص التفعيل المحفوظ")
+        Thread {
+            val identity = DeviceIdentity(this)
+            var lastError: Throwable? = null
+
+            // 1) This is the path older stable builds used first: validate the already stored
+            // license/token and renew its offline lease. Do not force a new recovery token
+            // when the existing activation is still valid.
+            if (repo.hasCentralCredentials()) {
+                stage("جاري الاستعادة الآن • 1/3 التحقق من التفعيل المحفوظ")
+                val validation = CentralServerClient.validateStore(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity
+                )
+                if (validation.isSuccess) {
+                    val v = validation.getOrThrow()
+                    if (v.status.equals("ACTIVE", true)) {
+                        if (v.leaseUntil > System.currentTimeMillis() && v.serverTime > 0L) {
+                            repo.refreshCentralLease("ACTIVE", v.expiresAt, v.maxEmployees, v.leaseUntil, v.serverTime)
+                            CentralServerClient.enrollRecovery(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity)
+                            runOnUiThread {
+                                if (attemptId != activationRecoveryAttemptId) return@runOnUiThread
+                                activationRecoveryInFlight = false
+                                recoveryRetryCount = 0
+                                employeeManagerMode = false
+                                buildElegantUi()
+                                refreshDashboard()
+                                if (!silent) info("تمت استعادة التفعيل ✓", "تم اعتماد التفعيل المحفوظ وتجديد مهلة التشغيل وفتح المحل مباشرة.")
+                            }
+                            return@Thread
+                        }
+                        lastError = IllegalStateException("الخادم أعاد تفعيلًا نشطًا دون مهلة تشغيل صالحة")
+                    } else if (v.status.equals("SUSPENDED", true) || v.status.equals("EXPIRED", true)) {
+                        repo.markCentralInactive(v.status, v.serverTime)
+                        runOnUiThread {
+                            if (attemptId != activationRecoveryAttemptId) return@runOnUiThread
+                            activationRecoveryInFlight = false
+                            if (::status.isInitialized) status.text = v.reason.ifBlank { "حالة التفعيل: ${v.status}" }
+                            if (!silent) info("حالة التفعيل", v.reason.ifBlank { "حالة المحل على الخادم: ${v.status}" })
+                        }
+                        return@Thread
+                    } else {
+                        lastError = IllegalStateException(v.reason.ifBlank { "حالة التفعيل: ${v.status}" })
+                    }
+                } else {
+                    lastError = validation.exceptionOrNull()
+                }
+            }
+
+            // 2) If this device still has an activation request, an approved request can
+            // restore the license/token without creating another account.
+            val requestId = repo.centralActivationRequestId
+            val pollSecret = repo.centralActivationPollSecret
+            if (requestId.isNotBlank() && pollSecret.isNotBlank()) {
+                stage("جاري الاستعادة الآن • 2/3 فحص طلب التفعيل السابق")
+                val pending = CentralServerClient.activationStatus(
+                    repo.serverUrl, requestId, pollSecret, repo.storeId, identity
+                )
+                if (pending.isSuccess) {
+                    val x = pending.getOrThrow()
+                    if ((x.status.equals("APPROVED", true) || x.status.equals("ACTIVE", true)) &&
+                        x.accessToken.isNotBlank() && x.licenseId.isNotBlank() &&
+                        x.leaseUntil > System.currentTimeMillis() && x.serverTime > 0L) {
+                        repo.saveCentralActivation(
+                            x.licenseId, x.accessToken, x.expiresAt, x.maxEmployees, x.leaseUntil, x.serverTime
+                        )
+                        CentralServerClient.enrollRecovery(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity)
+                        runOnUiThread {
+                            if (attemptId != activationRecoveryAttemptId) return@runOnUiThread
+                            activationRecoveryInFlight = false
+                            recoveryRetryCount = 0
+                            employeeManagerMode = false
+                            buildElegantUi()
+                            refreshDashboard()
+                            if (!silent) info("تمت استعادة التفعيل ✓", "تم استلام التفعيل المعتمد سابقًا وفتح المحل مباشرة.")
+                        }
+                        return@Thread
+                    }
+                    lastError = IllegalStateException(x.reason.ifBlank { "حالة طلب التفعيل: ${x.status}" })
+                } else {
+                    lastError = pending.exceptionOrNull()
+                }
+            }
+
+            // 3) Last fallback: identify the physical installation through the enrolled
+            // recovery fingerprint and issue a fresh access token.
+            stage("جاري الاستعادة الآن • 3/3 التعرف على الجهاز من الخادم")
+            val recovered = CentralServerClient.recoverActivation(repo.serverUrl, identity)
+            runOnUiThread {
+                if (attemptId != activationRecoveryAttemptId) return@runOnUiThread
+                activationRecoveryInFlight = false
+                if (recovered.isSuccess) {
+                    recoveryRetryCount = 0
+                    val x = recovered.getOrThrow()
+                    repo.adoptRecoveredStore(x.storeId, x.storeName, x.branchId)
+                    repo.saveCentralActivation(
+                        x.licenseId, x.accessToken, x.expiresAt, x.maxEmployees, x.leaseUntil, x.serverTime
+                    )
+                    employeeManagerMode = false
+                    buildElegantUi()
+                    refreshDashboard()
+                    if (!silent) info("تمت استعادة التفعيل ✓", "تعرف الخادم على هذا الجهاز واستعاد اشتراك وبيانات المحل.")
+                    return@runOnUiThread
+                }
+
+                val error = recovered.exceptionOrNull() ?: lastError
+                val message = activationConnectionMessage(error)
+                if (::status.isInitialized) status.text = "تعذر الاستعادة: $message"
+                if (!silent) {
+                    if (isDnsResolutionError(error)) showDnsRecoveryDialog(error)
+                    else info("تعذر استعادة التفعيل", message.ifBlank { "لم يعثر الخادم على تفعيل صالح لهذا الجهاز." })
+                } else if (!repo.isCentralActivationActive() && recoveryRetryCount < 2 && !isDnsResolutionError(error)) {
+                    recoveryRetryCount += 1
+                    nearbyRefreshHandler.postDelayed({
+                        if (attemptId == activationRecoveryAttemptId && !repo.isCentralActivationActive()) {
+                            activationRecoveryInFlight = false
+                            restoreCentralActivationSmart(silent = true, force = true)
+                        }
+                    }, if (recoveryRetryCount == 1) 5_000L else 15_000L)
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun recoverCentralActivation(silent: Boolean, force: Boolean = false) {
