@@ -50,14 +50,15 @@ object AppUpdateManager {
     private fun fetchRelease(serverUrl: String, channel: String): Release? {
         require(serverUrl.startsWith("https://")) { "عنوان قناة التحديث يجب أن يستخدم HTTPS" }
         require(channel == "store" || channel == "employee") { "قناة التطبيق غير صالحة" }
-        val connection = URL(serverUrl.trimEnd('/') + "/api/v1/app/update?app=" + channel).openConnection() as HttpURLConnection
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 12_000
-        connection.readTimeout = 12_000
-        connection.setRequestProperty("Accept", "application/json")
-        val code = connection.responseCode
-        val text = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-        connection.disconnect()
+        val response = ResilientHttp.execute(
+            serverUrl.trimEnd('/') + "/api/v1/app/update?app=" + channel,
+            "GET",
+            mapOf("Accept" to "application/json"),
+            connectTimeoutMs = 12_000,
+            readTimeoutMs = 12_000
+        )
+        val code = response.code
+        val text = response.body
         if (code == 204) return null
         if (code !in 200..299) throw IllegalStateException(JSONObject(text.ifBlank { "{}" }).optString("error", "الخادم لم يُرجع معلومات التحديث"))
         val o = JSONObject(text)
