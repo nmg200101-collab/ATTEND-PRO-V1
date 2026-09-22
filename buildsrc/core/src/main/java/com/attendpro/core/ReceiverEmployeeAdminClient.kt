@@ -10,12 +10,33 @@ import java.net.URL
 
 /** V125 isolated remote employee administration client. Does not touch pairing/BLE/GPS. */
 object ReceiverEmployeeAdminClient {
-    data class Employee(val employeeId:String,val employeeName:String,val branchId:String,val lastSeenAt:Long,val enabled:Boolean,val pendingLink:Boolean)
+    data class Employee(
+        val employeeId:String,
+        val employeeName:String,
+        val branchId:String,
+        val lastSeenAt:Long,
+        val enabled:Boolean,
+        val pendingLink:Boolean,
+        val pendingCommand:Boolean = false,
+        val pendingAction:String = ""
+    )
 
     fun list(serverUrl:String, receiverId:String, secret:String):Result<List<Employee>> = runCatching {
         val o=post(serverUrl,"/api/v1/monitor/employees/manage-list",JSONObject().apply{put("receiverId",receiverId);put("secret",secret)})
         val a=o.optJSONArray("employees")?:JSONArray()
-        (0 until a.length()).map { i -> val x=a.getJSONObject(i); Employee(x.optString("employeeId"),x.optString("employeeName"),x.optString("branchId","MAIN"),x.optLong("lastSeenAt",0L),x.optBoolean("enabled",true),x.optBoolean("pendingLink",false)) }
+        (0 until a.length()).map { i ->
+            val x=a.getJSONObject(i)
+            Employee(
+                x.optString("employeeId"),
+                x.optString("employeeName"),
+                x.optString("branchId","MAIN"),
+                x.optLong("lastSeenAt",0L),
+                x.optBoolean("enabled",true),
+                x.optBoolean("pendingLink",false),
+                x.optBoolean("pendingCommand",false),
+                x.optString("pendingAction","")
+            )
+        }
     }
     fun add(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/add",receiverId,secret,id,name,branch,null)
     fun update(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/update",receiverId,secret,id,name,branch,null)
