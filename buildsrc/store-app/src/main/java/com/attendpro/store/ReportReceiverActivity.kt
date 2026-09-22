@@ -68,9 +68,13 @@ class ReportReceiverActivity : Activity() {
             if (storeId.isNotBlank() && activeId.isNotBlank() && storeId != activeId) return
             when (intent.getStringExtra(ReceiverReportService.EXTRA_KIND).orEmpty()) {
                 ReceiverReportService.KIND_REPORTS -> {
-                    if (section == Section.REPORTS && selectedReportIndex == null) render()
+                    notice = t("وصل تقرير جديد تلقائيًا ✓", "A new report arrived automatically ✓")
+                    if (selectedReportIndex == null) render()
                 }
-                ReceiverReportService.KIND_MESSAGES,
+                ReceiverReportService.KIND_MESSAGES -> {
+                    notice = t("وصل رد جديد من موظف ✓", "A new employee reply arrived ✓")
+                    render()
+                }
                 ReceiverReportService.KIND_OUTBOX -> {
                     if (section == Section.MESSAGES) render()
                 }
