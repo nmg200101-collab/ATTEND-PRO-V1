@@ -157,9 +157,9 @@ jobs:
 
           # V138 identity.
           grep -q 'versionCode = 138' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V137-RECEIVER-STABILIZATION"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V138-RECEIVER-MULTISTORE"' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 138' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V137-RECEIVER-STABILIZATION"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V138-RECEIVER-MULTISTORE"' buildsrc/employee-app/build.gradle.kts
 
           # RC29 field-proven pairing/direct-link files are immutable in V138.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
