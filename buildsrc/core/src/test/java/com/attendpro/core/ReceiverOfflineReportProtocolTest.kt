@@ -20,7 +20,10 @@ class ReceiverOfflineReportProtocolTest {
         assertEquals("APRPT1:encrypted-package", decoded.packageText)
         assertEquals(123456L, decoded.createdAt)
 
-        val tampered = raw.dropLast(1) + if (raw.last() == 'A') "B" else "A"
+        val tamperAt = raw.indexOf(':') + 8
+        val tampered = raw.toCharArray().also { chars ->
+            chars[tamperAt] = if (chars[tamperAt] == 'A') 'B' else 'A'
+        }.concatToString()
         assertNull(ReceiverOfflineReportProtocol.decodeEnvelope(tampered, receiverId, secret))
         assertNull(ReceiverOfflineReportProtocol.decodeEnvelope(raw, "RCV-OTHER", secret))
     }
