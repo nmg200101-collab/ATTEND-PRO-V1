@@ -26,7 +26,7 @@ import java.util.Locale
 
 /**
  * V137 single Store-side receiver center:
- * Reports -> Receiver phones and permissions -> Overview / Phones / Add phone / Permissions.
+ * Reports -> Receiver phones -> Overview / Phones / Add phone / Permissions.
  *
  * The Activity content view is installed once. Background callbacks only update state and
  * re-render the center when the Activity is alive and the request generation is current.
@@ -144,7 +144,7 @@ class StoreReceiverPermissionsActivity : Activity() {
     private fun renderHeader() {
         header.removeAllViews()
         header.addView(UiKit.heroCard(this, p, 14).apply {
-            addView(UiKit.title(this@StoreReceiverPermissionsActivity, p, t("هواتف الاستلام والصلاحيات", "Receiver phones and permissions"), 24f).apply {
+            addView(UiKit.title(this@StoreReceiverPermissionsActivity, p, t("هواتف الاستلام", "Receiver phones"), 24f).apply {
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
             })
@@ -193,8 +193,8 @@ class StoreReceiverPermissionsActivity : Activity() {
                 "Receive reports: $reportPhones\nEmployee messaging: $messagePhones\nEmployee management: $employeePhones"
             )))
             addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
-                "المسار الوحيد لإدارة هواتف الاستلام هو: التقارير ← هواتف الاستلام والصلاحيات.",
-                "The single receiver-management path is: Reports → Receiver phones and permissions."
+                "المسار الوحيد لإدارة هواتف الاستلام هو: التقارير ← هواتف الاستلام.",
+                "The single receiver-management path is: Reports → Receiver phones."
             )))
         })
 
@@ -293,8 +293,8 @@ class StoreReceiverPermissionsActivity : Activity() {
             card.addView(UiKit.subtitle(this, p, linkProgress))
         }
         card.addView(UiKit.subtitle(this, p, t(
-            "من هاتف الاستلام افتح «الحالة» ثم «إظهار QR تعريف الهاتف». امسح الرمز هنا، ثم حدد الصلاحيات.",
-            "On the receiver phone open Status, then Show phone identity QR. Scan it here, then choose permissions."
+            "من هاتف الاستلام افتح «المحلات» ثم «إضافة محل جديد» لإظهار QR تعريف الهاتف. امسح الرمز هنا، ثم حدد الصلاحيات.",
+            "On the receiver phone open Stores, then Add store to show the identity QR. Scan it here, then choose permissions."
         )))
         card.addView(UiKit.button(this, p, t("مسح QR هاتف الاستلام", "Scan receiver phone QR")).apply {
             isEnabled = !remoteInFlight
@@ -342,56 +342,6 @@ class StoreReceiverPermissionsActivity : Activity() {
         content.addView(card)
     }
 
-    private fun permissionsTab() {
-        val allPhones = repo.authorizedReportReceivers()
-        if (allPhones.isEmpty()) {
-            content.addView(UiKit.card(this, p).apply {
-                addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات", "Permissions")))
-                addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t("أضف هاتفًا أولًا.", "Add a phone first.")))
-            })
-            return
-        }
-
-        content.addView(UiKit.card(this, p, 8).apply {
-            addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات المستقلة لكل هاتف", "Independent permissions per phone")))
-            addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
-                "الصلاحيات الوحيدة: استلام التقارير، مراسلة الموظفين، وإدارة الموظفين. «إدارة الموظفين» لا تعني إعدادات المحل.",
-                "The only permissions are reports, employee messaging, and employee management. Employee management does not mean Store settings."
-            )))
-        })
-
-        val phones = if (selectedReceiverId.isBlank()) allPhones else allPhones.sortedByDescending { it.receiverId == selectedReceiverId }
-        phones.forEach { phone ->
-            val reports = permissionCheckBox(t("استلام التقارير", "Receive reports"), t("استلام تقارير الحضور المرسلة من المحل.", "Receive attendance reports sent by the Store."), phone.canReceiveReports)
-            val messages = permissionCheckBox(t("مراسلة الموظفين", "Message employees"), t("إرسال الرسائل للموظفين واستلام الردود.", "Send employee messages and receive replies."), phone.canMessageEmployees)
-            val manage = permissionCheckBox(t("إدارة الموظفين", "Employee management"), t("عرض وإضافة وتعديل وتفعيل وإيقاف الموظفين فقط.", "View, add, edit, enable and disable employees only."), phone.canManageStore)
-
-            content.addView(UiKit.card(this, p, 12).apply {
-                addView(UiKit.title(this@StoreReceiverPermissionsActivity, p, phone.name.ifBlank { t("هاتف استلام", "Receiver phone") }, 19f))
-                addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p,
-                    t("المعرف: ${phone.receiverId}\nآخر تحديث للصلاحيات: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}",
-                      "ID: ${phone.receiverId}\nLast permission update: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}")))
-                addView(reports)
-                addView(messages)
-                addView(manage)
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("السماح بكل الصلاحيات", "Allow all permissions"), false).apply {
-                    setOnClickListener { reports.isChecked = true; messages.isChecked = true; manage.isChecked = true }
-                })
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("تقارير فقط", "Reports only"), false).apply {
-                    setOnClickListener { reports.isChecked = true; messages.isChecked = false; manage.isChecked = false }
-                })
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("إلغاء كل الصلاحيات", "Remove all permissions"), false).apply {
-                    setOnClickListener { reports.isChecked = false; messages.isChecked = false; manage.isChecked = false }
-                })
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
-                    if (remoteInFlight) t("جاري الحفظ والتحقق…", "Saving and verifying…") else t("حفظ الصلاحيات والتحقق من الخادم", "Save permissions and verify server")
-                ).apply {
-                    isEnabled = !remoteInFlight
-                    setOnClickListener { savePermissions(phone, reports.isChecked, messages.isChecked, manage.isChecked) }
-                })
-            })
-        }
-    }
 
     private fun permissionCheckBox(label: String, description: String, checked: Boolean): CheckBox =
         CheckBox(this).apply {
