@@ -77,8 +77,6 @@ jobs:
           grep -q 'https://dns.google/resolve' "$DNS"
           grep -q '104.21.44.99' "$DNS"
           grep -q '172.67.198.135' "$DNS"
-          grep -q '2606:4700:3033::6815:2c63' "$DNS"
-          grep -q '2606:4700:3035::ac43:c687' "$DNS"
           grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
           grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt
           grep -q 'isRetryableNetworkFailure' "$DNS"
@@ -107,7 +105,7 @@ jobs:
           grep -q 'هاتف الاستلام وإدارة الموظفين' "$RECEIVER"
           grep -q 'الموظفون والرسائل' "$RECEIVER"
           ! grep -q 'هاتف الاستلام وإدارة المحل' "$RECEIVER"
-          grep -q 'تعذر العثور على عنوان الخادم عبر DNS' "$MAIN"
+          grep -q 'تعذر حل عنوان الخادم بعد محاولات DNS الآمنة وIPv4 الاحتياطية' "$MAIN"
           ! grep -q 'إعدادات مدير المحل' "$CENTER"
           ! grep -q 'python3 tools/unify-report-receiver-center.py' .github/workflows/build-v2-rc23.yml
           grep -q 'versionCode = 136' buildsrc/store-app/build.gradle.kts
