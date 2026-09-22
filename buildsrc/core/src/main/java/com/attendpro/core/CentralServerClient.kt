@@ -823,25 +823,6 @@ object CentralServerClient {
         put("reportAutoSync", v.reportAutoSync)
     }
 
-    fun receiverStoreSettings(serverUrl: String, receiverId: String, secret: String): Result<RemoteStoreSettingsEnvelope> = runCatching {
-        requireHttps(serverUrl)
-        val o = request(serverUrl, "/api/v1/monitor/store-settings", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret)
-        })
-        val desired = o.optJSONObject("desired") ?: o.optJSONObject("current") ?: JSONObject()
-        RemoteStoreSettingsEnvelope(true, parseRemoteStoreSettings(desired), o.optLong("revision", 0L), o.optLong("appliedRevision", 0L))
-    }
-
-    fun receiverUpdateStoreSettings(
-        serverUrl: String, receiverId: String, secret: String, settings: RemoteStoreSettings
-    ): Result<Long> = runCatching {
-        requireHttps(serverUrl)
-        val o = request(serverUrl, "/api/v1/monitor/store-settings/update", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret); put("settings", remoteStoreSettingsJson(settings))
-        })
-        o.optLong("revision", 0L)
-    }
-
     fun storeRemoteSettingsSnapshot(
         serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity,
         settings: RemoteStoreSettings, appliedRevision: Long
