@@ -149,6 +149,10 @@ data class ReceiverOutgoingMessage(
 )
 
 class ReportReceiverStore(context: Context) {
+    companion object {
+        private val STORAGE_LOCK = Any()
+    }
+
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences("report_receiver_store", Context.MODE_PRIVATE)
     private val secureVault = SecureTokenVault(appContext)
@@ -306,7 +310,7 @@ class ReportReceiverStore(context: Context) {
             if (current.storeId.isNotBlank()) it.storeId == current.storeId
             else it.storeId.isBlank() && it.serverUrl == current.serverUrl
         }
-        if (index < 0) return null
+        if (index < 0) return@synchronized null
         val updated = current.copy(
             storeId = storeId.ifBlank { current.storeId },
             storeName = storeName.ifBlank { current.storeName },
@@ -398,7 +402,7 @@ class ReportReceiverStore(context: Context) {
         return if (storeId.isBlank()) all else all.filter { it.storeId == storeId }
     }
 
-    fun cacheMessageReplies(storeId: String, messages: List<CentralServerClient.Message1975>): Int {
+    fun cacheMessageReplies(storeId: String, messages: List<CentralServerClient.Message1975>): Int = synchronized(STORAGE_LOCK) {
         if (storeId.isBlank() || messages.isEmpty()) return 0
         val existing = receivedMessageReplies().associateBy { it.messageId }.toMutableMap()
         var added = 0
@@ -458,15 +462,14 @@ class ReportReceiverStore(context: Context) {
         return if (storeId.isBlank()) all else all.filter { it.storeId == storeId }
     }
 
-    @Synchronized
     fun queueOutgoingMessage(
         storeId: String,
         employeeId: String,
         title: String,
         body: String,
         priority: String = "NORMAL"
-    ): ReceiverOutgoingMessage? {
-        if (storeId.isBlank() || employeeId.isBlank() || body.isBlank()) return null
+    ): ReceiverOutgoingMessage? = synchronized(STORAGE_LOCK) {
+        if (storeId.isBlank() || employeeId.isBlank() || body.isBlank()) return@synchronized null
         val item = ReceiverOutgoingMessage(
             localId = "RCVOUT-" + UUID.randomUUID().toString(),
             storeId = storeId,
@@ -477,7 +480,7 @@ class ReportReceiverStore(context: Context) {
             createdAt = System.currentTimeMillis()
         )
         saveOutgoingMessages(listOf(item) + outgoingMessages())
-        return item
+        item
     }
 
     fun dueOutgoingMessages(now: Long = System.currentTimeMillis()): List<ReceiverOutgoingMessage> =
@@ -486,8 +489,7 @@ class ReportReceiverStore(context: Context) {
                 it.nextAttemptAt <= now && it.attempts < 12
         }.sortedBy { it.createdAt }
 
-    @Synchronized
-    fun markOutgoingAttempt(localId: String, error: String = "", remoteMessageId: String = ""): ReceiverOutgoingMessage? {
+    fun markOutgoingAttempt(localId: String, error: String = "", remoteMessageId: String = ""): ReceiverOutgoingMessage? = synchronized(STORAGE_LOCK) {
         val all = outgoingMessages().toMutableList()
         val index = all.indexOfFirst { it.localId == localId }
         if (index < 0) return null
@@ -513,21 +515,19 @@ class ReportReceiverStore(context: Context) {
         )
         all[index] = updated
         saveOutgoingMessages(all)
-        return updated
+        updated
     }
 
-    @Synchronized
-    fun retryOutgoingMessage(localId: String): Boolean {
+    fun retryOutgoingMessage(localId: String): Boolean = synchronized(STORAGE_LOCK) {
         val all = outgoingMessages().toMutableList()
         val index = all.indexOfFirst { it.localId == localId }
-        if (index < 0) return false
+        if (index < 0) return@synchronized false
         val old = all[index]
         all[index] = old.copy(state = "PENDING", attempts = 0, nextAttemptAt = 0L, lastError = "")
         saveOutgoingMessages(all)
-        return true
+        true
     }
 
-    @Synchronized
     private fun saveOutgoingMessages(items: List<ReceiverOutgoingMessage>) {
         val a = JSONArray()
         items.sortedByDescending { it.createdAt }.take(200).forEach { m -> a.put(JSONObject().apply {
@@ -567,14 +567,14 @@ class ReportReceiverStore(context: Context) {
         return if (storeId.isBlank()) all else all.filter { it.storeId == storeId || it.storeId.isBlank() }
     }
 
-    fun receive(raw: String, storeId: String = activeStoreId): ReceivedReport? {
-        val pkg = ReportProtocol.decodePackage(raw, receiverId, secret) ?: return null
+    fun receive(raw: String, storeId: String = activeStoreId): ReceivedReport? = synchronized(STORAGE_LOCK) {
+        val pkg = ReportProtocol.decodePackage(raw, receiverId, secret) ?: return@synchronized null
         val all = receivedReports()
         val duplicate = all.firstOrNull {
             it.transferId == pkg.transferId &&
                 (storeId.isBlank() || it.storeId.isBlank() || it.storeId == storeId)
         }
-        if (duplicate != null) return duplicate
+        if (duplicate != null) return@synchronized duplicate
 
         val item = ReceivedReport(
             pkg.transferId, pkg.storeName, pkg.branchId, pkg.periodLabel, pkg.createdAt,
@@ -586,7 +586,7 @@ class ReportReceiverStore(context: Context) {
             put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt)
             put("reportText", r.reportText); put("confirmationCode", r.confirmationCode); put("storeId", r.storeId)
         }) }
-        prefs.edit().putString("receivedReports", a.toString()).apply()
-        return item
+        prefs.edit().putString("receivedReports", a.toString()).commit()
+        item
     }
 }
