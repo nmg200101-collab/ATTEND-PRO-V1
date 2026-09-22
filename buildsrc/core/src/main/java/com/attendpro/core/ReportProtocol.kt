@@ -403,7 +403,7 @@ class ReportReceiverStore(context: Context) {
     }
 
     fun cacheMessageReplies(storeId: String, messages: List<CentralServerClient.Message1975>): Int = synchronized(STORAGE_LOCK) {
-        if (storeId.isBlank() || messages.isEmpty()) return 0
+        if (storeId.isBlank() || messages.isEmpty()) return@synchronized 0
         val existing = receivedMessageReplies().associateBy { it.messageId }.toMutableMap()
         var added = 0
         messages.forEach { m ->
@@ -433,7 +433,7 @@ class ReportReceiverStore(context: Context) {
             put("readAt", m.readAt)
         }) }
         prefs.edit().putString("receiverMessageRepliesV141", a.toString()).apply()
-        return added
+        added
     }
 
     fun outgoingMessages(storeId: String = ""): List<ReceiverOutgoingMessage> {
@@ -492,7 +492,7 @@ class ReportReceiverStore(context: Context) {
     fun markOutgoingAttempt(localId: String, error: String = "", remoteMessageId: String = ""): ReceiverOutgoingMessage? = synchronized(STORAGE_LOCK) {
         val all = outgoingMessages().toMutableList()
         val index = all.indexOfFirst { it.localId == localId }
-        if (index < 0) return null
+        if (index < 0) return@synchronized null
         val old = all[index]
         val now = System.currentTimeMillis()
         val attempts = old.attempts + 1
