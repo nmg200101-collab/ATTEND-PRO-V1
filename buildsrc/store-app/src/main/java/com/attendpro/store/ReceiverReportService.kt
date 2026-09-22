@@ -37,7 +37,7 @@ class ReceiverReportService : Service() {
 
         fun stopIfUnused(context: Context) {
             val receiver = ReportReceiverStore(context)
-            val pairingUntil = context.getSharedPreferences(PREFS, MODE_PRIVATE).getLong(KEY_NEAR_PAIRING_UNTIL, 0L)
+            val pairingUntil = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(KEY_NEAR_PAIRING_UNTIL, 0L)
             if (receiver.storeBindings().none { it.active } && pairingUntil <= System.currentTimeMillis()) {
                 context.stopService(Intent(context, ReceiverReportService::class.java))
             }
@@ -45,18 +45,18 @@ class ReceiverReportService : Service() {
 
         fun enableNearbyPairing(context: Context, durationMs: Long = 120_000L): Long {
             val until = System.currentTimeMillis() + durationMs.coerceIn(30_000L, 300_000L)
-            context.getSharedPreferences(PREFS, MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, until).apply()
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, until).apply()
             ensureStarted(context)
             return until
         }
 
         fun nearbyPairingActive(context: Context): Boolean =
-            context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .getLong(KEY_NEAR_PAIRING_UNTIL, 0L) > System.currentTimeMillis()
 
         fun queueServerUnlink(context: Context, serverUrl: String, storeId: String) {
             if (serverUrl.isBlank() || storeId.isBlank()) return
-            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val old = prefs.getStringSet(KEY_PENDING_UNLINKS, emptySet()).orEmpty()
             prefs.edit().putStringSet(KEY_PENDING_UNLINKS, old + "$serverUrl\t$storeId").apply()
             ensureStarted(context)
@@ -158,7 +158,7 @@ class ReceiverReportService : Service() {
     }
 
     private fun flushPendingUnlinks() {
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val pending = prefs.getStringSet(KEY_PENDING_UNLINKS, emptySet()).orEmpty().toSet()
         if (pending.isEmpty()) return
         val completed = mutableSetOf<String>()
