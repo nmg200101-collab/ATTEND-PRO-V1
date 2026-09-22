@@ -159,8 +159,8 @@ class MainActivity : Activity() {
     private val serverGpsSeenAt = ConcurrentHashMap<String, Long>()
     @Volatile private var serverPresencePollInFlight = false
     private var lastServerPresencePollAt = 0L
-    @Volatile private var remoteControlSyncInFlight = false
-    private var lastRemoteControlSyncAt = 0L
+    @Volatile private var receiverEmployeeSyncInFlight = false
+    private var lastReceiverEmployeeSyncAt = 0L
     private var activePairingBeacon: PairingBeacon? = null
     private var activePairingCode: String = ""
     private var activePairingProvision: String = ""
@@ -175,8 +175,9 @@ class MainActivity : Activity() {
             if (::counts.isInitialized || ::connectionSummaryView.isInitialized) refreshDashboard()
             ensurePresenceDiscoveryRunning()
             pollServerPresenceIfDue()
-            // Remote receiver permissions are limited to reports, employee messaging and employee management.
-            // General Store settings are never pulled from receiver phones.
+            // Receiver phones may manage employees only through the server command queue.
+            // Pairing/BLE/GPS state and general Store settings are never modified by this path.
+            syncReceiverEmployeeCommandsIfDue()
             autoSyncIfReady()
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
@@ -279,12 +280,14 @@ class MainActivity : Activity() {
             buildEmployeeManagerUi()
             refreshDashboard()
             validateCentralActivation(silent = true)
+            syncReceiverEmployeeCommandsIfDue(force = true)
             return
         }
         buildElegantUi()
         refreshDashboard()
         ensurePresenceDiscoveryRunning()
         validateCentralActivation(silent = true)
+        syncReceiverEmployeeCommandsIfDue(force = true)
         autoSyncIfReady()
     }
 
@@ -1147,67 +1150,146 @@ class MainActivity : Activity() {
         setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
     }
 
-    private fun currentRemoteStoreSettings(): CentralServerClient.RemoteStoreSettings =
-        CentralServerClient.RemoteStoreSettings(
-            shiftStartHour = repo.shiftHour,
-            shiftStartMinute = repo.shiftMinute,
-            shiftEndHour = repo.shiftEndHour,
-            shiftEndMinute = repo.shiftEndMinute,
-            graceMinutes = repo.graceMinutes,
-            attendanceVoiceAnnouncementEnabled = repo.attendanceVoiceAnnouncementEnabled,
-            employeeVoicePromptsEnabled = repo.employeeVoicePromptsEnabled,
-            geoArrivalAlertsEnabled = repo.employeeGeoArrivalAlertsEnabled,
-            reportAutoSync = repo.reportAutoSync
-        )
-
-    private fun syncRemoteControlIfDue(force: Boolean = false) {
+    private fun syncReceiverEmployeeCommandsIfDue(force: Boolean = false) {
         val now = System.currentTimeMillis()
-        if (remoteControlSyncInFlight || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
-        if (!force && now - lastRemoteControlSyncAt < 30_000L) return
-        remoteControlSyncInFlight = true
-        lastRemoteControlSyncAt = now
+        if (receiverEmployeeSyncInFlight || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
+        if (!force && now - lastReceiverEmployeeSyncAt < 15_000L) return
+        receiverEmployeeSyncInFlight = true
+        lastReceiverEmployeeSyncAt = now
+
         Thread {
             val identity = DeviceIdentity(this)
-            val pull = CentralServerClient.pullRemoteStoreSettings(
-                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity
-            )
-            var applied = false
-            var appliedRevision = repo.remoteSettingsRevisionApplied
-            pull.getOrNull()?.let { envelope ->
-                if (envelope.available && envelope.revision > repo.remoteSettingsRevisionApplied) {
-                    val settings = envelope.settings
-                    val sameTime = settings.shiftStartHour == settings.shiftEndHour &&
-                        settings.shiftStartMinute == settings.shiftEndMinute
-                    if (!sameTime && settings.graceMinutes in 0..120) {
-                        repo.shiftHour = settings.shiftStartHour
-                        repo.shiftMinute = settings.shiftStartMinute
-                        repo.shiftEndHour = settings.shiftEndHour
-                        repo.shiftEndMinute = settings.shiftEndMinute
-                        repo.graceMinutes = settings.graceMinutes
-                        repo.attendanceVoiceAnnouncementEnabled = settings.attendanceVoiceAnnouncementEnabled
-                        repo.employeeVoicePromptsEnabled = settings.employeeVoicePromptsEnabled
-                        repo.employeeGeoArrivalAlertsEnabled = settings.geoArrivalAlertsEnabled
-                        repo.reportAutoSync = settings.reportAutoSync
-                        repo.remoteSettingsRevisionApplied = envelope.revision
-                        appliedRevision = envelope.revision
-                        applied = true
+            var appliedCount = 0
+            var lastError = ""
+
+            try {
+                val snapshot = CentralServerClient.syncReceiverEmployeeSnapshot(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, repo.employees()
+                )
+                if (snapshot.isFailure) {
+                    lastError = snapshot.exceptionOrNull()?.message.orEmpty()
+                    return@Thread
+                }
+
+                val pull = CentralServerClient.pullReceiverEmployeeCommands(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity
+                )
+                if (pull.isFailure) {
+                    lastError = pull.exceptionOrNull()?.message.orEmpty()
+                    return@Thread
+                }
+
+                pull.getOrThrow().forEach { command ->
+                    val outcome = applyReceiverEmployeeCommand(command)
+                    val ack = CentralServerClient.ackReceiverEmployeeCommand(
+                        repo.serverUrl,
+                        repo.centralAccessToken,
+                        repo.storeId,
+                        identity,
+                        command.commandId,
+                        outcome.first,
+                        outcome.second,
+                        outcome.third
+                    )
+                    if (ack.isSuccess && outcome.first) appliedCount += 1
+                    if (ack.isFailure) lastError = ack.exceptionOrNull()?.message.orEmpty()
+                }
+
+                if (appliedCount > 0) {
+                    CentralServerClient.syncReceiverEmployeeSnapshot(
+                        repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, repo.employees()
+                    )
+                }
+            } finally {
+                runOnUiThread {
+                    receiverEmployeeSyncInFlight = false
+                    if (appliedCount > 0) {
+                        if (::status.isInitialized) {
+                            status.text = t(
+                                "✓ تم تطبيق $appliedCount أمر إدارة موظفين من هاتف الاستلام",
+                                "✓ Applied $appliedCount employee-management command(s) from receiver phone"
+                            )
+                        }
+                        refreshDashboard()
+                        if (employeeManagerMode) buildEmployeeManagerUi()
+                    } else if (force && lastError.isNotBlank() && ::status.isInitialized) {
+                        status.text = t(
+                            "تعذر مزامنة أوامر إدارة الموظفين: $lastError",
+                            "Employee-management sync failed: $lastError"
+                        )
                     }
                 }
             }
-            CentralServerClient.storeRemoteSettingsSnapshot(
-                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                currentRemoteStoreSettings(), appliedRevision
-            )
-            runOnUiThread {
-                remoteControlSyncInFlight = false
-                if (applied) {
-                    if (::status.isInitialized) status.text =
-                        t("✓ تم تطبيق إعدادات مدير المحل القادمة من الهاتف المصرح", "✓ Authorized remote Store settings applied")
-                    buildElegantUi()
-                    refreshDashboard()
-                }
-            }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun applyReceiverEmployeeCommand(
+        command: CentralServerClient.ReceiverEmployeeCommand
+    ): Triple<Boolean, String, PairedEmployee?> {
+        val employeeId = command.employeeId.trim()
+        if (employeeId.isBlank()) return Triple(false, "رقم الموظف فارغ", null)
+
+        return runCatching {
+            when (command.action.uppercase(Locale.US)) {
+                "ADD" -> {
+                    val existing = repo.employees().firstOrNull { it.employeeId.equals(employeeId, true) }
+                    if (existing != null) {
+                        // Idempotent retry after a lost ACK: keep the already-created local record.
+                        Triple(true, "", existing)
+                    } else {
+                        if (repo.employees().size >= repo.effectiveEmployeeLimit()) {
+                            return@runCatching Triple(false, "تم بلوغ الحد الأقصى للموظفين في الترخيص", null)
+                        }
+                        val methods = buildSet<String> {
+                            if (repo.allowFaceEnrollment) add(AttendanceMethod.SHARED_DEVICE_FACE.name)
+                            if (repo.allowEmployeeCompanion) add(AttendanceMethod.PHONE_BLE_BIOMETRIC.name)
+                            if (repo.allowEmployeeCompanion && repo.allowQrAttendance) add(AttendanceMethod.PHONE_PROXIMITY.name)
+                            if (isEmpty()) add(AttendanceMethod.MANUAL_ADMIN.name)
+                        }
+                        val employee = PairedEmployee(
+                            employeeId = employeeId,
+                            displayName = command.employeeName.trim().ifBlank { employeeId },
+                            branchId = command.branchId.trim().ifBlank { repo.branchId },
+                            pairingSecret = SecretCodec.encode(SecretCodec.generate()),
+                            companionEnabled = repo.allowEmployeeCompanion,
+                            active = true,
+                            allowedMethods = methods,
+                            shiftStartHour = repo.shiftHour,
+                            shiftStartMinute = repo.shiftMinute,
+                            shiftEndHour = repo.shiftEndHour,
+                            shiftEndMinute = repo.shiftEndMinute
+                        )
+                        repo.upsertEmployee(employee)
+                        Triple(true, "", employee)
+                    }
+                }
+
+                "UPDATE" -> {
+                    val existing = repo.employees().firstOrNull { it.employeeId.equals(employeeId, true) }
+                        ?: return@runCatching Triple(false, "الموظف غير موجود في جهاز المحل", null)
+                    val updated = existing.copy(
+                        displayName = command.employeeName.trim().ifBlank { existing.displayName },
+                        branchId = command.branchId.trim().ifBlank { existing.branchId }
+                    )
+                    repo.upsertEmployee(updated)
+                    Triple(true, "", updated)
+                }
+
+                "STATUS" -> {
+                    val existing = repo.employees().firstOrNull { it.employeeId.equals(employeeId, true) }
+                        ?: return@runCatching Triple(false, "الموظف غير موجود في جهاز المحل", null)
+                    val enabled = command.enabled
+                        ?: return@runCatching Triple(false, "حالة الموظف غير صالحة", existing)
+                    val updated = existing.copy(active = enabled)
+                    repo.upsertEmployee(updated)
+                    Triple(true, "", updated)
+                }
+
+                else -> Triple(false, "أمر إدارة موظف غير معروف: ${command.action}", null)
+            }
+        }.getOrElse { error ->
+            Triple(false, error.message ?: "تعذر تطبيق أمر إدارة الموظف", null)
+        }
     }
 
     private fun autoSyncIfReady() {
