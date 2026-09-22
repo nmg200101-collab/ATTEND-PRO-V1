@@ -240,7 +240,6 @@ class StoreSettingsActivity : Activity() {
     private fun showStoreReportsSecurity1976() {
         showLayeredMenu1977("التقارير والحماية", listOf(
             "التقارير والمشاركة" to { startActivity(Intent(this, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) },
-            "هواتف الاستلام والصلاحيات" to { startActivity(Intent(this, StoreReceiverPermissionsActivity::class.java)) },
             (if (repo.hasStoreAdminPin) "تغيير رمز إدارة المحل" else "إنشاء رمز حماية") to { changeStorePin() },
             "قفل التطبيق والبصمة" to { showAppLockSettings() },
             "النسخ الاحتياطي والاستعادة" to { showBackupCenter() },
@@ -309,7 +308,6 @@ class StoreSettingsActivity : Activity() {
         val reports = UiKit.card(this, p)
         reports.addView(UiKit.sectionLabel(this, p, "التقارير والمراقبة"))
         reports.addView(UiKit.button(this, p, "فتح التقارير والمشاركة").apply { setOnClickListener { startActivity(Intent(this@StoreSettingsActivity, ReportsActivity::class.java).putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken)) } })
-        reports.addView(UiKit.button(this, p, "هواتف الاستلام والصلاحيات", false).apply { setOnClickListener { manageReportReceivers() } })
         root.addView(reports)
 
         val security = UiKit.card(this, p, 13)
@@ -472,90 +470,6 @@ class StoreSettingsActivity : Activity() {
         dialog.show()
     }
 
-    private fun manageReportReceivers() {
-        startActivity(Intent(this, StoreReceiverPermissionsActivity::class.java))
-    }
-
-    private fun showReceiverControl(receiver: com.attendpro.core.AuthorizedReportReceiver) {
-        val permissionsText = listOf(
-            t("استلام التقارير", "Receive reports") to receiver.canReceiveReports,
-            t("مراسلة الموظفين", "Message employees") to receiver.canMessageEmployees,
-            t("إدارة الموظفين", "Employee management") to receiver.canManageStore
-        ).joinToString("\n") { (name, enabled) -> "${if (enabled) "✓" else "○"} $name" }
-        AlertDialog.Builder(this)
-            .setTitle(receiver.name)
-            .setMessage(
-                t("المعرف: ${receiver.receiverId}\nالحالة: ${if (receiver.active) "مسموح" else "موقوف"}\n\nالصلاحيات:\n$permissionsText",
-                  "ID: ${receiver.receiverId}\nStatus: ${if (receiver.active) "Enabled" else "Disabled"}\n\nPermissions:\n$permissionsText")
-            )
-            .setPositiveButton(t("تعديل الصلاحيات", "Edit permissions")) { _, _ -> editReceiverPermissions(receiver) }
-            .setNeutralButton(if (receiver.active) t("إيقاف الهاتف", "Disable phone") else t("إعادة التفعيل", "Enable phone")) { _, _ ->
-                val next = !receiver.active
-                repo.setReportReceiverActive(receiver.receiverId, next)
-                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-                    Thread {
-                        CentralServerClient.setReceiverActive(
-                            repo.serverUrl, repo.centralAccessToken, repo.storeId,
-                            DeviceIdentity(this), receiver.receiverId, next
-                        )
-                    }.start()
-                }
-                manageReportReceivers()
-            }
-            .setNegativeButton(t("إغلاق", "Close"), null)
-            .show()
-    }
-
-    private fun editReceiverPermissions(receiver: com.attendpro.core.AuthorizedReportReceiver) {
-        val labels = arrayOf(
-            t("استلام التقارير", "Receive reports"),
-            t("مراسلة الموظفين عبر الخادم", "Message employees through server"),
-            t("إدارة الموظفين عن بُعد", "Manage employees remotely")
-        )
-        val checked = booleanArrayOf(
-            receiver.canReceiveReports,
-            receiver.canMessageEmployees,
-            receiver.canManageStore
-        )
-        AlertDialog.Builder(this)
-            .setTitle(t("صلاحيات ${receiver.name}", "${receiver.name} permissions"))
-            .setMultiChoiceItems(labels, checked) { _, which, value -> checked[which] = value }
-            .setPositiveButton(t("حفظ الصلاحيات", "Save permissions")) { _, _ ->
-                repo.setReportReceiverPermissions(receiver.receiverId, checked[0], checked[1], checked[2])
-                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-                    Thread {
-                        val result = CentralServerClient.setReceiverPermissions(
-                            repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
-                            receiver.receiverId, checked[0], checked[1], checked[2]
-                        )
-                        runOnUiThread {
-                            if (result.isFailure) info(
-                                t("تم الحفظ محليًا فقط", "Saved locally only"),
-                                t("تعذر تحديث صلاحيات الخادم: ${result.exceptionOrNull()?.message ?: "خطأ"}",
-                                  "Unable to update server permissions: ${result.exceptionOrNull()?.message ?: "Error"}")
-                            )
-                        }
-                    }.start()
-                }
-                manageReportReceivers()
-            }
-            .setNeutralButton(t("حذف الهاتف", "Remove phone")) { _, _ ->
-                repo.setReportReceiverActive(receiver.receiverId, false)
-                if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-                    Thread {
-                        CentralServerClient.setReceiverActive(
-                            repo.serverUrl, repo.centralAccessToken, repo.storeId,
-                            DeviceIdentity(this), receiver.receiverId, false
-                        )
-                    }.start()
-                }
-                repo.removeReportReceiver(receiver.receiverId)
-                manageReportReceivers()
-            }
-            .setNegativeButton(t("إلغاء", "Cancel"), null)
-            .show()
-    }
-
     @Deprecated("Deprecated in Java")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -582,38 +496,7 @@ class StoreSettingsActivity : Activity() {
             importBackupFromPhone(data.data ?: return)
             return
         }
-        if (requestCode != REQUEST_REPORT_RECEIVER_QR) return
-        if (resultCode != RESULT_OK) { info("هواتف التقارير", data?.getStringExtra(QrScannerActivity.EXTRA_ERROR) ?: "تم إلغاء المسح"); return }
-        val raw = data?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty()
-        val invite = ReportProtocol.decodeInvite(raw)
-        if (invite == null || invite.expiresAt < System.currentTimeMillis()) { info("QR غير صالح", "رمز هاتف الاستلام غير صالح أو انتهت مدته."); return }
-        if (!repo.authorizeReportReceiver(invite)) { info("تعذر منح الصلاحية", "لم يتم قبول رمز هاتف الاستلام."); return }
-        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-            info("جاري ربط الهاتف", "تمت الصلاحية محليًا، ويجري الآن تسجيل الهاتف في الخادم المركزي للاستلام عن بُعد.")
-            Thread {
-                val r = CentralServerClient.registerReceiver(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), invite.receiverId, invite.name, invite.secret)
-                if (r.isSuccess) {
-                    CentralServerClient.setReceiverPermissions(
-                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
-                        invite.receiverId, true, false, false
-                    )
-                }
-                runOnUiThread {
-                    if (r.isSuccess) showReceiverRemoteGrant(invite)
-                    else info("صلاحية محلية فقط", "تم حفظ الهاتف محليًا، لكن تعذر تسجيله في الخادم: ${r.exceptionOrNull()?.message ?: "خطأ"}")
-                }
-            }.apply { isDaemon = true }.start()
-        } else info("تم منح الصلاحية", "تم السماح للهاتف «${invite.name}» باستلام التقارير المشفرة محليًا. للاستلام عن بُعد فعّل المحل مركزيًا أولًا.")
-    }
-
-    private fun showReceiverRemoteGrant(invite: ReportProtocol.ReceiverInvite) {
-        val grant = ReportProtocol.RemoteReceiverGrant(invite.receiverId, repo.serverUrl, repo.storeName, repo.branchId, System.currentTimeMillis() + 10 * 60_000L)
-        val raw = ReportProtocol.encodeRemoteGrant(grant)
-        val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrElse { info("تم منح الصلاحية ✓", "تم تسجيل الهاتف على الخادم، لكن تعذر إنشاء QR الربط. يمكن إدخال رابط الخادم يدويًا في هاتف الاستلام."); return }
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(20, 12, 20, 8) }
-        box.addView(UiKit.subtitle(this, p, "تم منح الصلاحية للهاتف «${invite.name}» محليًا وعبر الإنترنت. الآن من هاتف الاستلام: التفعيل ← مسح QR الربط النهائي.").apply { gravity = Gravity.CENTER })
-        box.addView(ImageView(this).apply { setImageBitmap(qr); adjustViewBounds = true; layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, UiKit.dp(this@StoreSettingsActivity, 340)) })
-        AlertDialog.Builder(this).setTitle("✓ ربط هاتف الاستلام بالخادم").setView(box).setPositiveButton("إغلاق", null).show()
+        return
     }
 
     private fun fingerprintSettings() {
@@ -950,7 +833,6 @@ class StoreSettingsActivity : Activity() {
     }
 
     companion object {
-        private const val REQUEST_REPORT_RECEIVER_QR = 9201
         private const val REQUEST_BACKUP_CREATE = 9301
         private const val REQUEST_BACKUP_OPEN = 9302
         private const val MAX_SERVER_BACKUP_BYTES = 1_500_000
