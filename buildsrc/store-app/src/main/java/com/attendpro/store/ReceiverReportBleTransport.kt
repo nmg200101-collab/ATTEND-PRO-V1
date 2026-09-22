@@ -68,9 +68,9 @@ class ReceiverReportBleServer(
     private val onStatus: (String) -> Unit
 ) {
     companion object {
-        val SERVICE_UUID: UUID = UUID.fromString("8d3b6c10-3aa8-4a52-a139-415052523139")
-        val WRITE_UUID: UUID = UUID.fromString("8d3b6c11-3aa8-4a52-a139-415052523139")
-        val ACK_UUID: UUID = UUID.fromString("8d3b6c12-3aa8-4a52-a139-415052523139")
+        val SERVICE_UUID: UUID = UUID.fromString("0000f139-0000-1000-8000-00805f9b34fb")
+        val WRITE_UUID: UUID = UUID.fromString("0000f13a-0000-1000-8000-00805f9b34fb")
+        val ACK_UUID: UUID = UUID.fromString("0000f13b-0000-1000-8000-00805f9b34fb")
         private const val MAX_PARTS = 12000
     }
 
@@ -359,7 +359,7 @@ object ReceiverReportBleClient {
                 val to = minOf(bytes.size, from + maxPayload)
                 val payload = bytes.copyOfRange(from, to)
                 val frame = ByteBuffer.allocate(FRAME_HEADER + payload.size).order(ByteOrder.BIG_ENDIAN).apply {
-                    put(0x41); put(0x52); putInt(session); putShort(index.toShort()); putShort(total.toShort())
+                    put(0x41.toByte()); put(0x52.toByte()); putInt(session); putShort(index.toShort()); putShort(total.toShort())
                     put(payload.size.toByte()); put(payload)
                 }.array()
                 if (!sync.write(gatt, write, frame, 2_500)) {
