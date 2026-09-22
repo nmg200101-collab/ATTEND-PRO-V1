@@ -88,6 +88,7 @@ class ReportReceiverActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         receiver = ReportReceiverStore(this)
+        if (receiver.storeBindings().any { it.active }) ReceiverReportService.ensureStarted(this)
         section = savedInstanceState?.getString(KEY_SECTION)
             ?.let { runCatching { Section.valueOf(it) }.getOrNull() }
             ?: if (receiver.storeBindings().size > 1) Section.STORES else Section.STATUS
@@ -124,7 +125,6 @@ class ReportReceiverActivity : Activity() {
     }
 
     override fun onDestroy() {
-        stopLocalReportChannels()
         storesGeneration++
         capabilitiesGeneration++
         reportsGeneration++
@@ -264,6 +264,21 @@ class ReportReceiverActivity : Activity() {
             addView(UiKit.button(this@ReportReceiverActivity, p, t("＋ إضافة محل جديد", "＋ Add store"), false).apply {
                 setOnClickListener { showIdentityQr = !showIdentityQr; render() }
             })
+            addView(UiKit.button(this@ReportReceiverActivity, p,
+                if (ReceiverReportService.nearbyPairingActive(this@ReportReceiverActivity))
+                    t("✓ الارتباط القريب مفعّل", "✓ Nearby linking active")
+                else t("تفعيل الارتباط القريب لمدة دقيقتين", "Enable nearby linking for 2 minutes"),
+                false
+            ).apply {
+                setOnClickListener {
+                    ReceiverReportService.enableNearbyPairing(this@ReportReceiverActivity)
+                    notice = t(
+                        "تم تفعيل الارتباط القريب لمدة دقيقتين. من جهاز المحل اضغط «اكتشاف هاتف قريب».",
+                        "Nearby linking is active for 2 minutes. On the Store device tap Discover nearby phone."
+                    )
+                    render()
+                }
+            })
             addView(UiKit.button(this@ReportReceiverActivity, p, t("مسح QR الربط النهائي للمحل", "Scan store final link QR"), false).apply {
                 setOnClickListener { scanGrant() }
             })
@@ -373,28 +388,19 @@ class ReportReceiverActivity : Activity() {
 
     private fun unlinkStore(binding: ReceiverStoreBinding) {
         if (storesInFlight || binding.storeId.isBlank()) return
-        storesInFlight = true
-        val generation = ++storesGeneration
+        invalidateRemoteRequests()
+        receiver.removeStoreBinding(binding.storeId)
+        section = Section.STORES
+        notice = t(
+            "تم فك الارتباط من الهاتف فورًا ✓ ويجري تنظيف الربط من الخادم في الخلفية.",
+            "Link removed from this phone immediately ✓. Server cleanup continues in the background."
+        )
         render()
-        Thread {
-            val result = CentralServerClient.receiverUnlinkStore(
-                binding.serverUrl, receiver.receiverId, receiver.secret, binding.storeId
-            )
-            runOnUiThread {
-                if (generation != storesGeneration) return@runOnUiThread
-                storesInFlight = false
-                if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    receiver.removeStoreBinding(binding.storeId)
-                    invalidateRemoteRequests()
-                    section = Section.STORES
-                    notice = t("تم فك ارتباط المحل دون حذف بياناته ✓", "Store unlinked without deleting its data ✓")
-                } else {
-                    showError(t("تعذر فك الارتباط", "Could not unlink"), networkMessage(result.exceptionOrNull()))
-                }
-                render()
-            }
-        }.apply { isDaemon = true }.start()
+
+        if (binding.serverUrl.isNotBlank()) {
+            ReceiverReportService.queueServerUnlink(this, binding.serverUrl, binding.storeId)
+        }
+        ReceiverReportService.stopIfUnused(this)
     }
 
     private fun renderStatus() {
@@ -799,6 +805,7 @@ class ReportReceiverActivity : Activity() {
             "${binding.storeName} link saved. Verifying with server."
         )
         render()
+        ReceiverReportService.ensureStarted(this)
         startLocalReportChannels()
         if (binding.serverUrl.isNotBlank()) {
             refreshCapabilities(silent = false, refreshCurrentSection = false)
@@ -929,7 +936,19 @@ class ReportReceiverActivity : Activity() {
                 reportsInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
-                    result.getOrThrow().forEach { receiver.receive(it.packageText, storeId) }
+                    result.getOrThrow().forEach { remote ->
+                        val item = receiver.receive(remote.packageText, storeId)
+                        if (item != null) {
+                            CentralServerClient.confirmRemoteReport(
+                                binding.serverUrl,
+                                receiver.receiverId,
+                                receiver.secret,
+                                item.transferId,
+                                item.confirmationCode,
+                                storeId
+                            )
+                        }
+                    }
                     markActiveServerContact(storeId)
                     if (!silent) notice = t("تم تحديث تقارير المحل ✓", "Store reports refreshed ✓")
                 } else if (!silent) {
@@ -1115,60 +1134,24 @@ class ReportReceiverActivity : Activity() {
 
     private fun startLocalReportChannels() {
         if (!::receiver.isInitialized) return
-
-        if (lanReportServer?.isRunning() != true) {
-            lanReportServer?.stop()
-            lanReportServer = ReceiverReportLanServer(
-                receiver.receiverId,
-                receiver.secret,
-                ::acceptOfflineReport
-            ) { status ->
-                runOnUiThread {
-                    if (!alive()) return@runOnUiThread
-                    lanStatus = status
-                    if (section == Section.STATUS) render()
-                }
-            }.also { server ->
-                server.start()
-                lanStatus = if (server.isRunning()) t("جاهز", "Ready") else lanStatus
-            }
+        if (receiver.storeBindings().any { it.active } || ReceiverReportService.nearbyPairingActive(this)) {
+            ReceiverReportService.ensureStarted(this)
         }
-
+        lanStatus = t("الخدمة الدائمة جاهزة", "Persistent service ready")
         val missing = ReceiverReportBluetoothSupport.missingPermissions(this)
-        if (missing.isNotEmpty()) {
-            bleStatus = t("الصلاحيات غير ممنوحة", "Permissions not granted")
-            if (!bluetoothPermissionAsked && Build.VERSION.SDK_INT >= 31) {
-                bluetoothPermissionAsked = true
-                ReceiverReportBluetoothSupport.request(this, REQ_BLUETOOTH_RECEIVER)
-            }
-            return
+        bleStatus = when {
+            missing.isNotEmpty() -> t("الصلاحيات غير ممنوحة", "Permissions not granted")
+            !ReceiverReportBluetoothSupport.bluetoothEnabled(this) -> t("Bluetooth غير مفعّل", "Bluetooth is off")
+            else -> t("الخدمة الدائمة جاهزة", "Persistent service ready")
         }
-        if (!ReceiverReportBluetoothSupport.bluetoothEnabled(this)) {
-            bleStatus = t("Bluetooth غير مفعّل", "Bluetooth is off")
-            return
-        }
-        if (bleReportServer?.isRunning() != true) {
-            bleReportServer?.stop()
-            bleReportServer = ReceiverReportBleServer(
-                this,
-                receiver.receiverId,
-                receiver.secret,
-                ::acceptOfflineReport
-            ) { status ->
-                runOnUiThread {
-                    if (!alive()) return@runOnUiThread
-                    bleStatus = status
-                    if (section == Section.STATUS) render()
-                }
-            }.also { it.start() }
+        if (missing.isNotEmpty() && !bluetoothPermissionAsked && Build.VERSION.SDK_INT >= 31) {
+            bluetoothPermissionAsked = true
+            ReceiverReportBluetoothSupport.request(this, REQ_BLUETOOTH_RECEIVER)
         }
     }
 
     private fun stopLocalReportChannels() {
-        lanReportServer?.stop()
-        bleReportServer?.stop()
-        lanReportServer = null
-        bleReportServer = null
+        // V140: transports belong to ReceiverReportService and intentionally survive the Activity.
     }
 
     private fun acceptOfflineReport(envelope: ReceiverOfflineReportProtocol.Envelope): Boolean {
