@@ -28,6 +28,7 @@ class ReceiverReportService : Service() {
         private const val POLL_MS = 12_000L
         const val PREFS = "receiver_report_service_v140"
         const val KEY_NEAR_PAIRING_UNTIL = "near_pairing_until"
+        private const val KEY_PENDING_UNLINKS = "pending_unlinks"
 
         fun ensureStarted(context: Context) {
             val intent = Intent(context, ReceiverReportService::class.java)
@@ -52,6 +53,14 @@ class ReceiverReportService : Service() {
         fun nearbyPairingActive(context: Context): Boolean =
             context.getSharedPreferences(PREFS, MODE_PRIVATE)
                 .getLong(KEY_NEAR_PAIRING_UNTIL, 0L) > System.currentTimeMillis()
+
+        fun queueServerUnlink(context: Context, serverUrl: String, storeId: String) {
+            if (serverUrl.isBlank() || storeId.isBlank()) return
+            val prefs = context.getSharedPreferences(PREFS, MODE_PRIVATE)
+            val old = prefs.getStringSet(KEY_PENDING_UNLINKS, emptySet()).orEmpty()
+            prefs.edit().putStringSet(KEY_PENDING_UNLINKS, old + "$serverUrl\t$storeId").apply()
+            ensureStarted(context)
+        }
     }
 
     private lateinit var receiver: ReportReceiverStore
@@ -131,6 +140,7 @@ class ReceiverReportService : Service() {
         while (running.get()) {
             runCatching {
                 startTransports()
+                flushPendingUnlinks()
                 pollServerReports()
                 val hasBindings = receiver.storeBindings().any { it.active }
                 val pairing = nearbyPairingActive(this)
@@ -144,6 +154,27 @@ class ReceiverReportService : Service() {
             } catch (_: InterruptedException) {
                 return
             }
+        }
+    }
+
+    private fun flushPendingUnlinks() {
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        val pending = prefs.getStringSet(KEY_PENDING_UNLINKS, emptySet()).orEmpty().toSet()
+        if (pending.isEmpty()) return
+        val completed = mutableSetOf<String>()
+        pending.forEach { row ->
+            val parts = row.split('\t', limit = 2)
+            if (parts.size != 2) {
+                completed += row
+                return@forEach
+            }
+            val result = CentralServerClient.receiverUnlinkStore(
+                parts[0], receiver.receiverId, receiver.secret, parts[1]
+            )
+            if (result.isSuccess) completed += row
+        }
+        if (completed.isNotEmpty()) {
+            prefs.edit().putStringSet(KEY_PENDING_UNLINKS, pending - completed).apply()
         }
     }
 
