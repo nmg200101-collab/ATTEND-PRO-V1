@@ -951,7 +951,7 @@ object CentralServerClient {
         request(serverUrl, "/api/v1/reports/confirm", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
             put("transferId", transferId); put("confirmationCode", confirmationCode)
-        })
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
         Unit
     }
 
