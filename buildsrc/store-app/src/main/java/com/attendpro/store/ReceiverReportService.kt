@@ -165,6 +165,7 @@ class ReceiverReportService : Service() {
         receiver.upsertBinding(grant)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, 0L).apply()
         updateStatus("اكتمل ربط ${grant.storeName} عبر القرب ✓")
+        broadcastChanged(KIND_BINDINGS, grant.storeId)
         return true
     }
 
@@ -174,6 +175,7 @@ class ReceiverReportService : Service() {
         } ?: return false
         val item = receiver.receive(envelope.packageText, envelope.storeId) ?: return false
         updateStatus("تم استلام تقرير من ${binding.storeName} عبر القرب ✓")
+        broadcastChanged(KIND_REPORTS, envelope.storeId)
         return item.transferId == envelope.transferId
     }
 
@@ -270,8 +272,9 @@ class ReceiverReportService : Service() {
                 if (result.isFailure) return@forEach
                 var receivedCount = 0
                 result.getOrThrow().forEach { remote ->
+                    val existed = receiver.receivedReports(binding.storeId).any { it.transferId == remote.transferId }
                     val item = receiver.receive(remote.packageText, binding.storeId) ?: return@forEach
-                    receivedCount++
+                    if (!existed) receivedCount++
                     CentralServerClient.confirmRemoteReport(
                         binding.serverUrl,
                         receiver.receiverId,
@@ -281,7 +284,10 @@ class ReceiverReportService : Service() {
                         binding.storeId
                     )
                 }
-                if (receivedCount > 0) updateStatus("وصل $receivedCount تقرير عبر الخادم ✓")
+                if (receivedCount > 0) {
+                    updateStatus("وصل $receivedCount تقرير عبر الخادم ✓")
+                    broadcastChanged(KIND_REPORTS, binding.storeId)
+                }
             }
     }
 
@@ -296,8 +302,53 @@ class ReceiverReportService : Service() {
                 val added = receiver.cacheMessageReplies(binding.storeId, result.getOrThrow())
                 if (added > 0) {
                     updateStatus("وصل $added رد جديد من الموظفين ✓")
+                    broadcastChanged(KIND_MESSAGES, binding.storeId)
                 }
             }
+    }
+
+    private fun flushOutgoingMessages() {
+        receiver.dueOutgoingMessages().take(8).forEach { pending ->
+            val binding = receiver.storeBindings().firstOrNull {
+                it.storeId == pending.storeId && it.active && it.canMessageEmployees && it.serverUrl.isNotBlank()
+            }
+            if (binding == null) {
+                receiver.markOutgoingAttempt(pending.localId, "لا يوجد ربط نشط بالمحل")
+                broadcastChanged(KIND_OUTBOX, pending.storeId)
+                return@forEach
+            }
+            val result = CentralServerClient.receiverSendEmployeeMessage(
+                binding.serverUrl,
+                receiver.receiverId,
+                receiver.secret,
+                pending.employeeId,
+                pending.title,
+                pending.body,
+                pending.priority,
+                false,
+                storeId = pending.storeId,
+                clientMessageId = pending.localId
+            )
+            if (result.isSuccess && result.getOrNull().orEmpty().isNotBlank()) {
+                receiver.markOutgoingAttempt(pending.localId, remoteMessageId = result.getOrThrow())
+                updateStatus("تم إرسال رسالة للموظف ✓")
+            } else {
+                receiver.markOutgoingAttempt(
+                    pending.localId,
+                    error = result.exceptionOrNull()?.message ?: "تعذر الاتصال بالخادم"
+                )
+            }
+            broadcastChanged(KIND_OUTBOX, pending.storeId)
+        }
+    }
+
+    private fun broadcastChanged(kind: String, storeId: String = "") {
+        sendBroadcast(
+            Intent(ACTION_DATA_CHANGED)
+                .setPackage(packageName)
+                .putExtra(EXTRA_KIND, kind)
+                .putExtra(EXTRA_STORE_ID, storeId)
+        )
     }
 
     private fun updateStatus(text: String) {
