@@ -764,41 +764,104 @@ class ReportReceiverActivity : Activity() {
             return
         }
         invalidateRemoteRequests()
-        receiver.serverUrl = grant.serverUrl
-        notice = t("تم حفظ الربط. جارٍ التحقق من الخادم.", "Link saved. Verifying with server.")
+        val binding = receiver.upsertBinding(grant)
+        section = Section.STORES
+        notice = t(
+            "تم حفظ ارتباط ${binding.storeName}. جارٍ التحقق من الخادم.",
+            "${binding.storeName} link saved. Verifying with server."
+        )
         render()
         refreshCapabilities(silent = false, refreshCurrentSection = false)
     }
 
+    private fun refreshStoreBindings(silent: Boolean, refreshCurrentSection: Boolean) {
+        val seed = receiver.activeBinding() ?: receiver.storeBindings().firstOrNull() ?: return
+        if (seed.serverUrl.isBlank() || storesInFlight) return
+        storesInFlight = true
+        val generation = ++storesGeneration
+        if (!silent && alive()) render()
+
+        Thread {
+            val result = CentralServerClient.receiverStores(seed.serverUrl, receiver.receiverId, receiver.secret)
+            runOnUiThread {
+                if (generation != storesGeneration) return@runOnUiThread
+                storesInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    val now = System.currentTimeMillis()
+                    val remote = result.getOrThrow().map { x ->
+                        ReceiverStoreBinding(
+                            storeId = x.storeId,
+                            serverUrl = seed.serverUrl,
+                            storeName = x.storeName,
+                            branchId = x.branchId,
+                            active = x.active,
+                            canReceiveReports = x.canReceiveReports,
+                            canMessageEmployees = x.canMessageEmployees,
+                            canManageStore = x.canManageStore,
+                            linkedAt = now,
+                            lastServerRefreshAt = now,
+                            storeLastSeenAt = x.storeLastSeenAt
+                        )
+                    }
+                    receiver.syncBindingsFromServer(remote)
+                    receiver.activeBinding()?.let { lastServerRefreshAt = it.lastServerRefreshAt }
+                    if (!silent) notice = t("تم تحديث قائمة المحلات ✓", "Store list refreshed ✓")
+                    render()
+                    if (refreshCurrentSection && section != Section.STORES) {
+                        refreshCapabilities(silent = true, refreshCurrentSection = true)
+                    }
+                } else {
+                    if (!silent) showError(t("تعذر تحديث المحلات", "Could not refresh stores"), networkMessage(result.exceptionOrNull()))
+                    render()
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     private fun refreshCapabilities(silent: Boolean, refreshCurrentSection: Boolean) {
-        if (receiver.serverUrl.isBlank()) {
-            if (!silent) showError(t("غير مرتبط", "Not linked"), t("اربط الهاتف أولًا من شاشة الحالة.", "Link the phone first from Status."))
+        val binding = receiver.activeBinding()
+        if (binding == null || binding.serverUrl.isBlank()) {
+            if (!silent) showError(t("غير مرتبط", "Not linked"), t("اختر أو أضف محلًا أولًا.", "Select or add a store first."))
             return
         }
         if (capabilitiesInFlight) return
         capabilitiesInFlight = true
         val generation = ++capabilitiesGeneration
+        val requestedStoreId = binding.storeId
+        val requestedServer = binding.serverUrl
         if (!silent && alive()) render()
 
         Thread {
-            val result = CentralServerClient.receiverCapabilities(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            val result = CentralServerClient.receiverCapabilities(
+                requestedServer, receiver.receiverId, receiver.secret, requestedStoreId
+            )
             runOnUiThread {
                 if (generation != capabilitiesGeneration) return@runOnUiThread
                 capabilitiesInFlight = false
                 if (!alive()) return@runOnUiThread
+                val current = receiver.activeBinding()
+                if (current == null || current.serverUrl != requestedServer ||
+                    (requestedStoreId.isNotBlank() && current.storeId != requestedStoreId)) return@runOnUiThread
 
                 if (result.isSuccess) {
                     val x = result.getOrThrow()
-                    receiver.canReceiveReports = x.canReceiveReports
-                    receiver.canMessageEmployees = x.canMessageEmployees
-                    // Protocol name retained for compatibility; V137 meaning is Employee Management only.
-                    receiver.canManageStore = x.canManageStore
-                    receiver.capabilityStoreName = x.storeName
-                    receiver.capabilityBranchId = x.branchId
-                    lastServerRefreshAt = System.currentTimeMillis()
-                    notice = if (silent) "" else t("تم تحديث الصلاحيات والحالة من الخادم ✓", "Permissions and status refreshed ✓")
+                    val now = System.currentTimeMillis()
+                    receiver.updateActiveBinding(
+                        storeId = x.storeId.ifBlank { requestedStoreId },
+                        storeName = x.storeName,
+                        branchId = x.branchId,
+                        canReceiveReports = x.canReceiveReports,
+                        canMessageEmployees = x.canMessageEmployees,
+                        canManageStore = x.canManageStore,
+                        lastServerRefreshAt = now,
+                        storeLastSeenAt = current.storeLastSeenAt
+                    )
+                    lastServerRefreshAt = now
+                    notice = if (silent) "" else t("تم تحديث صلاحيات المحل والحالة ✓", "Store permissions and status refreshed ✓")
                     render()
                     if (refreshCurrentSection) refreshSelectedSection(silent = true)
+                    if (requestedStoreId.isBlank()) refreshStoreBindings(silent = true, refreshCurrentSection = false)
                 } else {
                     if (!silent) showError(t("تعذر التحديث", "Refresh failed"), networkMessage(result.exceptionOrNull()))
                     render()
@@ -809,6 +872,7 @@ class ReportReceiverActivity : Activity() {
 
     private fun refreshSelectedSection(silent: Boolean) {
         when (section) {
+            Section.STORES -> refreshStoreBindings(silent, refreshCurrentSection = false)
             Section.STATUS -> Unit
             Section.REPORTS -> if (receiver.canReceiveReports) refreshReports(silent)
             Section.MESSAGES -> if (receiver.canMessageEmployees) refreshMessages(silent)
@@ -817,21 +881,23 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun refreshReports(silent: Boolean) {
-        if (!receiver.canReceiveReports || receiver.serverUrl.isBlank() || reportsInFlight) return
+        val binding = receiver.activeBinding() ?: return
+        if (!receiver.canReceiveReports || binding.serverUrl.isBlank() || binding.storeId.isBlank() || reportsInFlight) return
         reportsInFlight = true
         val generation = ++reportsGeneration
+        val storeId = binding.storeId
         if (alive()) render()
 
         Thread {
-            val result = CentralServerClient.receiverInbox(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            val result = CentralServerClient.receiverInbox(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
             runOnUiThread {
-                if (generation != reportsGeneration) return@runOnUiThread
+                if (generation != reportsGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 reportsInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
-                    result.getOrThrow().forEach { receiver.receive(it.packageText) }
-                    lastServerRefreshAt = System.currentTimeMillis()
-                    if (!silent) notice = t("تم تحديث التقارير ✓", "Reports refreshed ✓")
+                    result.getOrThrow().forEach { receiver.receive(it.packageText, storeId) }
+                    markActiveServerContact(storeId)
+                    if (!silent) notice = t("تم تحديث تقارير المحل ✓", "Store reports refreshed ✓")
                 } else if (!silent) {
                     showError(t("تعذر تحديث التقارير", "Could not refresh reports"), networkMessage(result.exceptionOrNull()))
                 }
@@ -841,27 +907,29 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun refreshMessages(silent: Boolean) {
-        if (!receiver.canMessageEmployees || receiver.serverUrl.isBlank() || messagesInFlight) return
+        val binding = receiver.activeBinding() ?: return
+        if (!receiver.canMessageEmployees || binding.serverUrl.isBlank() || binding.storeId.isBlank() || messagesInFlight) return
         messagesInFlight = true
         val generation = ++messagesGeneration
+        val storeId = binding.storeId
         if (alive()) render()
 
         Thread {
-            val employees = CentralServerClient.receiverEmployees(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            val employees = CentralServerClient.receiverEmployees(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
             val replies = if (employees.isSuccess) {
-                CentralServerClient.receiverMessagesInbox(receiver.serverUrl, receiver.receiverId, receiver.secret)
+                CentralServerClient.receiverMessagesInbox(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
             } else Result.failure(employees.exceptionOrNull() ?: IllegalStateException("messages unavailable"))
 
             runOnUiThread {
-                if (generation != messagesGeneration) return@runOnUiThread
+                if (generation != messagesGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 messagesInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (employees.isSuccess && replies.isSuccess) {
                     messageEmployees = employees.getOrThrow()
                     messageReplies = replies.getOrThrow().map { ReplyRow(it.employeeId, it.body, it.createdAt) }
                     if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) selectedMessageEmployeeId = null
-                    lastServerRefreshAt = System.currentTimeMillis()
-                    if (!silent) notice = t("تم تحديث الرسائل ✓", "Messages refreshed ✓")
+                    markActiveServerContact(storeId)
+                    if (!silent) notice = t("تم تحديث رسائل المحل ✓", "Store messages refreshed ✓")
                 } else if (!silent) {
                     showError(t("تعذر تحديث الرسائل", "Could not refresh messages"),
                         networkMessage(employees.exceptionOrNull() ?: replies.exceptionOrNull()))
@@ -872,19 +940,25 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun sendMessage(employeeId: String, body: String) {
-        if (messageSendInFlight || !receiver.canMessageEmployees) return
+        val binding = receiver.activeBinding() ?: return
+        if (messageSendInFlight || !receiver.canMessageEmployees || binding.storeId.isBlank()) return
         messageSendInFlight = true
+        val generation = actionGeneration
+        val storeId = binding.storeId
         if (alive()) render()
         Thread {
             val result = CentralServerClient.receiverSendEmployeeMessage(
-                receiver.serverUrl, receiver.receiverId, receiver.secret,
-                employeeId, t("رسالة من الإدارة", "Management message"), body, "NORMAL", false
+                binding.serverUrl, receiver.receiverId, receiver.secret,
+                employeeId, t("رسالة من الإدارة", "Management message"), body, "NORMAL", false,
+                storeId = storeId
             )
             runOnUiThread {
+                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 messageSendInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
-                    notice = t("تم إرسال الرسالة ✓", "Message sent ✓")
+                    markActiveServerContact(storeId)
+                    notice = t("تم إرسال الرسالة لهذا المحل ✓", "Message sent for this store ✓")
                 } else {
                     showError(t("تعذر إرسال الرسالة", "Message failed"), networkMessage(result.exceptionOrNull()))
                 }
@@ -894,21 +968,24 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun refreshEmployees(silent: Boolean) {
-        if (!receiver.canManageStore || receiver.serverUrl.isBlank() || employeesInFlight) return
+        val binding = receiver.activeBinding() ?: return
+        if (!receiver.canManageStore || binding.serverUrl.isBlank() || binding.storeId.isBlank() || employeesInFlight) return
         employeesInFlight = true
         val generation = ++employeesGeneration
+        val storeId = binding.storeId
         if (alive()) render()
 
         Thread {
-            val result = ReceiverEmployeeAdminClient.list(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            val result = ReceiverEmployeeAdminClient.list(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
             runOnUiThread {
-                if (generation != employeesGeneration) return@runOnUiThread
+                if (generation != employeesGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 employeesInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
                     managedEmployees = result.getOrThrow()
-                    lastServerRefreshAt = System.currentTimeMillis()
-                    if (!silent) notice = t("تم تحديث قائمة الموظفين ✓", "Employee list refreshed ✓")
+                    if (selectedEmployeeId !in managedEmployees.map { it.employeeId }) selectedEmployeeId = null
+                    markActiveServerContact(storeId)
+                    if (!silent) notice = t("تم تحديث موظفي المحل ✓", "Store employees refreshed ✓")
                 } else if (!silent) {
                     showError(t("إدارة الموظفين", "Employee management"), networkMessage(result.exceptionOrNull()))
                 }
@@ -923,24 +1000,34 @@ class ReportReceiverActivity : Activity() {
         name: String,
         branchId: String
     ) {
-        if (employeeCommandInFlight || !receiver.canManageStore) return
+        val binding = receiver.activeBinding() ?: return
+        if (employeeCommandInFlight || !receiver.canManageStore || binding.storeId.isBlank()) return
         employeeCommandInFlight = true
+        val generation = actionGeneration
+        val storeId = binding.storeId
         render()
         Thread {
             val result = if (existing == null) {
-                ReceiverEmployeeAdminClient.add(receiver.serverUrl, receiver.receiverId, receiver.secret, employeeId, name, branchId)
+                ReceiverEmployeeAdminClient.add(
+                    binding.serverUrl, receiver.receiverId, receiver.secret,
+                    employeeId, name, branchId, storeId
+                )
             } else {
-                ReceiverEmployeeAdminClient.update(receiver.serverUrl, receiver.receiverId, receiver.secret, employeeId, name, branchId)
+                ReceiverEmployeeAdminClient.update(
+                    binding.serverUrl, receiver.receiverId, receiver.secret,
+                    employeeId, name, branchId, storeId
+                )
             }
             runOnUiThread {
+                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 employeeCommandInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
                     employeeEditorOpen = false
                     editingEmployeeId = null
                     notice = t(
-                        "تم إرسال الأمر إلى الخادم — قيد الإرسال حتى يستلمه جهاز المحل.",
-                        "Command queued — pending until the Store device receives it."
+                        "تم إرسال الأمر إلى جهاز هذا المحل — قيد الإرسال حتى يؤكد التنفيذ.",
+                        "Command queued for this Store device until execution is acknowledged."
                     )
                     render()
                     refreshEmployees(silent = true)
@@ -956,27 +1043,31 @@ class ReportReceiverActivity : Activity() {
         if (!alive()) return
         AlertDialog.Builder(this)
             .setTitle(t("تأكيد إيقاف الموظف", "Confirm employee disable"))
-            .setMessage(t("هل تريد إيقاف ${e.employeeName}؟ سيُرسل الأمر إلى جهاز المحل للتنفيذ.", "Disable ${e.employeeName}? The command will be sent to the Store device."))
+            .setMessage(t("هل تريد إيقاف ${e.employeeName} في هذا المحل؟ سيُرسل الأمر لجهاز المحل.", "Disable ${e.employeeName} in this store? The command will be sent to the Store device."))
             .setPositiveButton(t("إيقاف", "Disable")) { _, _ -> submitEmployeeStatus(e, false) }
             .setNegativeButton(t("إلغاء", "Cancel"), null)
             .show()
     }
 
     private fun submitEmployeeStatus(e: ReceiverEmployeeAdminClient.Employee, enabled: Boolean) {
-        if (employeeCommandInFlight || !receiver.canManageStore) return
+        val binding = receiver.activeBinding() ?: return
+        if (employeeCommandInFlight || !receiver.canManageStore || binding.storeId.isBlank()) return
         employeeCommandInFlight = true
+        val generation = actionGeneration
+        val storeId = binding.storeId
         render()
         Thread {
             val result = ReceiverEmployeeAdminClient.setEnabled(
-                receiver.serverUrl, receiver.receiverId, receiver.secret, e.employeeId, enabled
+                binding.serverUrl, receiver.receiverId, receiver.secret, e.employeeId, enabled, storeId
             )
             runOnUiThread {
+                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 employeeCommandInFlight = false
                 if (!alive()) return@runOnUiThread
                 if (result.isSuccess) {
                     notice = t(
-                        "تم إرسال أمر ${if (enabled) "التفعيل" else "الإيقاف"} — قيد الإرسال حتى يؤكده جهاز المحل.",
-                        "${if (enabled) "Enable" else "Disable"} command queued until Store acknowledgement."
+                        "تم إرسال أمر ${if (enabled) "التفعيل" else "الإيقاف"} لهذا المحل — بانتظار تأكيد جهاز المحل.",
+                        "${if (enabled) "Enable" else "Disable"} command queued for this store until acknowledgement."
                     )
                     render()
                     refreshEmployees(silent = true)
@@ -988,15 +1079,30 @@ class ReportReceiverActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
+    private fun markActiveServerContact(storeId: String) {
+        val current = receiver.activeBinding() ?: return
+        if (current.storeId != storeId) return
+        val now = System.currentTimeMillis()
+        receiver.updateActiveBinding(
+            current.storeId, current.storeName, current.branchId,
+            current.canReceiveReports, current.canMessageEmployees, current.canManageStore,
+            now, current.storeLastSeenAt
+        )
+        lastServerRefreshAt = now
+    }
+
     private fun invalidateRemoteRequests() {
         capabilitiesGeneration++
         reportsGeneration++
         messagesGeneration++
         employeesGeneration++
+        actionGeneration++
         capabilitiesInFlight = false
         reportsInFlight = false
         messagesInFlight = false
         employeesInFlight = false
+        employeeCommandInFlight = false
+        messageSendInFlight = false
     }
 
     private fun mark(v: Boolean) = if (v) "✓" else "— ${t("غير مسموح", "Not allowed")}"
