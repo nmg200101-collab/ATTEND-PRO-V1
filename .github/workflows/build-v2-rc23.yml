@@ -55,6 +55,7 @@ jobs:
           ! grep -q 'حفظ التغييرات / تعديل الصلاحيات' "$CENTER"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
           MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          RECEIVER=buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
           grep -q 'استعادة التفعيل تلقائيًا' "$MAIN"
           grep -q 'تسجيل محل جديد مباشرة — تجربة 3 أيام' "$MAIN"
           grep -q 'activationConnectionMessage' "$MAIN"
@@ -98,7 +99,6 @@ jobs:
           grep -q 'جاري استعادة التفعيل السابق تلقائيًا' "$MAIN"
           ! grep -q 'syncRemoteControlIfDue()' "$MAIN"
           SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
-          RECEIVER=buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
           grep -q 'هواتف الاستلام والصلاحيات' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'هاتف الاستلام وإدارة الموظفين' "$RECEIVER"
