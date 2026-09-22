@@ -13,7 +13,6 @@ import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
-import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
@@ -471,7 +470,7 @@ object ReceiverReportBleClient {
             }
             characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
             val started = if (Build.VERSION.SDK_INT >= 33) {
-                gatt.writeCharacteristic(characteristic, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
+                gatt.writeCharacteristic(characteristic, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == 0
             } else {
                 @Suppress("DEPRECATION")
                 run {
