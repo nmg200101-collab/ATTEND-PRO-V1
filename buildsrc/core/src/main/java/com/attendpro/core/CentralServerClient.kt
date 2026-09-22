@@ -96,6 +96,15 @@ object CentralServerClient {
         val branchId: String
     )
     data class ReceiverEmployee(val employeeId: String, val employeeName: String, val branchId: String, val lastSeenAt: Long)
+    data class ReceiverEmployeeCommand(
+        val commandId: String,
+        val action: String,
+        val employeeId: String,
+        val employeeName: String = "",
+        val branchId: String = "MAIN",
+        val enabled: Boolean? = null,
+        val createdAt: Long = 0L
+    )
     data class RemoteStoreSettings(
         val shiftStartHour: Int = 8,
         val shiftStartMinute: Int = 0,
@@ -787,6 +796,81 @@ object CentralServerClient {
         val o = request(serverUrl, "/api/v1/store/remote-settings/pull", "POST", JSONObject(), bearer = storeToken, deviceIdentity = identity, storeId = storeId)
         val desired = o.optJSONObject("desired") ?: JSONObject()
         RemoteStoreSettingsEnvelope(o.optBoolean("available", false), parseRemoteStoreSettings(desired), o.optLong("revision", 0L), o.optLong("appliedRevision", 0L))
+    }
+
+    fun syncReceiverEmployeeSnapshot(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity,
+        employees: List<PairedEmployee>
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        val body = JSONObject().apply {
+            put("employees", JSONArray().apply {
+                employees.take(2000).forEach { employee ->
+                    put(JSONObject().apply {
+                        put("employeeId", employee.employeeId)
+                        put("employeeName", employee.displayName)
+                        put("branchId", employee.branchId)
+                        put("enabled", employee.active)
+                    })
+                }
+            })
+        }
+        request(
+            serverUrl, "/api/v1/store/receiver-employees/snapshot", "POST", body,
+            bearer = storeToken, deviceIdentity = identity, storeId = storeId
+        )
+        Unit
+    }
+
+    fun pullReceiverEmployeeCommands(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity
+    ): Result<List<ReceiverEmployeeCommand>> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(
+            serverUrl, "/api/v1/store/receiver-employee-commands/pull", "POST", JSONObject(),
+            bearer = storeToken, deviceIdentity = identity, storeId = storeId
+        )
+        val a = o.optJSONArray("commands") ?: JSONArray()
+        (0 until a.length()).mapNotNull { i ->
+            runCatching {
+                val x = a.getJSONObject(i)
+                val payload = x.optJSONObject("payload") ?: JSONObject()
+                ReceiverEmployeeCommand(
+                    commandId = x.optString("commandId"),
+                    action = x.optString("action").uppercase(),
+                    employeeId = x.optString("employeeId"),
+                    employeeName = payload.optString("employeeName"),
+                    branchId = payload.optString("branchId", "MAIN"),
+                    enabled = if (payload.has("enabled")) payload.optBoolean("enabled") else null,
+                    createdAt = x.optLong("createdAt", 0L)
+                )
+            }.getOrNull()
+        }.filter { it.commandId.isNotBlank() && it.employeeId.isNotBlank() }
+    }
+
+    fun ackReceiverEmployeeCommand(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity,
+        commandId: String, success: Boolean, error: String = "", employee: PairedEmployee? = null
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        request(
+            serverUrl, "/api/v1/store/receiver-employee-commands/ack", "POST",
+            JSONObject().apply {
+                put("commandId", commandId)
+                put("success", success)
+                if (!success && error.isNotBlank()) put("error", error.take(300))
+                if (employee != null) {
+                    put("employee", JSONObject().apply {
+                        put("employeeId", employee.employeeId)
+                        put("employeeName", employee.displayName)
+                        put("branchId", employee.branchId)
+                        put("enabled", employee.active)
+                    })
+                }
+            },
+            bearer = storeToken, deviceIdentity = identity, storeId = storeId
+        )
+        Unit
     }
 
     fun pushReport(serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, receiverId: String, transferId: String, packageText: String, confirmationHash: String): Result<Unit> = runCatching {
