@@ -537,11 +537,18 @@ class StoreReceiverPermissionsActivity : Activity() {
         if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) return
         val phone = repo.authorizedReportReceivers().firstOrNull { it.receiverId == receiverId } ?: return
         Thread {
+            if (phone.receiverId in pendingDeletes()) return@Thread
             val identity = DeviceIdentity(this)
             val register = CentralServerClient.registerReceiver(
                 repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
                 phone.receiverId, phone.name, phone.secret
             )
+            if (phone.receiverId in pendingDeletes()) {
+                CentralServerClient.deleteReceiverBinding(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, phone.receiverId
+                )
+                return@Thread
+            }
             val permissions = if (register.isSuccess) {
                 CentralServerClient.setReceiverPermissions(
                     repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
@@ -560,6 +567,12 @@ class StoreReceiverPermissionsActivity : Activity() {
 
             runOnUiThread {
                 if (!alive()) return@runOnUiThread
+                if (phone.receiverId in pendingDeletes() ||
+                    repo.authorizedReportReceivers().none { it.receiverId == phone.receiverId }
+                ) {
+                    removePendingSync(phone.receiverId)
+                    return@runOnUiThread
+                }
                 if (register.isSuccess && permissions.isSuccess && verified.getOrNull() == true) {
                     removePendingSync(phone.receiverId)
                     markMeta(phone.receiverId, META_SERVER_SYNC)
