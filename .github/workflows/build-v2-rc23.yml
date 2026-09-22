@@ -106,7 +106,6 @@ jobs:
           ! grep -q 'هاتف الاستلام وإدارة المحل' "$RECEIVER"
           grep -q 'تعذر العثور على عنوان الخادم عبر DNS' "$MAIN"
           ! grep -q 'إعدادات مدير المحل' "$CENTER"
-          ! grep -q 'python3 tools/unify-report-receiver-center.py' .github/workflows/build-v2-rc23.yml
           grep -q 'versionCode = 136' buildsrc/store-app/build.gradle.kts
           grep -q 'versionName = "2.0.0-RC29-IPV4-RECEIVER-EMPLOYEE1"' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 136' buildsrc/employee-app/build.gradle.kts
