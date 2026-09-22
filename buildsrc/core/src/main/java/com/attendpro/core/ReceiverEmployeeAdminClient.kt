@@ -18,7 +18,10 @@ object ReceiverEmployeeAdminClient {
         val enabled:Boolean,
         val pendingLink:Boolean,
         val pendingCommand:Boolean = false,
-        val pendingAction:String = ""
+        val pendingAction:String = "",
+        val commandStatus:String = "",
+        val commandError:String = "",
+        val commandUpdatedAt:Long = 0L
     )
 
     fun list(serverUrl:String, receiverId:String, secret:String):Result<List<Employee>> = runCatching {
@@ -34,7 +37,10 @@ object ReceiverEmployeeAdminClient {
                 x.optBoolean("enabled",true),
                 x.optBoolean("pendingLink",false),
                 x.optBoolean("pendingCommand",false),
-                x.optString("pendingAction","")
+                x.optString("pendingAction",""),
+                x.optString("commandStatus",""),
+                x.optString("commandError",""),
+                x.optLong("commandUpdatedAt",0L)
             )
         }
     }
