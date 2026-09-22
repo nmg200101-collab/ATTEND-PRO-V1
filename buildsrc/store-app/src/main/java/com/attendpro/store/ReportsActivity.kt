@@ -141,9 +141,9 @@ class ReportsActivity : Activity() {
         root.addView(recent)
 
         val receiverCenter = UiKit.card(this, p, 12)
-        receiverCenter.addView(UiKit.sectionLabel(this, p, t("هواتف الاستلام والصلاحيات", "Receiver phones and permissions")))
-        receiverCenter.addView(UiKit.subtitle(this, p, t("إدارة الهواتف المرتبطة وتحديد صلاحية كل هاتف بشكل مستقل: استلام التقارير، مراسلة الموظفين، وإدارة الموظفين.", "Manage linked phones and assign each phone permissions independently: reports, employee messaging, and employee management.")))
-        receiverCenter.addView(UiKit.button(this, p, t("فتح هواتف الاستلام والصلاحيات", "Open receiver phones and permissions")).apply {
+        receiverCenter.addView(UiKit.sectionLabel(this, p, t("هواتف الاستلام", "Receiver phones")))
+        receiverCenter.addView(UiKit.subtitle(this, p, t("إدارة هواتف الاستلام من نافذة واحدة؛ تعرض كل بطاقة الهاتف ونوعه وصلاحياته وخيارات التعديل أو الحذف.", "Manage receiver phones in one screen; each card shows the phone type, permissions, edit and unlink controls.")))
+        receiverCenter.addView(UiKit.button(this, p, t("فتح هواتف الاستلام", "Open receiver phones and permissions")).apply {
             setOnClickListener { startActivity(Intent(this@ReportsActivity, StoreReceiverPermissionsActivity::class.java)) }
         })
         root.addView(receiverCenter)
@@ -247,7 +247,7 @@ class ReportsActivity : Activity() {
     private fun chooseAuthorizedReceiver(events: List<AttendanceEvent>) {
         val receivers = repo.authorizedReportReceivers().filter { it.active && it.canReceiveReports }
         if (receivers.isEmpty()) {
-            info(t("لا توجد هواتف مصرح لها باستلام التقارير", "No phones allowed to receive reports"), t("افتح «هواتف الاستلام والصلاحيات» وأضف هاتفًا أو فعّل صلاحية استلام التقارير.", "Open Receiver phones and permissions and add a phone or enable report-receiving permission."))
+            info(t("لا توجد هواتف مصرح لها باستلام التقارير", "No phones allowed to receive reports"), t("افتح «هواتف الاستلام» وأضف هاتفًا أو فعّل صلاحية استلام التقارير.", "Open Receiver phones and add a phone or enable report-receiving permission."))
             return
         }
         AlertDialog.Builder(this).setTitle(t("اختر هاتف الاستلام", "Choose receiver phone")).setItems(receivers.map { "${it.name} • ${it.receiverId}" }.toTypedArray()) { _, which ->
