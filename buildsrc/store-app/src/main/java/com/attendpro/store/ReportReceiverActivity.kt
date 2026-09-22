@@ -565,6 +565,35 @@ class ReportReceiverActivity : Activity() {
             })
         }
 
+        val outgoing = receiver.outgoingMessages(binding?.storeId.orEmpty()).take(20)
+        if (outgoing.isNotEmpty()) {
+            card.addView(UiKit.sectionLabel(this, p, t("حالة الإرسال", "Delivery status")))
+            outgoing.forEach { row ->
+                val employeeName = messageEmployees.firstOrNull { it.employeeId == row.employeeId }?.employeeName
+                    ?: row.employeeId
+                val stateText = when (row.state) {
+                    "SENT" -> t("✓ تم الإرسال", "✓ Sent")
+                    "FAILED" -> t("تعذر الإرسال", "Failed")
+                    "RETRY" -> t("إعادة محاولة تلقائية", "Automatic retry")
+                    else -> t("قيد الإرسال…", "Sending…")
+                }
+                card.addView(UiKit.subtitle(this, p,
+                    "$employeeName • $stateText\n${row.body}\n${formatTime(row.createdAt)}"
+                ))
+                if (row.state == "FAILED") {
+                    card.addView(UiKit.button(this, p, t("إعادة محاولة الإرسال", "Retry sending"), false).apply {
+                        setOnClickListener {
+                            if (receiver.retryOutgoingMessage(row.localId)) {
+                                ReceiverReportService.requestImmediateSync(this@ReportReceiverActivity)
+                                notice = t("تمت إعادة الرسالة إلى صف الإرسال ✓", "Message returned to the delivery queue ✓")
+                                render()
+                            }
+                        }
+                    })
+                }
+            }
+        }
+
         card.addView(UiKit.sectionLabel(this, p, t("الردود المستلمة", "Received replies")))
         val cachedReplies = receiver.receivedMessageReplies(binding?.storeId.orEmpty()).map {
             ReplyRow(it.employeeId, it.body, it.createdAt)
