@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V139 Receiver Offline Stabilization
+name: Build ATTEND-PRO V140 Receiver Delivery Reliability
 on:
   push:
-    branches: [attend-pro-v139-receiver-offline-stabilization]
+    branches: [attend-pro-v140-receiver-delivery-reliability]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V139 receiver offline stabilization
+      - name: Verify V140 receiver delivery reliability
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -40,6 +40,7 @@ jobs:
           OFFLINE_PROTOCOL=buildsrc/core/src/main/java/com/attendpro/core/ReceiverOfflineReportProtocol.kt
           LAN_REPORT=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportLanTransport.kt
           BLE_REPORT=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportBleTransport.kt
+          SERVICE=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
           DNS=buildsrc/core/src/main/java/com/attendpro/core/ResilientHttp.kt
           SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
           MANIFEST=buildsrc/store-app/src/main/AndroidManifest.xml
@@ -50,7 +51,7 @@ jobs:
           ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
 
-          # V139 Store-side receiver center: one Phones surface, permissions inline, no duplicate Permissions tab.
+          # V140 Store-side receiver center: one Phones surface, permissions inline, no duplicate Permissions tab.
           grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
           grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
@@ -61,7 +62,11 @@ jobs:
           grep -q 'deleteReceiverBinding' "$CENTER"
           grep -q 'META_PENDING_DELETES' "$CENTER"
           grep -q '1/5 تم التعرف على QR الهاتف' "$CENTER"
-          grep -q '5/5 اكتمل الربط والتحقق' "$CENTER"
+          grep -q 'اكتشاف هاتف قريب' "$CENTER"
+          grep -q 'discoverNearbyReceiver' "$CENTER"
+          grep -q 'deliverNearbyGrantAsync' "$CENTER"
+          grep -q 'pending_receiver_syncs_v140' "$CENTER"
+          grep -q 'تم حفظ الهاتف فورًا' "$CENTER"
           test "$(grep -c 'setContentView(' "$CENTER")" -eq 1
           ! grep -q 'buildUi' "$CENTER"
 
@@ -91,7 +96,7 @@ jobs:
           grep -q 'فشل التنفيذ' "$RECEIVER"
           grep -q 'تعذر الاتصال بالخادم عبر الشبكة الحالية' "$RECEIVER"
 
-          # V139 retains V138 multi-store isolation and stale-callback guards.
+          # V140 retains V138 multi-store isolation and stale-callback guards.
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, EMPLOYEES }' "$RECEIVER"
           grep -q 'renderStores' "$RECEIVER"
           grep -q 'refreshStoreBindings' "$RECEIVER"
@@ -113,15 +118,21 @@ jobs:
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
 
-          # V139 nearby report delivery is independent from employee BLE pairing.
+          # V140 nearby report delivery is independent from employee BLE pairing.
           test -f "$OFFLINE_PROTOCOL"
           test -f "$LAN_REPORT"
           test -f "$BLE_REPORT"
           grep -q 'ReceiverOfflineReportProtocol' "$REPORTS"
           grep -q 'ReceiverReportLanClient.send' "$REPORTS"
           grep -q 'ReceiverReportBleClient.send' "$REPORTS"
-          grep -q 'ReceiverReportLanServer' "$RECEIVER"
-          grep -q 'ReceiverReportBleServer' "$RECEIVER"
+          test -f "$SERVICE"
+          grep -q 'ReceiverReportService.ensureStarted' "$RECEIVER"
+          grep -q 'ReceiverReportLanServer' "$SERVICE"
+          grep -q 'ReceiverReportBleServer' "$SERVICE"
+          grep -q 'pollServerReports' "$SERVICE"
+          grep -q 'confirmRemoteReport' "$SERVICE"
+          grep -q 'nearbyPairingActive' "$SERVICE"
+          grep -q 'acceptNearbyGrant' "$SERVICE"
           grep -q '0000f139-0000-1000-8000-00805f9b34fb' "$BLE_REPORT"
           grep -q 'BLUETOOTH_SCAN' "$MANIFEST"
           grep -q 'BLUETOOTH_CONNECT' "$MANIFEST"
@@ -130,6 +141,15 @@ jobs:
           grep -q 'REPORT_PORT = 47731' "$LAN_REPORT"
           grep -q 'APRL1:' "$OFFLINE_PROTOCOL"
           grep -q 'APACK1' "$OFFLINE_PROTOCOL"
+          grep -q 'APGR1:' "$OFFLINE_PROTOCOL"
+          grep -q 'nearbyProbe' "$OFFLINE_PROTOCOL"
+          grep -q 'nearbyGrantAck' "$OFFLINE_PROTOCOL"
+          grep -q 'ReceiverReportService' "$MANIFEST"
+          grep -q 'FOREGROUND_SERVICE_CONNECTED_DEVICE' "$MANIFEST"
+          grep -q 'foregroundServiceType="connectedDevice"' "$MANIFEST"
+          grep -q 'sendNearbyGrant' "$LAN_REPORT"
+          grep -q 'sendNearbyGrant' "$BLE_REPORT"
+          grep -q 'INVITE_UUID' "$BLE_REPORT"
 
           # Employee management uses the server queue only; no receiver-side employee_links CRUD.
           grep -q '/api/v1/monitor/employees/manage-list' "$ADMIN"
@@ -179,13 +199,13 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V139 identity.
-          grep -q 'versionCode = 139' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V139-RECEIVER-OFFLINE-STABILIZATION"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 139' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V139-RECEIVER-OFFLINE-STABILIZATION"' buildsrc/employee-app/build.gradle.kts
+          # V140 identity.
+          grep -q 'versionCode = 140' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 140' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/employee-app/build.gradle.kts
 
-          # RC29 field-proven pairing/direct-link files are immutable in V139.
+          # RC29 field-proven pairing/direct-link files are immutable in V140.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -214,7 +234,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V139
+      - name: Sign V140
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -227,9 +247,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V139.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V140.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V139.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V140.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -245,11 +265,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='139' versionName='2.0.0-RC29-V139-RECEIVER-OFFLINE-STABILIZATION'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='140' versionName='2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V139-RECEIVER-OFFLINE-STABILIZATION-SIGNED
+          name: ATTEND-PRO-V140-RECEIVER-DELIVERY-RELIABILITY-SIGNED
           path: signed/
           retention-days: 30
