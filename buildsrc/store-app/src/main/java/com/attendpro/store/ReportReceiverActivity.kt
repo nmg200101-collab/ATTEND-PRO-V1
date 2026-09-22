@@ -131,7 +131,7 @@ class ReportReceiverActivity : Activity() {
         if (!dataEventsRegistered) {
             val filter = IntentFilter(ReceiverReportService.ACTION_DATA_CHANGED)
             if (Build.VERSION.SDK_INT >= 33) {
-                registerReceiver(dataEventsReceiver, filter, RECEIVER_NOT_EXPORTED)
+                registerReceiver(dataEventsReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
                 @Suppress("DEPRECATION")
                 registerReceiver(dataEventsReceiver, filter)
