@@ -93,7 +93,19 @@ object CentralServerClient {
         val canMessageEmployees: Boolean,
         val canManageStore: Boolean,
         val storeName: String,
-        val branchId: String
+        val branchId: String,
+        val storeId: String = ""
+    )
+    data class ReceiverStoreSummary(
+        val storeId: String,
+        val storeName: String,
+        val branchId: String,
+        val active: Boolean,
+        val canReceiveReports: Boolean,
+        val canMessageEmployees: Boolean,
+        val canManageStore: Boolean,
+        val lastUsedAt: Long = 0L,
+        val storeLastSeenAt: Long = 0L
     )
     data class ReceiverEmployee(val employeeId: String, val employeeName: String, val branchId: String, val lastSeenAt: Long)
     data class ReceiverEmployeeCommand(
@@ -693,24 +705,56 @@ object CentralServerClient {
         Unit
     }
 
-    fun receiverCapabilities(serverUrl: String, receiverId: String, secret: String): Result<ReceiverCapabilities> = runCatching {
+    fun receiverStores(serverUrl: String, receiverId: String, secret: String): Result<List<ReceiverStoreSummary>> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/stores", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret)
+        })
+        val a = o.optJSONArray("stores") ?: JSONArray()
+        (0 until a.length()).map { i ->
+            val x = a.getJSONObject(i)
+            ReceiverStoreSummary(
+                storeId = x.optString("storeId"),
+                storeName = x.optString("storeName", "ATTEND PRO"),
+                branchId = x.optString("branchId", "MAIN"),
+                active = x.optBoolean("active", true),
+                canReceiveReports = x.optBoolean("canReceiveReports", false),
+                canMessageEmployees = x.optBoolean("canMessageEmployees", false),
+                canManageStore = x.optBoolean("canManageStore", false),
+                lastUsedAt = x.optLong("lastUsedAt", 0L),
+                storeLastSeenAt = x.optLong("storeLastSeenAt", 0L)
+            )
+        }.filter { it.storeId.isNotBlank() }
+    }
+
+    fun receiverUnlinkStore(serverUrl: String, receiverId: String, secret: String, storeId: String): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        require(storeId.isNotBlank()) { "storeId required" }
+        request(serverUrl, "/api/v1/monitor/stores/unlink", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); put("storeId", storeId)
+        })
+        Unit
+    }
+
+    fun receiverCapabilities(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<ReceiverCapabilities> = runCatching {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/monitor/capabilities", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret)
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
         })
         ReceiverCapabilities(
             o.optBoolean("canReceiveReports", false),
             o.optBoolean("canMessageEmployees", false),
             o.optBoolean("canManageStore", false),
             o.optString("storeName", "ATTEND PRO"),
-            o.optString("branchId", "MAIN")
+            o.optString("branchId", "MAIN"),
+            o.optString("storeId", storeId)
         )
     }
 
-    fun receiverEmployees(serverUrl: String, receiverId: String, secret: String): Result<List<ReceiverEmployee>> = runCatching {
+    fun receiverEmployees(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<List<ReceiverEmployee>> = runCatching {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/monitor/employees", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret)
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
         })
         val a = o.optJSONArray("employees") ?: JSONArray()
         (0 until a.length()).map { i ->
@@ -721,20 +765,40 @@ object CentralServerClient {
 
     fun receiverSendEmployeeMessage(
         serverUrl: String, receiverId: String, secret: String, employeeId: String,
-        title: String, message: String, priority: String = "NORMAL", voiceEnabled: Boolean = false
+        title: String, message: String, priority: String = "NORMAL", voiceEnabled: Boolean = false,
+        storeId: String = ""
     ): Result<String> = runCatching {
         requireHttps(serverUrl)
         request(serverUrl, "/api/v1/monitor/messages/send", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret); put("employeeId", employeeId)
-            put("title", title); put("message", message); put("priority", priority); put("voiceEnabled", voiceEnabled)
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
+            put("employeeId", employeeId); put("title", title); put("message", message); put("priority", priority); put("voiceEnabled", voiceEnabled)
         }).optString("messageId")
     }
 
-    fun receiverMessagesInbox(serverUrl: String, receiverId: String, secret: String): Result<List<Message1975>> = runCatching {
+    fun receiverMessagesInbox(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<List<Message1975>> = runCatching {
         requireHttps(serverUrl)
         parseMessages1975(request(serverUrl, "/api/v1/monitor/messages/inbox", "POST", JSONObject().apply {
-            put("receiverId", receiverId); put("secret", secret)
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
         }))
+    }
+
+    fun receiverStoreSettings(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<RemoteStoreSettingsEnvelope> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/store-settings", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
+        })
+        val desired = o.optJSONObject("desired") ?: o.optJSONObject("current") ?: JSONObject()
+        RemoteStoreSettingsEnvelope(true, parseRemoteStoreSettings(desired), o.optLong("revision", 0L), o.optLong("appliedRevision", 0L))
+    }
+
+    fun receiverUpdateStoreSettings(
+        serverUrl: String, receiverId: String, secret: String, settings: RemoteStoreSettings, storeId: String = ""
+    ): Result<Long> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/store-settings/update", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId); put("settings", remoteStoreSettingsJson(settings))
+        })
+        o.optLong("revision", 0L)
     }
 
     private fun parseRemoteStoreSettings(o: JSONObject): RemoteStoreSettings = RemoteStoreSettings(
@@ -879,16 +943,21 @@ object CentralServerClient {
         Unit
     }
 
-    fun receiverInbox(serverUrl: String, receiverId: String, secret: String): Result<List<RemoteInboxItem>> = runCatching {
+    fun receiverInbox(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<List<RemoteInboxItem>> = runCatching {
         requireHttps(serverUrl)
-        val o = request(serverUrl, "/api/v1/reports/inbox", "POST", JSONObject().apply { put("receiverId", receiverId); put("secret", secret) })
+        val o = request(serverUrl, "/api/v1/reports/inbox", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
+        })
         val a = o.optJSONArray("reports") ?: JSONArray()
         (0 until a.length()).map { i -> val x = a.getJSONObject(i); RemoteInboxItem(x.getString("transferId"), x.getString("packageText")) }
     }
 
-    fun confirmRemoteReport(serverUrl: String, receiverId: String, secret: String, transferId: String, confirmationCode: String): Result<Unit> = runCatching {
+    fun confirmRemoteReport(serverUrl: String, receiverId: String, secret: String, transferId: String, confirmationCode: String, storeId: String = ""): Result<Unit> = runCatching {
         requireHttps(serverUrl)
-        request(serverUrl, "/api/v1/reports/confirm", "POST", JSONObject().apply { put("receiverId", receiverId); put("secret", secret); put("transferId", transferId); put("confirmationCode", confirmationCode) })
+        request(serverUrl, "/api/v1/reports/confirm", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
+            put("transferId", transferId); put("confirmationCode", confirmationCode)
+        })
         Unit
     }
 
@@ -899,15 +968,19 @@ object CentralServerClient {
         (0 until a.length()).map { a.getString(it) }.toSet()
     }
 
-    fun remoteReport(serverUrl: String, receiverId: String, secret: String, period: String): Result<String> = runCatching {
+    fun remoteReport(serverUrl: String, receiverId: String, secret: String, period: String, storeId: String = ""): Result<String> = runCatching {
         requireHttps(serverUrl)
-        val o = request(serverUrl, "/api/v1/monitor/report", "POST", JSONObject().apply { put("receiverId", receiverId); put("secret", secret); put("period", period) })
+        val o = request(serverUrl, "/api/v1/monitor/report", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId); put("period", period)
+        })
         o.optString("reportText", "لا توجد بيانات")
     }
 
-    fun remoteDashboard(serverUrl: String, receiverId: String, secret: String): Result<RemoteDashboard> = runCatching {
+    fun remoteDashboard(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<RemoteDashboard> = runCatching {
         requireHttps(serverUrl)
-        val o = request(serverUrl, "/api/v1/monitor/summary", "POST", JSONObject().apply { put("receiverId", receiverId); put("secret", secret) })
+        val o = request(serverUrl, "/api/v1/monitor/summary", "POST", JSONObject().apply {
+            put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
+        })
         val recent = o.optJSONArray("recent") ?: JSONArray()
         val lines = mutableListOf<String>()
         lines += "الحضور اليوم: ${o.optInt("checkIns", 0)} • الانصراف: ${o.optInt("checkOuts", 0)}"
