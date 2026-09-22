@@ -102,11 +102,6 @@ class ReceiverReportBleServer(
             onStatus("Bluetooth: غير مفعّل")
             return false
         }
-        if (!a.isMultipleAdvertisementSupported) {
-            onStatus("Bluetooth: هذا الجهاز لا يدعم BLE Advertising المطلوب")
-            return false
-        }
-
         val server = manager.openGattServer(appContext, serverCallback) ?: run {
             onStatus("Bluetooth: تعذر فتح GATT Server")
             return false
@@ -299,31 +294,52 @@ object ReceiverReportBleClient {
             ?: return ReceiverReportDeliveryResult(false, "BLE", "BLE Scanner غير متاح")
 
         val wantedHash = ReceiverOfflineReportProtocol.receiverHash(receiverId)
-        val found = arrayOfNulls<BluetoothDevice>(1)
-        val scanLatch = CountDownLatch(1)
         val parcel = ParcelUuid(ReceiverReportBleServer.SERVICE_UUID)
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                val hash = result.scanRecord?.getServiceData(parcel) ?: return
-                if (hash.contentEquals(wantedHash)) {
-                    found[0] = result.device
-                    scanLatch.countDown()
+        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+
+        fun scanWindow(filters: List<ScanFilter>, timeoutMs: Long): BluetoothDevice? {
+            val found = arrayOfNulls<BluetoothDevice>(1)
+            val latch = CountDownLatch(1)
+            val callback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) {
+                    val record = result.scanRecord ?: return
+                    val hash = record.getServiceData(parcel) ?: return
+                    if (hash.contentEquals(wantedHash)) {
+                        found[0] = result.device
+                        latch.countDown()
+                    }
                 }
+
+                override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                    results.forEach { result ->
+                        val hash = result.scanRecord?.getServiceData(parcel) ?: return@forEach
+                        if (hash.contentEquals(wantedHash) && found[0] == null) {
+                            found[0] = result.device
+                            latch.countDown()
+                        }
+                    }
+                }
+            }
+            return try {
+                scanner.startScan(filters, settings, callback)
+                latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+                found[0]
+            } finally {
+                runCatching { scanner.stopScan(callback) }
             }
         }
 
-        try {
-            scanner.startScan(
-                listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
-                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
-                callback
+        // Some Android/OEM Bluetooth stacks fail to return a device when a service UUID
+        // filter is used even though the advertisement is visible. Try the efficient
+        // filtered scan first, then an unfiltered fallback while still authenticating the
+        // receiver by its advertised receiverId hash.
+        val filtered = listOf(ScanFilter.Builder().setServiceUuid(parcel).build())
+        val device = scanWindow(filtered, 2_500L)
+            ?: scanWindow(emptyList(), 2_500L)
+            ?: return ReceiverReportDeliveryResult(
+                false, "BLE",
+                "لم يظهر هاتف الاستلام عبر BLE بعد المسح المفلتر والاحتياطي"
             )
-            scanLatch.await(4, TimeUnit.SECONDS)
-        } finally {
-            runCatching { scanner.stopScan(callback) }
-        }
-        val device = found[0]
-            ?: return ReceiverReportDeliveryResult(false, "BLE", "لم يظهر هاتف الاستلام عبر BLE")
 
         val sync = SyncGattCallback()
         val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
