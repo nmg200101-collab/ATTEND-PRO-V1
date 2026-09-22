@@ -152,6 +152,7 @@ class ReceiverReportService : Service() {
                 startTransports()
                 flushPendingUnlinks()
                 pollServerReports()
+                pollServerMessages()
                 val hasBindings = receiver.storeBindings().any { it.active }
                 val pairing = nearbyPairingActive(this)
                 if (!hasBindings && !pairing) {
@@ -213,6 +214,21 @@ class ReceiverReportService : Service() {
             }
     }
 
+    private fun pollServerMessages() {
+        receiver.storeBindings()
+            .filter { it.active && it.canMessageEmployees && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
+            .forEach { binding ->
+                val result = CentralServerClient.receiverMessagesInbox(
+                    binding.serverUrl, receiver.receiverId, receiver.secret, binding.storeId
+                )
+                if (result.isFailure) return@forEach
+                val added = receiver.cacheMessageReplies(binding.storeId, result.getOrThrow())
+                if (added > 0) {
+                    updateStatus("وصل $added رد جديد من الموظفين ✓")
+                }
+            }
+    }
+
     private fun updateStatus(text: String) {
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, buildNotification(text))
@@ -224,7 +240,7 @@ class ReceiverReportService : Service() {
             manager.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "استلام تقارير ATTEND PRO",
+                    "تقارير ورسائل ATTEND PRO",
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
