@@ -1,6 +1,9 @@
 package com.attendpro.core
 
-import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -19,6 +22,7 @@ object ReceiverOfflineReportProtocol {
     private const val DISCOVERY_REPLY = "APRA1"
     private const val ACK_PREFIX = "APACK1"
     private const val MAX_PACKAGE_BYTES = 900_000
+    private const val MAX_ID_BYTES = 512
     private const val MAC_BYTES = 16
 
     data class Envelope(
@@ -40,15 +44,20 @@ object ReceiverOfflineReportProtocol {
         createdAt: Long = System.currentTimeMillis()
     ): String {
         require(receiverId.isNotBlank() && storeId.isNotBlank() && transferId.isNotBlank())
-        require(packageText.toByteArray(Charsets.UTF_8).size <= MAX_PACKAGE_BYTES)
-        val body = JSONObject().apply {
-            put("v", 1)
-            put("r", receiverId.trim())
-            put("s", storeId.trim())
-            put("t", transferId.trim())
-            put("c", createdAt)
-            put("p", packageText)
-        }.toString().toByteArray(Charsets.UTF_8)
+        val packageBytes = packageText.toByteArray(Charsets.UTF_8)
+        require(packageBytes.size <= MAX_PACKAGE_BYTES)
+        val body = ByteArrayOutputStream().use { bytes ->
+            DataOutputStream(bytes).use { out ->
+                out.writeByte(1)
+                out.writeLong(createdAt)
+                writeSmall(out, receiverId.trim())
+                writeSmall(out, storeId.trim())
+                writeSmall(out, transferId.trim())
+                out.writeInt(packageBytes.size)
+                out.write(packageBytes)
+            }
+            bytes.toByteArray()
+        }
         val mac = hmac(secret, body).copyOf(MAC_BYTES)
         return ENVELOPE_PREFIX + b64(body + mac)
     }
@@ -62,17 +71,22 @@ object ReceiverOfflineReportProtocol {
         val actual = all.copyOfRange(all.size - MAC_BYTES, all.size)
         val expected = hmac(secret, body).copyOf(MAC_BYTES)
         if (!MessageDigest.isEqual(actual, expected)) return@runCatching null
-        val o = JSONObject(String(body, Charsets.UTF_8))
-        if (o.optInt("v", 0) != 1) return@runCatching null
-        val receiverId = o.optString("r", "").trim()
-        val storeId = o.optString("s", "").trim()
-        val transferId = o.optString("t", "").trim()
-        val packageText = o.optString("p", "")
-        if (!receiverId.equals(expectedReceiverId.trim(), true) ||
-            storeId.isBlank() || transferId.isBlank() ||
-            packageText.toByteArray(Charsets.UTF_8).size > MAX_PACKAGE_BYTES
-        ) return@runCatching null
-        Envelope(receiverId, storeId, transferId, packageText, o.optLong("c", 0L))
+
+        DataInputStream(ByteArrayInputStream(body)).use { input ->
+            if (input.readUnsignedByte() != 1) return@runCatching null
+            val createdAt = input.readLong()
+            val receiverId = readSmall(input)
+            val storeId = readSmall(input)
+            val transferId = readSmall(input)
+            val packageSize = input.readInt()
+            if (packageSize !in 0..MAX_PACKAGE_BYTES || input.available() != packageSize) return@runCatching null
+            val packageBytes = ByteArray(packageSize)
+            input.readFully(packageBytes)
+            if (!receiverId.equals(expectedReceiverId.trim(), true) || storeId.isBlank() || transferId.isBlank()) {
+                return@runCatching null
+            }
+            Envelope(receiverId, storeId, transferId, String(packageBytes, Charsets.UTF_8), createdAt)
+        }
     }.getOrNull()
 
     fun newNonce(): String = b64(ByteArray(12).also { SecureRandom().nextBytes(it) })
@@ -126,6 +140,21 @@ object ReceiverOfflineReportProtocol {
         MessageDigest.getInstance("SHA-256")
             .digest(receiverId.trim().uppercase().toByteArray(Charsets.UTF_8))
             .copyOf(8)
+
+    private fun writeSmall(out: DataOutputStream, value: String) {
+        val bytes = value.toByteArray(Charsets.UTF_8)
+        require(bytes.size in 1..MAX_ID_BYTES)
+        out.writeShort(bytes.size)
+        out.write(bytes)
+    }
+
+    private fun readSmall(input: DataInputStream): String {
+        val size = input.readUnsignedShort()
+        require(size in 1..MAX_ID_BYTES)
+        val bytes = ByteArray(size)
+        input.readFully(bytes)
+        return String(bytes, Charsets.UTF_8)
+    }
 
     private fun macText(secret: String, text: String): String =
         b64(hmac(secret, text.toByteArray(Charsets.UTF_8)).copyOf(MAC_BYTES))
