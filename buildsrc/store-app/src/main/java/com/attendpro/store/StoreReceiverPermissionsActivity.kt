@@ -32,7 +32,7 @@ import java.util.Locale
  * re-render the center when the Activity is alive and the request generation is current.
  */
 class StoreReceiverPermissionsActivity : Activity() {
-    private enum class Tab { OVERVIEW, PHONES, ADD_PHONE, PERMISSIONS }
+    private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }
 
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
@@ -47,6 +47,7 @@ class StoreReceiverPermissionsActivity : Activity() {
     private var pendingInvite: ReportProtocol.ReceiverInvite? = null
     private var finalGrantText = ""
     private var notice = ""
+    private var linkProgress = ""
 
     @Volatile private var remoteInFlight = false
     @Volatile private var requestGeneration = 0L
@@ -80,7 +81,10 @@ class StoreReceiverPermissionsActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::content.isInitialized && alive()) render()
+        if (::content.isInitialized && alive()) {
+            render()
+            flushPendingReceiverDeletes()
+        }
     }
 
     override fun onDestroy() {
@@ -134,7 +138,6 @@ class StoreReceiverPermissionsActivity : Activity() {
             Tab.OVERVIEW -> overviewTab()
             Tab.PHONES -> phonesTab()
             Tab.ADD_PHONE -> addPhoneTab()
-            Tab.PERMISSIONS -> permissionsTab()
         }
     }
 
@@ -160,7 +163,6 @@ class StoreReceiverPermissionsActivity : Activity() {
             addTab(this, Tab.OVERVIEW, t("نظرة عامة", "Overview"))
             addTab(this, Tab.PHONES, t("الهواتف", "Phones"))
             addTab(this, Tab.ADD_PHONE, t("إضافة هاتف", "Add phone"))
-            addTab(this, Tab.PERMISSIONS, t("الصلاحيات", "Permissions"))
         })
     }
 
@@ -231,14 +233,43 @@ class StoreReceiverPermissionsActivity : Activity() {
                 )))
                 addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات الحالية", "Current permissions")))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, permissionsText(phone)))
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("إدارة الصلاحيات", "Manage permissions"), false).apply {
+                addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
+                    "النوع: هاتف استلام التقارير / الإدارة",
+                    "Type: report receiver / administration phone"
+                )))
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
+                    if (selectedReceiverId == phone.receiverId) t("إغلاق تعديل الصلاحيات", "Close permission editor")
+                    else t("تعديل صلاحيات هذا الهاتف", "Edit this phone permissions"), false).apply {
                     isEnabled = !remoteInFlight
                     setOnClickListener {
-                        selectedReceiverId = phone.receiverId
-                        tab = Tab.PERMISSIONS
+                        selectedReceiverId = if (selectedReceiverId == phone.receiverId) "" else phone.receiverId
                         render()
                     }
                 })
+                if (selectedReceiverId == phone.receiverId) {
+                    val reports = permissionCheckBox(
+                        t("استلام التقارير", "Receive reports"),
+                        t("استلام تقارير الحضور من هذا المحل.", "Receive attendance reports from this store."),
+                        phone.canReceiveReports
+                    )
+                    val messages = permissionCheckBox(
+                        t("مراسلة الموظفين", "Message employees"),
+                        t("إرسال الرسائل واستلام الردود.", "Send messages and receive replies."),
+                        phone.canMessageEmployees
+                    )
+                    val manage = permissionCheckBox(
+                        t("إدارة الموظفين", "Employee management"),
+                        t("عرض/إضافة/تعديل/تفعيل/إيقاف الموظفين فقط.", "View/add/edit/enable/disable employees only."),
+                        phone.canManageStore
+                    )
+                    addView(reports); addView(messages); addView(manage)
+                    addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
+                        if (remoteInFlight) t("جاري الحفظ والتحقق…", "Saving and verifying…")
+                        else t("حفظ صلاحيات هذا الهاتف", "Save this phone permissions"), false).apply {
+                        isEnabled = !remoteInFlight
+                        setOnClickListener { savePermissions(phone, reports.isChecked, messages.isChecked, manage.isChecked) }
+                    })
+                }
                 addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
                     if (phone.active) t("إيقاف الهاتف", "Disable phone") else t("تفعيل الهاتف", "Enable phone"), false
                 ).apply {
@@ -258,6 +289,9 @@ class StoreReceiverPermissionsActivity : Activity() {
     private fun addPhoneTab() {
         val card = UiKit.card(this, p, 10)
         card.addView(UiKit.sectionLabel(this, p, t("إضافة هاتف", "Add phone")))
+        if (linkProgress.isNotBlank()) {
+            card.addView(UiKit.subtitle(this, p, linkProgress))
+        }
         card.addView(UiKit.subtitle(this, p, t(
             "من هاتف الاستلام افتح «الحالة» ثم «إظهار QR تعريف الهاتف». امسح الرمز هنا، ثم حدد الصلاحيات.",
             "On the receiver phone open Status, then Show phone identity QR. Scan it here, then choose permissions."
@@ -394,64 +428,108 @@ class StoreReceiverPermissionsActivity : Activity() {
         }
         pendingInvite = invite
         finalGrantText = ""
+        linkProgress = t("1/5 تم التعرف على QR الهاتف ✓", "1/5 Receiver QR recognized ✓")
         notice = t("تمت قراءة هاتف الاستلام. حدد الصلاحيات ثم احفظ الربط.", "Receiver phone read. Choose permissions, then save the link.")
         render()
     }
 
     private fun completeAdd(invite: ReportProtocol.ReceiverInvite, reports: Boolean, messages: Boolean, manage: Boolean) {
         if (remoteInFlight) return
-        if (!repo.authorizeReportReceiver(invite)) {
+        if (invite.expiresAt < System.currentTimeMillis() || invite.receiverId.isBlank() || invite.secret.isBlank()) {
             showError(t("تعذر الربط", "Link failed"), t("رمز الهاتف منتهي أو غير صالح.", "The phone code is expired or invalid."))
-            return
-        }
-        repo.setReportReceiverPermissions(invite.receiverId, reports, messages, manage)
-        markMeta(invite.receiverId, META_PERMISSION_UPDATE)
-
-        if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) {
-            pendingInvite = null
-            notice = t("تم الحفظ محليًا. الربط النهائي بالخادم ينتظر عودة الاتصال المركزي.", "Saved locally. Final server linking is waiting for central connectivity.")
-            render()
             return
         }
 
         remoteInFlight = true
+        linkProgress = t("2/5 بدء حفظ الربط…", "2/5 Starting link save…")
         val generation = ++requestGeneration
         render()
+
         Thread {
-            val identity = DeviceIdentity(this)
-            val register = CentralServerClient.registerReceiver(
-                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                invite.receiverId, invite.name, invite.secret
-            )
-            val permissions = if (register.isSuccess) {
-                CentralServerClient.setReceiverPermissions(
-                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                    invite.receiverId, reports, messages, manage
-                )
-            } else Result.failure(register.exceptionOrNull() ?: IllegalStateException("register failed"))
+            var finalError: Throwable? = null
+            var verified = false
+            try {
+                val centralAvailable = repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()
+                if (centralAvailable) {
+                    postLinkProgress(generation, t("2/5 تسجيل الهاتف في الخادم…", "2/5 Registering phone with server…"))
+                    CentralServerClient.registerReceiver(
+                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                        invite.receiverId, invite.name, invite.secret
+                    ).getOrThrow()
+
+                    postLinkProgress(generation, t("3/5 حفظ الصلاحيات…", "3/5 Saving permissions…"))
+                    CentralServerClient.setReceiverPermissions(
+                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                        invite.receiverId, reports, messages, manage
+                    ).getOrThrow()
+
+                    postLinkProgress(generation, t("4/5 التحقق النهائي من الربط…", "4/5 Verifying final link…"))
+                    val remote = CentralServerClient.receiverCapabilities(
+                        repo.serverUrl, invite.receiverId, invite.secret, repo.storeId
+                    ).getOrThrow()
+                    check(
+                        remote.storeId == repo.storeId &&
+                            remote.canReceiveReports == reports &&
+                            remote.canMessageEmployees == messages &&
+                            remote.canManageStore == manage
+                    ) { "لم تتطابق بيانات الربط بعد الحفظ" }
+                    verified = true
+                }
+
+                check(repo.authorizeReportReceiver(invite)) { "تعذر حفظ الهاتف محليًا" }
+                repo.setReportReceiverPermissions(invite.receiverId, reports, messages, manage)
+                markMeta(invite.receiverId, META_PERMISSION_UPDATE)
+                if (verified) markMeta(invite.receiverId, META_SERVER_SYNC)
+            } catch (t: Throwable) {
+                finalError = t
+            }
 
             runOnUiThread {
                 if (generation != requestGeneration) return@runOnUiThread
                 remoteInFlight = false
                 if (!alive()) return@runOnUiThread
-                if (register.isSuccess && permissions.isSuccess) {
-                    markMeta(invite.receiverId, META_SERVER_SYNC)
-                    markMeta(invite.receiverId, META_PERMISSION_UPDATE)
+
+                if (finalError == null) {
                     val grant = ReportProtocol.RemoteReceiverGrant(
-                        invite.receiverId, repo.serverUrl, repo.storeName, repo.branchId,
+                        invite.receiverId,
+                        repo.serverUrl,
+                        repo.storeName,
+                        repo.branchId,
                         System.currentTimeMillis() + 10 * 60_000L,
                         storeId = repo.storeId
                     )
                     finalGrantText = ReportProtocol.encodeRemoteGrant(grant)
                     pendingInvite = null
-                    notice = t("تم ربط الهاتف بالخادم والتحقق من الصلاحيات ✓", "Phone linked to server and permissions saved ✓")
+                    selectedReceiverId = invite.receiverId
+                    linkProgress = if (verified)
+                        t("5/5 اكتمل الربط والتحقق ✓", "5/5 Link and verification complete ✓")
+                    else
+                        t("5/5 تم الحفظ المحلي ✓ — ستتم مزامنة الخادم عند عودة الإنترنت", "5/5 Saved locally ✓ — server sync will complete when internet returns")
+                    notice = t(
+                        "تم حفظ الهاتف. امسح QR الربط النهائي من هاتف الاستلام.",
+                        "Phone saved. Scan the final link QR on the receiver phone."
+                    )
                 } else {
-                    showError(t("حُفظ محليًا وتعذرت مزامنة الخادم", "Saved locally; server sync failed"),
-                        networkMessage(permissions.exceptionOrNull() ?: register.exceptionOrNull()))
+                    linkProgress = t(
+                        "توقف الربط بأمان — يمكنك الضغط على «حفظ وربط الهاتف» لإعادة المحاولة من نفس QR.",
+                        "Link stopped safely — press Save and link phone to retry using the same QR."
+                    )
+                    showError(
+                        t("تعذر إكمال الربط", "Could not complete link"),
+                        networkMessage(finalError)
+                    )
                 }
                 render()
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun postLinkProgress(generation: Long, value: String) {
+        runOnUiThread {
+            if (generation != requestGeneration || !alive()) return@runOnUiThread
+            linkProgress = value
+            render()
+        }
     }
 
     private fun savePermissions(phone: AuthorizedReportReceiver, reports: Boolean, messages: Boolean, manage: Boolean) {
@@ -582,36 +660,78 @@ class StoreReceiverPermissionsActivity : Activity() {
 
     private fun removePhone(phone: AuthorizedReportReceiver) {
         if (remoteInFlight) return
-        if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) {
-            repo.removeReportReceiver(phone.receiverId)
-            notice = t("تم حذف الهاتف محليًا.", "Phone removed locally.")
-            render()
-            return
-        }
-
         remoteInFlight = true
         val generation = ++requestGeneration
         render()
+
         Thread {
-            val result = CentralServerClient.setReceiverActive(
-                repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
-                phone.receiverId, false
-            )
+            val remoteResult = if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                CentralServerClient.deleteReceiverBinding(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), phone.receiverId
+                )
+            } else {
+                Result.failure(IllegalStateException("SERVER_OFFLINE"))
+            }
+
             runOnUiThread {
                 if (generation != requestGeneration) return@runOnUiThread
                 remoteInFlight = false
                 if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    repo.removeReportReceiver(phone.receiverId)
-                    meta.edit()
-                        .remove(metaKey(phone.receiverId, META_SERVER_SYNC))
-                        .remove(metaKey(phone.receiverId, META_PERMISSION_UPDATE))
-                        .apply()
-                    notice = t("تم حذف الهاتف وسحب صلاحياته ✓", "Phone removed and permissions revoked ✓")
+
+                // Local deletion is immediate and authoritative for this Store UI.
+                repo.removeReportReceiver(phone.receiverId)
+                meta.edit()
+                    .remove(metaKey(phone.receiverId, META_SERVER_SYNC))
+                    .remove(metaKey(phone.receiverId, META_PERMISSION_UPDATE))
+                    .apply()
+                selectedReceiverId = ""
+                if (remoteResult.isSuccess) {
+                    removePendingDelete(phone.receiverId)
+                    notice = t(
+                        "تم حذف الهاتف وفك ارتباطه بالكامل من هذا المحل ✓",
+                        "Phone fully removed and unlinked from this store ✓"
+                    )
                 } else {
-                    showError(t("تعذر فك الارتباط", "Unable to unlink"), networkMessage(result.exceptionOrNull()))
+                    addPendingDelete(phone.receiverId)
+                    notice = t(
+                        "تم حذف الهاتف من هذا الجهاز ✓ وسيكتمل سحب الربط من الخادم تلقائيًا عند عودة الإنترنت.",
+                        "Phone removed from this device ✓. Server unlink will finish automatically when internet returns."
+                    )
                 }
                 render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun pendingDeletes(): Set<String> =
+        meta.getStringSet(META_PENDING_DELETES, emptySet()).orEmpty().filter { it.isNotBlank() }.toSet()
+
+    private fun addPendingDelete(receiverId: String) {
+        meta.edit().putStringSet(META_PENDING_DELETES, pendingDeletes() + receiverId).apply()
+    }
+
+    private fun removePendingDelete(receiverId: String) {
+        meta.edit().putStringSet(META_PENDING_DELETES, pendingDeletes() - receiverId).apply()
+    }
+
+    private fun flushPendingReceiverDeletes() {
+        val ids = pendingDeletes()
+        if (ids.isEmpty() || remoteInFlight || !repo.isCentralActivationActive() || repo.serverUrl.isBlank()) return
+        remoteInFlight = true
+        val generation = ++requestGeneration
+        Thread {
+            val completed = mutableSetOf<String>()
+            ids.forEach { id ->
+                val result = CentralServerClient.deleteReceiverBinding(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), id
+                )
+                if (result.isSuccess) completed += id
+            }
+            runOnUiThread {
+                if (generation != requestGeneration) return@runOnUiThread
+                completed.forEach(::removePendingDelete)
+                remoteInFlight = false
+                if (alive()) render()
             }
         }.apply { isDaemon = true }.start()
     }
@@ -676,5 +796,6 @@ class StoreReceiverPermissionsActivity : Activity() {
         private const val KEY_RECEIVER_ID = "receiver_center_selected"
         private const val META_SERVER_SYNC = "server_sync"
         private const val META_PERMISSION_UPDATE = "permission_update"
+        private const val META_PENDING_DELETES = "pending_receiver_deletes_v139"
     }
 }
