@@ -3,6 +3,9 @@ package com.attendpro.store
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.os.Bundle
 import android.os.Build
 import android.view.Gravity
@@ -56,6 +59,27 @@ class ReportReceiverActivity : Activity() {
     private var lanStatus = ""
     private var bleStatus = ""
     private var bluetoothPermissionAsked = false
+    private var dataEventsRegistered = false
+    private val dataEventsReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (!alive() || intent?.action != ReceiverReportService.ACTION_DATA_CHANGED) return
+            val storeId = intent.getStringExtra(ReceiverReportService.EXTRA_STORE_ID).orEmpty()
+            val activeId = receiver.activeBinding()?.storeId.orEmpty()
+            if (storeId.isNotBlank() && activeId.isNotBlank() && storeId != activeId) return
+            when (intent.getStringExtra(ReceiverReportService.EXTRA_KIND).orEmpty()) {
+                ReceiverReportService.KIND_REPORTS -> {
+                    if (section == Section.REPORTS && selectedReportIndex == null) render()
+                }
+                ReceiverReportService.KIND_MESSAGES,
+                ReceiverReportService.KIND_OUTBOX -> {
+                    if (section == Section.MESSAGES) render()
+                }
+                ReceiverReportService.KIND_BINDINGS -> {
+                    refreshStoreBindings(silent = true, refreshCurrentSection = true)
+                }
+            }
+        }
+    }
     private var lanReportServer: ReceiverReportLanServer? = null
     private var bleReportServer: ReceiverReportBleServer? = null
 
@@ -63,7 +87,6 @@ class ReportReceiverActivity : Activity() {
     @Volatile private var capabilitiesInFlight = false
     @Volatile private var reportsInFlight = false
     @Volatile private var messagesInFlight = false
-    @Volatile private var messageSendInFlight = false
 
     @Volatile private var storesGeneration = 0L
     @Volatile private var capabilitiesGeneration = 0L
@@ -103,10 +126,33 @@ class ReportReceiverActivity : Activity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (!dataEventsRegistered) {
+            val filter = IntentFilter(ReceiverReportService.ACTION_DATA_CHANGED)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(dataEventsReceiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(dataEventsReceiver, filter)
+            }
+            dataEventsRegistered = true
+        }
+    }
+
+    override fun onStop() {
+        if (dataEventsRegistered) {
+            runCatching { unregisterReceiver(dataEventsReceiver) }
+            dataEventsRegistered = false
+        }
+        super.onStop()
+    }
+
     override fun onResume() {
         super.onResume()
         if (::receiver.isInitialized) {
             startLocalReportChannels()
+            ReceiverReportService.requestImmediateSync(this)
             if (receiver.storeBindings().isNotEmpty()) {
                 refreshStoreBindings(silent = true, refreshCurrentSection = true)
             }
@@ -505,9 +551,9 @@ class ReportReceiverActivity : Activity() {
             val field = UiKit.field(this, p, t("اكتب الرسالة إلى ${target.employeeName}", "Write a message to ${target.employeeName}"))
             card.addView(field)
             card.addView(UiKit.button(this, p,
-                if (messageSendInFlight) t("جاري الإرسال…", "Sending…") else t("إرسال الرسالة", "Send message")
+                t("إرسال الآن", "Send now")
             ).apply {
-                isEnabled = !messageSendInFlight
+                isEnabled = true
                 setOnClickListener {
                     val body = field.text.toString().trim()
                     if (body.isBlank()) {
@@ -755,30 +801,24 @@ class ReportReceiverActivity : Activity() {
 
     private fun sendMessage(employeeId: String, body: String) {
         val binding = receiver.activeBinding() ?: return
-        if (messageSendInFlight || !receiver.canMessageEmployees || binding.storeId.isBlank()) return
-        messageSendInFlight = true
-        val generation = actionGeneration
-        val storeId = binding.storeId
-        if (alive()) render()
-        Thread {
-            val result = CentralServerClient.receiverSendEmployeeMessage(
-                binding.serverUrl, receiver.receiverId, receiver.secret,
-                employeeId, t("رسالة من الإدارة", "Management message"), body, "NORMAL", false,
-                storeId = storeId
-            )
-            runOnUiThread {
-                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
-                messageSendInFlight = false
-                if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    markActiveServerContact(storeId)
-                    notice = t("تم إرسال الرسالة لهذا المحل ✓", "Message sent for this store ✓")
-                } else {
-                    showError(t("تعذر إرسال الرسالة", "Message failed"), networkMessage(result.exceptionOrNull()))
-                }
-                render()
-            }
-        }.apply { isDaemon = true }.start()
+        if (!receiver.canMessageEmployees || binding.storeId.isBlank()) return
+        val queued = receiver.queueOutgoingMessage(
+            binding.storeId,
+            employeeId,
+            t("رسالة من هاتف الاستلام", "Receiver phone message"),
+            body,
+            "NORMAL"
+        )
+        if (queued == null) {
+            showError(t("تعذر تجهيز الرسالة", "Message could not be queued"), t("تحقق من الموظف ونص الرسالة.", "Check the employee and message text."))
+            return
+        }
+        notice = t(
+            "تم حفظ الرسالة للإرسال فورًا ✓ يمكنك متابعة استخدام الشاشة دون انتظار.",
+            "Message queued for immediate delivery ✓. You can keep using the screen without waiting."
+        )
+        ReceiverReportService.requestImmediateSync(this)
+        render()
     }
 
 
@@ -855,7 +895,6 @@ class ReportReceiverActivity : Activity() {
         capabilitiesInFlight = false
         reportsInFlight = false
         messagesInFlight = false
-        messageSendInFlight = false
     }
 
     private fun mark(v: Boolean) = if (v) "✓" else "— ${t("غير مسموح", "Not allowed")}"
