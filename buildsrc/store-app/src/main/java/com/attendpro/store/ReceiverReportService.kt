@@ -190,7 +190,7 @@ class ReceiverReportService : Service() {
 
                 val hasBindings = receiver.storeBindings().any { it.active }
                 val pairing = nearbyPairingActive(this)
-                val pendingOutbox = receiver.outgoingMessages().any { it.state != "SENT" && it.state != "CANCELLED" }
+                val pendingOutbox = receiver.outgoingMessages().any { it.state == "PENDING" || it.state == "RETRY" }
                 if (!hasBindings && !pairing && !pendingOutbox) {
                     stopSelf()
                     return
