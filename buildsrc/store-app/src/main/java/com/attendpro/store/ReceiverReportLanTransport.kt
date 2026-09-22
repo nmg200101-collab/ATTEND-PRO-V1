@@ -22,10 +22,18 @@ data class ReceiverReportDeliveryResult(
     val detail: String
 )
 
+data class ReceiverReportDeliveryResultWithPayload(
+    val success: Boolean,
+    val transport: String,
+    val detail: String,
+    val payload: String
+)
+
 class ReceiverReportLanServer(
     private val receiverId: String,
     private val secret: String,
     private val onEnvelope: (ReceiverOfflineReportProtocol.Envelope) -> Boolean,
+    private val nearbyInviteProvider: () -> String? = { null },
     private val onStatus: (String) -> Unit
 ) {
     companion object {
@@ -77,6 +85,16 @@ class ReceiverReportLanServer(
                         val packet = DatagramPacket(buffer, buffer.size)
                         socket.receive(packet)
                         val text = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
+                        val nearNonce = ReceiverOfflineReportProtocol.parseNearbyProbe(text)
+                        if (nearNonce != null) {
+                            val invite = nearbyInviteProvider()
+                            if (!invite.isNullOrBlank()) {
+                                val reply = ReceiverOfflineReportProtocol.nearbyReply(nearNonce, invite)
+                                    .toByteArray(Charsets.UTF_8)
+                                socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
+                            }
+                            continue
+                        }
                         val probe = ReceiverOfflineReportProtocol.parseDiscoveryProbe(text) ?: continue
                         if (!probe.receiverId.equals(receiverId, true)) continue
                         val reply = ReceiverOfflineReportProtocol.discoveryReply(
@@ -148,6 +166,39 @@ class ReceiverReportLanServer(
 }
 
 object ReceiverReportLanClient {
+    fun discoverNearbyInvite(timeoutMs: Long = 1_800L): ReceiverReportDeliveryResultWithPayload {
+        return runCatching {
+            val nonce = ReceiverOfflineReportProtocol.newNonce()
+            val probe = ReceiverOfflineReportProtocol.nearbyProbe(nonce).toByteArray(Charsets.UTF_8)
+            DatagramSocket().use { socket ->
+                socket.broadcast = true
+                socket.soTimeout = 220
+                probeTargets().forEach { address ->
+                    runCatching {
+                        socket.send(DatagramPacket(probe, probe.size, address, ReceiverReportLanServer.DISCOVERY_PORT))
+                    }
+                }
+                val until = System.currentTimeMillis() + timeoutMs.coerceIn(500L, 5_000L)
+                val buffer = ByteArray(4096)
+                while (System.currentTimeMillis() < until) {
+                    try {
+                        val packet = DatagramPacket(buffer, buffer.size)
+                        socket.receive(packet)
+                        val raw = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
+                        val invite = ReceiverOfflineReportProtocol.parseNearbyReply(raw, nonce)
+                        if (!invite.isNullOrBlank()) {
+                            return ReceiverReportDeliveryResultWithPayload(true, "LAN", "تم اكتشاف هاتف قريب", invite)
+                        }
+                    } catch (_: SocketTimeoutException) {
+                    }
+                }
+            }
+            ReceiverReportDeliveryResultWithPayload(false, "LAN", "لم يظهر هاتف استلام قريب على Wi‑Fi/Hotspot", "")
+        }.getOrElse {
+            ReceiverReportDeliveryResultWithPayload(false, "LAN", it.message ?: "تعذر اكتشاف القرب", "")
+        }
+    }
+
     fun send(
         receiverId: String,
         secret: String,
@@ -217,7 +268,7 @@ object ReceiverReportLanClient {
         }
     }
 
-    private fun probeTargets(): Set<InetAddress> {
+    internal fun probeTargets(): Set<InetAddress> {
         val result = linkedSetOf<InetAddress>()
         fun add(value: String) { runCatching { result.add(InetAddress.getByName(value)) } }
         add("255.255.255.255")
