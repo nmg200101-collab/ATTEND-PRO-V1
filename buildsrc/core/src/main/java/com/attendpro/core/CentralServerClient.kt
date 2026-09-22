@@ -767,7 +767,7 @@ object CentralServerClient {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/monitor/employees", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
-        })
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
         val a = o.optJSONArray("employees") ?: JSONArray()
         (0 until a.length()).map { i ->
             val x = a.getJSONObject(i)
@@ -778,20 +778,21 @@ object CentralServerClient {
     fun receiverSendEmployeeMessage(
         serverUrl: String, receiverId: String, secret: String, employeeId: String,
         title: String, message: String, priority: String = "NORMAL", voiceEnabled: Boolean = false,
-        storeId: String = ""
+        storeId: String = "", clientMessageId: String = ""
     ): Result<String> = runCatching {
         requireHttps(serverUrl)
         request(serverUrl, "/api/v1/monitor/messages/send", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
             put("employeeId", employeeId); put("title", title); put("message", message); put("priority", priority); put("voiceEnabled", voiceEnabled)
-        }).optString("messageId")
+            if (clientMessageId.isNotBlank()) put("clientMessageId", clientMessageId)
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500).optString("messageId")
     }
 
     fun receiverMessagesInbox(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<List<Message1975>> = runCatching {
         requireHttps(serverUrl)
         parseMessages1975(request(serverUrl, "/api/v1/monitor/messages/inbox", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
-        }))
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500))
     }
 
     fun receiverStoreSettings(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<RemoteStoreSettingsEnvelope> = runCatching {
@@ -940,7 +941,7 @@ object CentralServerClient {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/reports/inbox", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
-        })
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
         val a = o.optJSONArray("reports") ?: JSONArray()
         (0 until a.length()).map { i -> val x = a.getJSONObject(i); RemoteInboxItem(x.getString("transferId"), x.getString("packageText")) }
     }
@@ -1059,7 +1060,17 @@ object CentralServerClient {
         }).optString("messageId")
     }
 
-    private fun request(serverUrl: String, path: String, method: String, body: JSONObject?, bearer: String = "", deviceIdentity: DeviceIdentity? = null, storeId: String = ""): JSONObject {
+    private fun request(
+        serverUrl: String,
+        path: String,
+        method: String,
+        body: JSONObject?,
+        bearer: String = "",
+        deviceIdentity: DeviceIdentity? = null,
+        storeId: String = "",
+        connectTimeoutMs: Int = 10_000,
+        readTimeoutMs: Int = 10_000
+    ): JSONObject {
         val bodyText = body?.toString().orEmpty()
         var httpFailureRecorded = false
         try {
@@ -1084,8 +1095,8 @@ object CentralServerClient {
                 method,
                 headers,
                 if (body != null) bodyText else null,
-                connectTimeoutMs = 10_000,
-                readTimeoutMs = 10_000
+                connectTimeoutMs = connectTimeoutMs,
+                readTimeoutMs = readTimeoutMs
             )
             val code = response.code
             val parsed = runCatching { JSONObject(response.body.ifBlank { "{}" }) }.getOrElse { JSONObject() }
