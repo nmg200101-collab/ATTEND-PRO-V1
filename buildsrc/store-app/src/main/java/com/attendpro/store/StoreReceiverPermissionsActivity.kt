@@ -46,6 +46,8 @@ class StoreReceiverPermissionsActivity : Activity() {
     private var selectedReceiverId = ""
     private var pendingInvite: ReportProtocol.ReceiverInvite? = null
     private var finalGrantText = ""
+    private var pendingNearTransport = ""
+    private var pendingNearEndpoint = ""
     private var notice = ""
     private var linkProgress = ""
 
@@ -387,6 +389,8 @@ class StoreReceiverPermissionsActivity : Activity() {
         }
         pendingInvite = invite
         finalGrantText = ""
+        pendingNearTransport = ""
+        pendingNearEndpoint = ""
         linkProgress = t("1/5 تم التعرف على QR الهاتف ✓", "1/5 Receiver QR recognized ✓")
         notice = t("تمت قراءة هاتف الاستلام. حدد الصلاحيات ثم احفظ الربط.", "Receiver phone read. Choose permissions, then save the link.")
         render()
@@ -426,6 +430,7 @@ class StoreReceiverPermissionsActivity : Activity() {
             "You can scan the final link QR on the receiver phone now without waiting for the server."
         )
         render()
+        deliverNearbyGrantAsync(invite, finalGrantText)
         syncReceiverBindingAsync(invite.receiverId)
     }
 
@@ -457,6 +462,8 @@ class StoreReceiverPermissionsActivity : Activity() {
                 if (invite != null) {
                     pendingInvite = invite
                     finalGrantText = ""
+                    pendingNearTransport = result.transport
+                    pendingNearEndpoint = result.endpoint
                     linkProgress = t(
                         "تم اكتشاف هاتف الاستلام عبر ${result.transport} ✓",
                         "Receiver phone discovered over ${result.transport} ✓"
@@ -469,6 +476,45 @@ class StoreReceiverPermissionsActivity : Activity() {
                             "فعّل «الارتباط القريب لمدة دقيقتين» في هاتف الاستلام، ثم أعد المحاولة.\n${result.detail}",
                             "Enable “Nearby linking for 2 minutes” on the receiver phone, then try again.\n${result.detail}"
                         )
+                    )
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun deliverNearbyGrantAsync(invite: ReportProtocol.ReceiverInvite, grantText: String) {
+        val preferred = pendingNearTransport
+        if (preferred.isBlank()) return
+        val endpoint = pendingNearEndpoint
+        Thread {
+            var result = if (preferred == "LAN") {
+                ReceiverReportLanClient.sendNearbyGrant(endpoint, invite.receiverId, invite.secret, grantText)
+            } else {
+                ReceiverReportBleClient.sendNearbyGrant(this, invite.receiverId, invite.secret, grantText)
+            }
+
+            if (!result.success && preferred == "LAN" &&
+                ReceiverReportBluetoothSupport.missingPermissions(this).isEmpty()
+            ) {
+                result = ReceiverReportBleClient.sendNearbyGrant(this, invite.receiverId, invite.secret, grantText)
+            }
+
+            runOnUiThread {
+                if (!alive()) return@runOnUiThread
+                if (result.success) {
+                    finalGrantText = ""
+                    pendingNearTransport = ""
+                    pendingNearEndpoint = ""
+                    linkProgress = t(
+                        "اكتمل الربط القريب عبر ${result.transport} ✓ ولا تحتاج لمسح QR النهائي.",
+                        "Nearby link completed over ${result.transport} ✓. Final QR scan is not required."
+                    )
+                    notice = t("الهاتف مرتبط الآن بالمحل مباشرة.", "The phone is now linked directly to the store.")
+                } else {
+                    linkProgress = t(
+                        "تم حفظ الهاتف، لكن تعذر إرسال الربط النهائي عبر القرب. استخدم QR النهائي كاحتياط.",
+                        "Phone saved, but nearby final delivery failed. Use the final QR as fallback."
                     )
                 }
                 render()
