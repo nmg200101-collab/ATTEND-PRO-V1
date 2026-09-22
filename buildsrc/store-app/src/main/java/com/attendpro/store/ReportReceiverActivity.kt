@@ -17,21 +17,25 @@ import com.attendpro.core.QrScannerActivity
 import com.attendpro.core.ReceiverEmployeeAdminClient
 import com.attendpro.core.ReportProtocol
 import com.attendpro.core.ReportReceiverStore
+import com.attendpro.core.ReceiverStoreBinding
 import com.attendpro.core.UiKit
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 /**
- * V137 receiver UI.
+ * V138 multi-store receiver UI.
  *
+ * One receiver identity can be linked to multiple stores. Each store has independent
+ * permissions, reports, messages and employee administration state.
  * The Activity view hierarchy is installed exactly once. Network callbacks update state
  * and render the active section only; they never call setContentView or reopen a modal.
  * Each remote domain has its own in-flight guard and generation token so stale callbacks
  * cannot replace newer state.
  */
 class ReportReceiverActivity : Activity() {
-    private enum class Section { STATUS, REPORTS, MESSAGES, EMPLOYEES }
+    private enum class Section { STORES, STATUS, REPORTS, MESSAGES, EMPLOYEES }
+    private enum class EmployeeFilter { ALL, ACTIVE, DISABLED, PENDING, FAILED }
 
     private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
 
@@ -41,7 +45,7 @@ class ReportReceiverActivity : Activity() {
     private lateinit var tabs: LinearLayout
     private lateinit var content: LinearLayout
 
-    private var section = Section.STATUS
+    private var section = Section.STORES
     private var showIdentityQr = false
     private var selectedReportIndex: Int? = null
     private var messageEmployees: List<CentralServerClient.ReceiverEmployee> = emptyList()
@@ -50,9 +54,13 @@ class ReportReceiverActivity : Activity() {
     private var managedEmployees: List<ReceiverEmployeeAdminClient.Employee> = emptyList()
     private var employeeEditorOpen = false
     private var editingEmployeeId: String? = null
+    private var selectedEmployeeId: String? = null
+    private var employeeSearchQuery = ""
+    private var employeeFilter = EmployeeFilter.ALL
     private var notice = ""
     private var lastServerRefreshAt = 0L
 
+    @Volatile private var storesInFlight = false
     @Volatile private var capabilitiesInFlight = false
     @Volatile private var reportsInFlight = false
     @Volatile private var messagesInFlight = false
@@ -60,6 +68,7 @@ class ReportReceiverActivity : Activity() {
     @Volatile private var employeeCommandInFlight = false
     @Volatile private var messageSendInFlight = false
 
+    @Volatile private var storesGeneration = 0L
     @Volatile private var capabilitiesGeneration = 0L
     @Volatile private var reportsGeneration = 0L
     @Volatile private var messagesGeneration = 0L
@@ -72,7 +81,8 @@ class ReportReceiverActivity : Activity() {
         super.onCreate(savedInstanceState)
         receiver = ReportReceiverStore(this)
         section = savedInstanceState?.getString(KEY_SECTION)
-            ?.let { runCatching { Section.valueOf(it) }.getOrNull() } ?: Section.STATUS
+            ?.let { runCatching { Section.valueOf(it) }.getOrNull() }
+            ?: if (receiver.storeBindings().size > 1) Section.STORES else Section.STATUS
         selectedReportIndex = savedInstanceState?.takeIf { it.containsKey(KEY_REPORT_INDEX) }
             ?.getInt(KEY_REPORT_INDEX)
         handleIncoming(intent)
@@ -103,6 +113,7 @@ class ReportReceiverActivity : Activity() {
     }
 
     override fun onDestroy() {
+        storesGeneration++
         capabilitiesGeneration++
         reportsGeneration++
         messagesGeneration++
