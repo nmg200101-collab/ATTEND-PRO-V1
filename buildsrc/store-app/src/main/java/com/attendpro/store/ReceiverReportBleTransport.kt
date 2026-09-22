@@ -64,12 +64,14 @@ class ReceiverReportBleServer(
     private val receiverId: String,
     private val secret: String,
     private val onEnvelope: (ReceiverOfflineReportProtocol.Envelope) -> Boolean,
+    private val nearbyInviteProvider: () -> String? = { null },
     private val onStatus: (String) -> Unit
 ) {
     companion object {
         val SERVICE_UUID: UUID = UUID.fromString("0000f139-0000-1000-8000-00805f9b34fb")
         val WRITE_UUID: UUID = UUID.fromString("0000f13a-0000-1000-8000-00805f9b34fb")
         val ACK_UUID: UUID = UUID.fromString("0000f13b-0000-1000-8000-00805f9b34fb")
+        val INVITE_UUID: UUID = UUID.fromString("0000f13c-0000-1000-8000-00805f9b34fb")
         private const val MAX_PARTS = 12000
     }
 
@@ -118,6 +120,13 @@ class ReceiverReportBleServer(
         service.addCharacteristic(
             BluetoothGattCharacteristic(
                 ACK_UUID,
+                BluetoothGattCharacteristic.PROPERTY_READ,
+                BluetoothGattCharacteristic.PERMISSION_READ
+            )
+        )
+        service.addCharacteristic(
+            BluetoothGattCharacteristic(
+                INVITE_UUID,
                 BluetoothGattCharacteristic.PROPERTY_READ,
                 BluetoothGattCharacteristic.PERMISSION_READ
             )
@@ -215,11 +224,18 @@ class ReceiverReportBleServer(
             offset: Int,
             characteristic: BluetoothGattCharacteristic
         ) {
-            if (characteristic.uuid != ACK_UUID || offset != 0) {
+            if (offset != 0) {
                 runCatching { gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null) }
                 return
             }
-            val value = synchronized(assemblies) { ackByDevice[device.address] } ?: ByteArray(0)
+            val value = when (characteristic.uuid) {
+                ACK_UUID -> synchronized(assemblies) { ackByDevice[device.address] } ?: ByteArray(0)
+                INVITE_UUID -> nearbyInviteProvider()?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
+                else -> {
+                    runCatching { gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_FAILURE, 0, null) }
+                    return
+                }
+            }
             runCatching { gattServer?.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0, value) }
         }
     }
@@ -272,6 +288,67 @@ class ReceiverReportBleServer(
 object ReceiverReportBleClient {
     private const val FRAME_HEADER = 11
     private const val DESIRED_MTU = 247
+
+    @SuppressLint("MissingPermission")
+    fun discoverNearbyInvite(context: Context): ReceiverReportDeliveryResultWithPayload {
+        if (!ReceiverReportBluetoothSupport.hasPermissions(context)) {
+            return ReceiverReportDeliveryResultWithPayload(false, "BLE", "صلاحيات Bluetooth غير ممنوحة", "")
+        }
+        val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
+            ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "Bluetooth غير متاح", "")
+        val adapter = manager.adapter
+            ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "Bluetooth غير متاح", "")
+        if (!adapter.isEnabled) return ReceiverReportDeliveryResultWithPayload(false, "BLE", "Bluetooth غير مفعّل", "")
+        val scanner = adapter.bluetoothLeScanner
+            ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "BLE Scanner غير متاح", "")
+        val parcel = ParcelUuid(ReceiverReportBleServer.SERVICE_UUID)
+        val found = arrayOfNulls<BluetoothDevice>(1)
+        val latch = CountDownLatch(1)
+        val callback = object : ScanCallback() {
+            override fun onScanResult(callbackType: Int, result: ScanResult) {
+                if (result.scanRecord?.serviceUuids?.contains(parcel) == true) {
+                    found[0] = result.device
+                    latch.countDown()
+                }
+            }
+        }
+        try {
+            scanner.startScan(
+                listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
+                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
+                callback
+            )
+            latch.await(3_000, TimeUnit.MILLISECONDS)
+        } finally {
+            runCatching { scanner.stopScan(callback) }
+        }
+        val device = found[0] ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "لم يظهر هاتف في وضع الارتباط القريب", "")
+        val sync = SyncGattCallback()
+        val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
+        try {
+            if (!sync.awaitConnected(5_000)) return ReceiverReportDeliveryResultWithPayload(false, "BLE", "تعذر الاتصال بهاتف الاستلام", "")
+            if (!gatt.discoverServices() || !sync.awaitServices(5_000)) {
+                return ReceiverReportDeliveryResultWithPayload(false, "BLE", "تعذر اكتشاف خدمة الربط القريب", "")
+            }
+            val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
+                ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "خدمة الربط القريب غير موجودة", "")
+            val inviteChar = service.getCharacteristic(ReceiverReportBleServer.INVITE_UUID)
+                ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "قناة دعوة الربط غير موجودة", "")
+            val bytes = sync.read(gatt, inviteChar, 4_000)
+                ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "هاتف الاستلام لم يفعّل وضع الربط القريب", "")
+            val invite = String(bytes, Charsets.UTF_8).trim()
+            return if (invite.isBlank()) {
+                ReceiverReportDeliveryResultWithPayload(false, "BLE", "هاتف الاستلام لم يفعّل وضع الربط القريب", "")
+            } else {
+                ReceiverReportDeliveryResultWithPayload(true, "BLE", "تم اكتشاف هاتف الاستلام عبر Bluetooth", invite)
+            }
+        } catch (t: Throwable) {
+            return ReceiverReportDeliveryResultWithPayload(false, "BLE", t.message ?: "تعذر اكتشاف القرب عبر Bluetooth", "")
+        } finally {
+            runCatching { gatt.disconnect() }
+            runCatching { gatt.close() }
+        }
+    }
 
     @SuppressLint("MissingPermission")
     fun send(
