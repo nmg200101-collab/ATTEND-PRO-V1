@@ -22,231 +22,761 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * V137 receiver UI.
+ *
+ * The Activity view hierarchy is installed exactly once. Network callbacks update state
+ * and render the active section only; they never call setContentView or reopen a modal.
+ * Each remote domain has its own in-flight guard and generation token so stale callbacks
+ * cannot replace newer state.
+ */
 class ReportReceiverActivity : Activity() {
+    private enum class Section { STATUS, REPORTS, MESSAGES, EMPLOYEES }
+
+    private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
+
     private lateinit var receiver: ReportReceiverStore
     private val p by lazy { UiKit.palette(this) }
-    private var tab=0
-    private fun t(ar:String,en:String)=AppLanguage.text(this,ar,en)
+    private lateinit var header: LinearLayout
+    private lateinit var tabs: LinearLayout
+    private lateinit var content: LinearLayout
 
-    override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);receiver=ReportReceiverStore(this);handleIncoming(intent);buildUi()}
-    override fun onNewIntent(intent:Intent?){super.onNewIntent(intent);if(intent!=null)handleIncoming(intent);buildUi()}
-    override fun onResume(){super.onResume();if(::receiver.isInitialized&&receiver.serverUrl.isNotBlank())refreshRemote(true)}
-    private fun handleIncoming(i:Intent?){if(i?.action==Intent.ACTION_SEND&&i.type=="text/plain")i.getStringExtra(Intent.EXTRA_TEXT)?.takeIf{it.isNotBlank()}?.let{receiver.receive(it)}}
+    private var section = Section.STATUS
+    private var showIdentityQr = false
+    private var selectedReportIndex: Int? = null
+    private var messageEmployees: List<CentralServerClient.ReceiverEmployee> = emptyList()
+    private var messageReplies: List<ReplyRow> = emptyList()
+    private var selectedMessageEmployeeId: String? = null
+    private var managedEmployees: List<ReceiverEmployeeAdminClient.Employee> = emptyList()
+    private var employeeEditorOpen = false
+    private var editingEmployeeId: String? = null
+    private var notice = ""
+    private var lastServerRefreshAt = 0L
 
-    private fun buildUi(){
-        window.statusBarColor=p.bg
-        val root=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER_HORIZONTAL;layoutDirection=if(AppLanguage.isEnglish(this@ReportReceiverActivity))View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL;setPadding(14,18,14,28);setBackgroundColor(p.bg)}
-        val linked=receiver.serverUrl.isNotBlank()
-        root.addView(UiKit.heroCard(this,p,10).apply{
-            addView(UiKit.title(this@ReportReceiverActivity,p,t("هاتف الاستلام وإدارة الموظفين","Receiver & Employee Management"),24f).apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.WHITE)})
-            addView(UiKit.subtitle(this@ReportReceiverActivity,p,t("${receiver.capabilityStoreName.ifBlank{"غير مرتبط"}} • ${receiver.capabilityBranchId.ifBlank{"—"}}\n${receiver.receiverName} • ${if(linked)"متصل بالخادم" else "غير مرتبط"}","${receiver.capabilityStoreName.ifBlank{"Not linked"}} • ${receiver.capabilityBranchId.ifBlank{"—"}}\n${receiver.receiverName} • ${if(linked)"Server linked" else "Not linked"}")).apply{gravity=Gravity.CENTER;setTextColor(android.graphics.Color.WHITE)})
-        })
-        val tabs=UiKit.card(this,p,7)
-        listOf(t("التفعيل","Activation"),t("التقارير","Reports"),t("الموظفون والرسائل","Employees & messages")).forEachIndexed{i,s->tabs.addView(UiKit.button(this,p,s,tab==i).apply{setOnClickListener{tab=i;buildUi()}})}
+    @Volatile private var capabilitiesInFlight = false
+    @Volatile private var reportsInFlight = false
+    @Volatile private var messagesInFlight = false
+    @Volatile private var employeesInFlight = false
+    @Volatile private var employeeCommandInFlight = false
+    @Volatile private var messageSendInFlight = false
+
+    @Volatile private var capabilitiesGeneration = 0L
+    @Volatile private var reportsGeneration = 0L
+    @Volatile private var messagesGeneration = 0L
+    @Volatile private var employeesGeneration = 0L
+
+    private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
+    private fun alive() = !isFinishing && !isDestroyed
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        receiver = ReportReceiverStore(this)
+        section = savedInstanceState?.getString(KEY_SECTION)
+            ?.let { runCatching { Section.valueOf(it) }.getOrNull() } ?: Section.STATUS
+        selectedReportIndex = savedInstanceState?.takeIf { it.containsKey(KEY_REPORT_INDEX) }
+            ?.getInt(KEY_REPORT_INDEX)
+        handleIncoming(intent)
+        installUiOnce()
+        render()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString(KEY_SECTION, section.name)
+        selectedReportIndex?.let { outState.putInt(KEY_REPORT_INDEX, it) }
+        super.onSaveInstanceState(outState)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent != null) {
+            setIntent(intent)
+            handleIncoming(intent)
+            if (alive()) render()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::receiver.isInitialized && receiver.serverUrl.isNotBlank()) {
+            refreshCapabilities(silent = true, refreshCurrentSection = true)
+        }
+    }
+
+    override fun onDestroy() {
+        capabilitiesGeneration++
+        reportsGeneration++
+        messagesGeneration++
+        employeesGeneration++
+        super.onDestroy()
+    }
+
+    private fun installUiOnce() {
+        window.statusBarColor = p.bg
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutDirection = if (AppLanguage.isEnglish(this@ReportReceiverActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(14, 18, 14, 28)
+            setBackgroundColor(p.bg)
+        }
+        header = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        tabs = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        root.addView(header)
         root.addView(tabs)
-        when(tab){0->activation(root,linked);1->reports(root);else->management(root)}
-        root.addView(UiKit.card(this,p,6).apply{addView(UiKit.button(this@ReportReceiverActivity,p,t("رجوع","Back"),false).apply{setOnClickListener{finish()}})})
-        setContentView(ScrollView(this).apply{isFillViewport=true;setBackgroundColor(p.bg);addView(root)})
-    }
-
-    private fun activation(root:LinearLayout,linked:Boolean){
-        root.addView(UiKit.card(this,p,9).apply{
-            addView(UiKit.sectionLabel(this@ReportReceiverActivity,p,t("تفعيل الهاتف","Phone activation")))
-            addView(UiKit.title(this@ReportReceiverActivity,p,if(linked)t("✓ الهاتف مرتبط","✓ Phone linked") else t("غير مرتبط","Not linked"),20f))
-            addView(UiKit.subtitle(this@ReportReceiverActivity,p,t("اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${receiver.capabilityStoreName.ifBlank{"—"}}\nالفرع: ${receiver.capabilityBranchId.ifBlank{"—"}}\nالخادم: ${if(linked)receiver.serverUrl else "—"}","Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${receiver.capabilityStoreName.ifBlank{"—"}}\nBranch: ${receiver.capabilityBranchId.ifBlank{"—"}}\nServer: ${if(linked)receiver.serverUrl else "—"}")))
-            addView(UiKit.button(this@ReportReceiverActivity,p,t("إظهار QR تعريف هذا الهاتف","Show this phone identity QR")).apply{setOnClickListener{showInviteQr()}})
-            addView(UiKit.button(this@ReportReceiverActivity,p,t("مسح QR الربط النهائي","Scan final link QR"),false).apply{setOnClickListener{scanGrant()}})
-            if(linked)addView(UiKit.button(this@ReportReceiverActivity,p,t("تحديث الصلاحيات والحالة","Refresh permissions and status"),false).apply{setOnClickListener{refreshRemote(false)}})
+        root.addView(content)
+        root.addView(UiKit.card(this, p, 6).apply {
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("رجوع", "Back"), false).apply {
+                setOnClickListener { finish() }
+            })
         })
-        root.addView(UiKit.card(this,p,9).apply{
-            addView(UiKit.sectionLabel(this@ReportReceiverActivity,p,t("الصلاحيات الممنوحة لهذا الهاتف","Permissions granted to this phone")))
-            addView(UiKit.subtitle(this@ReportReceiverActivity,p,"${mark(receiver.canReceiveReports)} ${t("استلام التقارير","Receive reports")}\n${mark(receiver.canMessageEmployees)} ${t("مراسلة الموظفين","Message employees")}\n${mark(receiver.canManageStore)} ${t("إدارة الموظفين","Employee management")}"))
+        setContentView(ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(p.bg)
+            addView(root)
         })
     }
-    private fun mark(v:Boolean)=if(v)"✓" else "— ${t("غير مسموح","Not allowed")}"
 
-    private fun reports(root:LinearLayout){
-        val c=UiKit.card(this,p,9);c.addView(UiKit.sectionLabel(this,p,t("التقارير","Reports")))
-        if(!receiver.canReceiveReports){c.addView(UiKit.subtitle(this,p,t("ليس لديك صلاحية استلام التقارير من هذا المحل.","You do not have permission to receive reports from this Store.")));root.addView(c);return}
-        c.addView(UiKit.button(this,p,t("تحديث التقارير","Refresh reports")).apply{setOnClickListener{refreshRemote(false)}})
-        val items=receiver.receivedReports();c.addView(UiKit.subtitle(this,p,if(items.isEmpty())t("لا توجد تقارير مستلمة بعد.","No reports received yet.") else t("التقارير المستلمة: ${items.size}","Received reports: ${items.size}")))
-        items.take(20).forEach{x->val d=SimpleDateFormat("dd/MM/yyyy HH:mm",Locale.getDefault()).format(Date(x.receivedAt));c.addView(UiKit.button(this,p,"${x.storeName} • ${x.branchId}\n${x.periodLabel} • $d",false).apply{setOnClickListener{AlertDialog.Builder(this@ReportReceiverActivity).setTitle("${x.storeName} — ${x.periodLabel}").setMessage(x.reportText).setPositiveButton(t("إغلاق","Close"),null).show()}})}
-        root.addView(c)
-    }
-
-    private fun management(root:LinearLayout){
-        if(receiver.canMessageEmployees)root.addView(UiKit.card(this,p,9).apply{addView(UiKit.sectionLabel(this@ReportReceiverActivity,p,t("مراسلة الموظفين","Employee messaging")));addView(UiKit.button(this@ReportReceiverActivity,p,t("اختيار موظف وإرسال رسالة","Choose employee and send message")).apply{setOnClickListener{chooseEmployeeForMessage()}});addView(UiKit.button(this@ReportReceiverActivity,p,t("الردود المستلمة","Received replies"),false).apply{setOnClickListener{showReplies()}})})
-        if(receiver.canManageStore)root.addView(UiKit.card(this,p,9).apply{addView(UiKit.sectionLabel(this@ReportReceiverActivity,p,t("إدارة الموظفين","Employee management")));addView(UiKit.subtitle(this@ReportReceiverActivity,p,t("إضافة وتعديل وتفعيل الموظفين فقط. لا تمنح هذه الصلاحية إعدادات النظام أو المالك أو الاتصال.","Add, edit and enable employees only. This permission does not grant system, owner or connection settings.")));addView(UiKit.button(this@ReportReceiverActivity,p,t("فتح إدارة الموظفين","Open employee management")).apply{setOnClickListener{openEmployees()}})})
-        if(!receiver.canMessageEmployees&&!receiver.canManageStore)root.addView(UiKit.card(this,p,9).apply{addView(UiKit.sectionLabel(this@ReportReceiverActivity,p,t("الموظفون والرسائل","Employees & messages")));addView(UiKit.subtitle(this@ReportReceiverActivity,p,t("لا توجد صلاحيات إدارة ممنوحة لهذا الهاتف.","No management permissions are granted to this phone.")))})
-    }
-
-    private fun showInviteQr(){val raw=ReportProtocol.encodeInvite(receiver.newInvite());val qr=runCatching{QrCodeTools.bitmap(raw,700)}.getOrElse{info("QR",it.message?:"Error");return};val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;addView(UiKit.subtitle(this@ReportReceiverActivity,p,t("امسح هذا الرمز من تبويب إضافة هاتف في جهاز المحل.","Scan this code from Add phone on the Store device.")));addView(ImageView(this@ReportReceiverActivity).apply{setImageBitmap(qr);adjustViewBounds=true;layoutParams=LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,700)})};AlertDialog.Builder(this).setTitle(t("QR تعريف الهاتف","Phone identity QR")).setView(box).setPositiveButton(t("إغلاق","Close"),null).show()}
-    private fun scanGrant(){startActivityForResult(Intent(this,QrScannerActivity::class.java).putExtra(QrScannerActivity.EXTRA_PROMPT,t("امسح QR الربط النهائي","Scan final link QR")),REQ_GRANT)}
-    @Deprecated("Deprecated in Java") override fun onActivityResult(r:Int,c:Int,d:Intent?){super.onActivityResult(r,c,d);if(r!=REQ_GRANT||c!=RESULT_OK)return;val raw=d?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty();val g=ReportProtocol.decodeRemoteGrant(raw,receiver.receiverId)?:run{info(t("QR غير صالح","Invalid QR"),t("الرمز غير صالح أو منتهي.","The code is invalid or expired."));return};receiver.serverUrl=g.serverUrl;refreshRemote(false)}
-
-    private fun refreshRemote(silent:Boolean){
-        if(receiver.serverUrl.isBlank()){
-            if(!silent)info(t("غير مرتبط","Not linked"),t("اربط الهاتف أولًا من تبويب التفعيل.","Link the phone first from Activation."))
-            return
+    private fun handleIncoming(i: Intent?) {
+        if (i?.action == Intent.ACTION_SEND && i.type == "text/plain") {
+            i.getStringExtra(Intent.EXTRA_TEXT)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { receiver.receive(it) }
         }
-        Thread{
-            val r=CentralServerClient.receiverCapabilities(receiver.serverUrl,receiver.receiverId,receiver.secret)
-            if(r.isSuccess){
-                val x=r.getOrThrow()
-                receiver.canReceiveReports=x.canReceiveReports
-                receiver.canMessageEmployees=x.canMessageEmployees
-                receiver.canManageStore=x.canManageStore
-                receiver.capabilityStoreName=x.storeName
-                receiver.capabilityBranchId=x.branchId
-                if(receiver.canReceiveReports){
-                    CentralServerClient.receiverInbox(receiver.serverUrl,receiver.receiverId,receiver.secret)
-                        .getOrNull()?.forEach{receiver.receive(it.packageText)}
-                }
-            }
-            runOnUiThread{
-                if(!silent){
-                    info(
-                        if(r.isSuccess)t("تم التحديث ✓","Updated ✓") else t("تعذر التحديث","Refresh failed"),
-                        if(r.isSuccess)t("تم تحديث الصلاحيات والحالة من الخادم.","Permissions and status were refreshed from the server.")
-                        else networkMessage(r.exceptionOrNull())
-                    )
-                }
-                buildUi()
-            }
-        }.start()
     }
 
-    private fun openEmployees(){
-        if(receiver.serverUrl.isBlank()){
-            info(t("إدارة الموظفين","Employee management"),t("اربط هاتف الاستلام بالخادم أولًا.","Link the receiver phone to the server first."))
-            return
+    private fun render() {
+        if (!alive() || !::content.isInitialized) return
+        coerceSectionToPermissions()
+        renderHeader()
+        renderTabs()
+        content.removeAllViews()
+        if (notice.isNotBlank()) {
+            content.addView(UiKit.card(this, p, 7).apply {
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, notice).apply { gravity = Gravity.CENTER })
+            })
         }
-        Thread{
-            val r=ReceiverEmployeeAdminClient.list(receiver.serverUrl,receiver.receiverId,receiver.secret)
-            runOnUiThread{
-                if(r.isFailure){
-                    info(t("إدارة الموظفين","Employee management"),networkMessage(r.exceptionOrNull()))
-                    return@runOnUiThread
-                }
-                val es=r.getOrThrow()
-                val labels=mutableListOf(t("＋ إضافة موظف","＋ Add employee"))
-                labels.addAll(es.map{
-                    val state=if(it.pendingCommand){
-                        t("قيد التنفيذ","Pending") + (if(it.pendingAction.isNotBlank()) " • ${pendingActionLabel(it.pendingAction)}" else "")
-                    } else if(it.enabled) t("نشط","Active") else t("موقوف","Disabled")
-                    "${it.employeeName} • ${it.employeeId} • $state"
+        when (section) {
+            Section.STATUS -> renderStatus()
+            Section.REPORTS -> renderReports()
+            Section.MESSAGES -> renderMessages()
+            Section.EMPLOYEES -> renderEmployees()
+        }
+    }
+
+    private fun renderHeader() {
+        header.removeAllViews()
+        val linked = receiver.serverUrl.isNotBlank()
+        header.addView(UiKit.heroCard(this, p, 10).apply {
+            addView(UiKit.title(this@ReportReceiverActivity, p, t("هاتف الاستلام", "Receiver Phone"), 24f).apply {
+                gravity = Gravity.CENTER
+                setTextColor(android.graphics.Color.WHITE)
+            })
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "${receiver.capabilityStoreName.ifBlank { "غير مرتبط" }} • ${receiver.capabilityBranchId.ifBlank { "—" }}\n${receiver.receiverName} • ${if (linked) "متصل بالخادم" else "غير مرتبط"}",
+                "${receiver.capabilityStoreName.ifBlank { "Not linked" }} • ${receiver.capabilityBranchId.ifBlank { "—" }}\n${receiver.receiverName} • ${if (linked) "Server linked" else "Not linked"}"
+            )).apply {
+                gravity = Gravity.CENTER
+                setTextColor(android.graphics.Color.WHITE)
+            })
+        })
+    }
+
+    private fun renderTabs() {
+        tabs.removeAllViews()
+        val card = UiKit.card(this, p, 7)
+        addTab(card, Section.STATUS, t("الحالة", "Status"))
+        if (receiver.canReceiveReports) addTab(card, Section.REPORTS, t("التقارير", "Reports"))
+        if (receiver.canMessageEmployees) addTab(card, Section.MESSAGES, t("الرسائل", "Messages"))
+        if (receiver.canManageStore) addTab(card, Section.EMPLOYEES, t("الموظفون", "Employees"))
+        tabs.addView(card)
+    }
+
+    private fun addTab(card: LinearLayout, target: Section, label: String) {
+        card.addView(UiKit.button(this, p, label, section == target).apply {
+            setOnClickListener {
+                section = target
+                notice = ""
+                selectedReportIndex = null
+                employeeEditorOpen = false
+                render()
+                refreshSelectedSection(silent = true)
+            }
+        })
+    }
+
+    private fun coerceSectionToPermissions() {
+        if (section == Section.REPORTS && !receiver.canReceiveReports) section = Section.STATUS
+        if (section == Section.MESSAGES && !receiver.canMessageEmployees) section = Section.STATUS
+        if (section == Section.EMPLOYEES && !receiver.canManageStore) section = Section.STATUS
+    }
+
+    private fun renderStatus() {
+        val linked = receiver.serverUrl.isNotBlank()
+        content.addView(UiKit.card(this, p, 9).apply {
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الحالة", "Status")))
+            addView(UiKit.title(this@ReportReceiverActivity, p, if (linked) t("✓ الهاتف مرتبط", "✓ Phone linked") else t("غير مرتبط", "Not linked"), 20f))
+            val last = if (lastServerRefreshAt > 0L) formatTime(lastServerRefreshAt) else t("لم يتم بعد", "Not yet")
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${receiver.capabilityStoreName.ifBlank { "—" }}\nالفرع: ${receiver.capabilityBranchId.ifBlank { "—" }}\nآخر اتصال بالخادم: $last",
+                "Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${receiver.capabilityStoreName.ifBlank { "—" }}\nBranch: ${receiver.capabilityBranchId.ifBlank { "—" }}\nLast server contact: $last"
+            )))
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("إظهار QR تعريف الهاتف", "Show phone identity QR"), false).apply {
+                setOnClickListener { showIdentityQr = !showIdentityQr; render() }
+            })
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("مسح QR الربط النهائي", "Scan final link QR"), false).apply {
+                setOnClickListener { scanGrant() }
+            })
+            if (linked) {
+                addView(UiKit.button(this@ReportReceiverActivity, p,
+                    if (capabilitiesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الصلاحيات والحالة", "Refresh permissions and status"),
+                    false
+                ).apply {
+                    isEnabled = !capabilitiesInFlight
+                    setOnClickListener { refreshCapabilities(silent = false, refreshCurrentSection = false) }
                 })
-                AlertDialog.Builder(this)
-                    .setTitle(t("إدارة الموظفين","Employee management"))
-                    .setMessage(t(
-                        "التغييرات تُرسل إلى جهاز المحل ثم تُطبق محليًا وتُؤكَّد للخادم. ظهور «قيد التنفيذ» يعني أن الأمر ينتظر جهاز المحل.",
-                        "Changes are sent to the Store device, applied locally, then acknowledged to the server. Pending means the command is waiting for the Store device."
+            }
+        })
+
+        content.addView(UiKit.card(this, p, 9).apply {
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الصلاحيات", "Permissions")))
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                "${mark(receiver.canReceiveReports)} ${t("استلام التقارير", "Receive reports")}\n" +
+                    "${mark(receiver.canMessageEmployees)} ${t("مراسلة الموظفين", "Message employees")}\n" +
+                    "${mark(receiver.canManageStore)} ${t("إدارة الموظفين فقط", "Employee management only")}"
+            ))
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "إدارة الموظفين لا تمنح إعدادات مدير المحل أو النظام أو الاتصال أو Bluetooth أو GPS أو التفعيل.",
+                "Employee management never grants Store, system, connection, Bluetooth, GPS, or activation settings."
+            )))
+        })
+
+        if (showIdentityQr) {
+            val raw = ReportProtocol.encodeInvite(receiver.newInvite())
+            val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrNull()
+            content.addView(UiKit.card(this, p, 8).apply {
+                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("QR تعريف الهاتف", "Phone identity QR")))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "امسح الرمز من «إضافة هاتف» في جهاز المحل.",
+                    "Scan this code from Add phone on the Store device."
+                )))
+                if (qr != null) {
+                    addView(ImageView(this@ReportReceiverActivity).apply {
+                        setImageBitmap(qr)
+                        adjustViewBounds = true
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 700)
+                    })
+                } else {
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("تعذر إنشاء QR.", "Could not create QR.")))
+                }
+            })
+        }
+    }
+
+    private fun renderReports() {
+        val card = UiKit.card(this, p, 9)
+        card.addView(UiKit.sectionLabel(this, p, t("التقارير", "Reports")))
+        card.addView(UiKit.button(this, p,
+            if (reportsInFlight) t("جاري تحديث التقارير…", "Refreshing reports…") else t("تحديث التقارير", "Refresh reports")
+        ).apply {
+            isEnabled = !reportsInFlight
+            setOnClickListener { refreshReports(silent = false) }
+        })
+
+        val items = receiver.receivedReports()
+        val selected = selectedReportIndex?.let { items.getOrNull(it) }
+        if (selected != null) {
+            card.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
+            card.addView(UiKit.subtitle(this, p, selected.reportText))
+            card.addView(UiKit.button(this, p, t("العودة لقائمة التقارير", "Back to reports"), false).apply {
+                setOnClickListener { selectedReportIndex = null; render() }
+            })
+        } else {
+            card.addView(UiKit.subtitle(this, p, if (items.isEmpty())
+                t("لا توجد تقارير مستلمة بعد.", "No reports received yet.")
+            else t("التقارير المستلمة: ${items.size}", "Received reports: ${items.size}")))
+            items.take(30).forEachIndexed { index, x ->
+                val d = formatTime(x.receivedAt)
+                card.addView(UiKit.button(this, p, "${x.storeName} • ${x.branchId}\n${x.periodLabel} • $d", false).apply {
+                    setOnClickListener { selectedReportIndex = index; render() }
+                })
+            }
+        }
+        content.addView(card)
+    }
+
+    private fun renderMessages() {
+        val card = UiKit.card(this, p, 9)
+        card.addView(UiKit.sectionLabel(this, p, t("الرسائل", "Messages")))
+        card.addView(UiKit.button(this, p,
+            if (messagesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الموظفين والردود", "Refresh employees and replies")
+        ).apply {
+            isEnabled = !messagesInFlight
+            setOnClickListener { refreshMessages(silent = false) }
+        })
+
+        if (messageEmployees.isEmpty()) {
+            card.addView(UiKit.subtitle(this, p, t("لا يوجد موظفون متاحون للمراسلة.", "No employees are available for messaging.")))
+        } else {
+            card.addView(UiKit.subtitle(this, p, t("اختر موظفًا:", "Choose an employee:")))
+            messageEmployees.forEach { employee ->
+                val selected = selectedMessageEmployeeId == employee.employeeId
+                card.addView(UiKit.button(this, p, "${employee.employeeName} • ${employee.employeeId}", selected).apply {
+                    setOnClickListener { selectedMessageEmployeeId = employee.employeeId; render() }
+                })
+            }
+        }
+
+        val target = messageEmployees.firstOrNull { it.employeeId == selectedMessageEmployeeId }
+        if (target != null) {
+            val field = UiKit.field(this, p, t("اكتب الرسالة إلى ${target.employeeName}", "Write a message to ${target.employeeName}"))
+            card.addView(field)
+            card.addView(UiKit.button(this, p,
+                if (messageSendInFlight) t("جاري الإرسال…", "Sending…") else t("إرسال الرسالة", "Send message")
+            ).apply {
+                isEnabled = !messageSendInFlight
+                setOnClickListener {
+                    val body = field.text.toString().trim()
+                    if (body.isBlank()) {
+                        field.error = t("الرسالة فارغة", "Message is empty")
+                    } else {
+                        sendMessage(target.employeeId, body)
+                    }
+                }
+            })
+        }
+
+        card.addView(UiKit.sectionLabel(this, p, t("الردود المستلمة", "Received replies")))
+        if (messageReplies.isEmpty()) {
+            card.addView(UiKit.subtitle(this, p, t("لا توجد ردود.", "No replies.")))
+        } else {
+            messageReplies.take(40).forEach { row ->
+                val whenText = if (row.createdAt > 0L) " • ${formatTime(row.createdAt)}" else ""
+                card.addView(UiKit.subtitle(this, p, "${row.employeeId}$whenText\n${row.body}"))
+            }
+        }
+        content.addView(card)
+    }
+
+    private fun renderEmployees() {
+        val card = UiKit.card(this, p, 9)
+        card.addView(UiKit.sectionLabel(this, p, t("إدارة الموظفين", "Employee management")))
+        card.addView(UiKit.subtitle(this, p, t(
+            "عرض وإضافة وتعديل الاسم والفرع وتفعيل أو إيقاف الموظف فقط. التنفيذ لا يكتمل حتى يؤكده جهاز المحل.",
+            "View, add, edit name/branch, enable or disable employees only. A change is not complete until the Store device acknowledges it."
+        )))
+        card.addView(UiKit.button(this, p,
+            if (employeesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث القائمة", "Refresh list")
+        ).apply {
+            isEnabled = !employeesInFlight
+            setOnClickListener { refreshEmployees(silent = false) }
+        })
+        card.addView(UiKit.button(this, p, t("＋ إضافة موظف", "＋ Add employee"), false).apply {
+            isEnabled = !employeeCommandInFlight
+            setOnClickListener {
+                employeeEditorOpen = true
+                editingEmployeeId = null
+                render()
+            }
+        })
+
+        if (employeeEditorOpen) {
+            renderEmployeeEditor(card)
+        }
+
+        if (managedEmployees.isEmpty()) {
+            card.addView(UiKit.subtitle(this, p, t("لا توجد بيانات موظفين بعد.", "No employee data yet.")))
+        } else {
+            managedEmployees.forEach { e ->
+                val state = if (e.enabled) t("نشط", "Active") else t("موقوف", "Disabled")
+                val command = commandStatusText(e.commandStatus)
+                val commandLine = if (command.isBlank()) "" else "\n${t("آخر أمر", "Last command")}: $command • ${pendingActionLabel(e.pendingAction)}"
+                val errorLine = if (e.commandStatus.equals("FAILED", true) && e.commandError.isNotBlank())
+                    "\n${t("السبب", "Reason")}: ${safeServerError(e.commandError)}" else ""
+                card.addView(UiKit.card(this, p, 7).apply {
+                    addView(UiKit.title(this@ReportReceiverActivity, p, "${e.employeeName} • ${e.employeeId}", 17f))
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                        "${t("الفرع", "Branch")}: ${e.branchId} • $state$commandLine$errorLine"
                     ))
-                    .setItems(labels.toTypedArray()){_,i->
-                        if(i==0) editEmployee(null) else employeeActions(es[i-1])
-                    }
-                    .setNeutralButton(t("تحديث","Refresh")){_,_->openEmployees()}
-                    .setNegativeButton(t("إغلاق","Close"),null)
-                    .show()
+                    addView(UiKit.button(this@ReportReceiverActivity, p, t("تعديل الاسم والفرع", "Edit name and branch"), false).apply {
+                        isEnabled = !e.pendingCommand && !employeeCommandInFlight
+                        setOnClickListener {
+                            employeeEditorOpen = true
+                            editingEmployeeId = e.employeeId
+                            render()
+                        }
+                    })
+                    addView(UiKit.button(this@ReportReceiverActivity, p,
+                        if (e.enabled) t("إيقاف الموظف", "Disable employee") else t("تفعيل الموظف", "Enable employee"),
+                        false
+                    ).apply {
+                        isEnabled = !e.pendingCommand && !employeeCommandInFlight
+                        setOnClickListener {
+                            if (e.enabled) confirmDisableEmployee(e) else submitEmployeeStatus(e, true)
+                        }
+                    })
+                })
             }
-        }.start()
+        }
+        content.addView(card)
     }
-    private fun editEmployee(e:ReceiverEmployeeAdminClient.Employee?){
-        if(e?.pendingCommand==true){
-            info(t("الأمر قيد التنفيذ","Command pending"),t("انتظر حتى يستلم جهاز المحل الأمر الحالي ويؤكده، ثم حدّث القائمة.","Wait until the Store device applies the current command and acknowledges it, then refresh the list."))
+
+    private fun renderEmployeeEditor(parent: LinearLayout) {
+        val existing = editingEmployeeId?.let { id -> managedEmployees.firstOrNull { it.employeeId == id } }
+        val box = UiKit.card(this, p, 7)
+        box.addView(UiKit.sectionLabel(this, p, if (existing == null) t("إضافة موظف", "Add employee") else t("تعديل موظف", "Edit employee")))
+        val id = UiKit.field(this, p, t("رقم الموظف", "Employee ID")).apply {
+            setText(existing?.employeeId.orEmpty())
+            isEnabled = existing == null
+        }
+        val name = UiKit.field(this, p, t("اسم الموظف", "Employee name")).apply { setText(existing?.employeeName.orEmpty()) }
+        val branch = UiKit.field(this, p, t("الفرع", "Branch")).apply { setText(existing?.branchId ?: "MAIN") }
+        box.addView(id)
+        box.addView(name)
+        box.addView(branch)
+        box.addView(UiKit.button(this, p,
+            if (employeeCommandInFlight) t("جاري إرسال الأمر…", "Sending command…") else t("إرسال الأمر", "Send command")
+        ).apply {
+            isEnabled = !employeeCommandInFlight
+            setOnClickListener {
+                val employeeId = id.text.toString().trim()
+                val employeeName = name.text.toString().trim()
+                val branchId = branch.text.toString().trim().ifBlank { "MAIN" }
+                if (employeeId.isBlank()) {
+                    id.error = t("مطلوب", "Required")
+                    return@setOnClickListener
+                }
+                if (employeeName.length < 2) {
+                    name.error = t("الاسم غير مكتمل", "Name is incomplete")
+                    return@setOnClickListener
+                }
+                submitEmployeeEdit(existing, employeeId, employeeName, branchId)
+            }
+        })
+        box.addView(UiKit.button(this, p, t("إلغاء", "Cancel"), false).apply {
+            isEnabled = !employeeCommandInFlight
+            setOnClickListener { employeeEditorOpen = false; editingEmployeeId = null; render() }
+        })
+        parent.addView(box)
+    }
+
+    private fun scanGrant() {
+        startActivityForResult(
+            Intent(this, QrScannerActivity::class.java)
+                .putExtra(QrScannerActivity.EXTRA_PROMPT, t("امسح QR الربط النهائي", "Scan final link QR")),
+            REQ_GRANT
+        )
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_GRANT || resultCode != RESULT_OK) return
+        val raw = data?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty()
+        val grant = ReportProtocol.decodeRemoteGrant(raw, receiver.receiverId)
+        if (grant == null) {
+            showError(t("QR غير صالح", "Invalid QR"), t("الرمز غير صالح أو منتهي.", "The code is invalid or expired."))
             return
         }
-        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(24,8,24,0)}
-        val id=UiKit.field(this,p,t("رقم الموظف","Employee ID")).apply{setText(e?.employeeId.orEmpty());isEnabled=e==null}
-        val name=UiKit.field(this,p,t("اسم الموظف","Employee name")).apply{setText(e?.employeeName.orEmpty())}
-        val branch=UiKit.field(this,p,t("الفرع","Branch")).apply{setText(e?.branchId?:"MAIN")}
-        box.addView(id);box.addView(name);box.addView(branch)
-        val d=AlertDialog.Builder(this)
-            .setTitle(if(e==null)t("إضافة موظف","Add employee")else t("تعديل موظف","Edit employee"))
-            .setMessage(t("سيُرسل التغيير إلى جهاز المحل للتطبيق الفعلي. لا يتم تعديل بيانات الاقتران أو Bluetooth أو GPS.","The change is sent to the Store device for actual application. Pairing, Bluetooth and GPS data are not modified."))
-            .setView(box)
-            .setPositiveButton(t("إرسال الأمر","Send command"),null)
-            .setNegativeButton(t("إلغاء","Cancel"),null)
-            .create()
-        d.setOnShowListener{
-            d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
-                val eid=id.text.toString().trim()
-                val n=name.text.toString().trim()
-                val b=branch.text.toString().trim().ifBlank{"MAIN"}
-                if(eid.isBlank()){id.error=t("مطلوب","Required");return@setOnClickListener}
-                if(n.length<2){name.error=t("الاسم غير مكتمل","Name is incomplete");return@setOnClickListener}
-                Thread{
-                    val r=if(e==null)
-                        ReceiverEmployeeAdminClient.add(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b)
-                    else
-                        ReceiverEmployeeAdminClient.update(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b)
-                    runOnUiThread{
-                        if(r.isSuccess){
-                            d.dismiss()
-                            info(
-                                t("تم إرسال الأمر ✓","Command sent ✓"),
-                                t("الأمر الآن قيد التنفيذ. سيطبقه جهاز المحل عند اتصاله بالخادم ثم تتحدث القائمة تلقائيًا بعد التحديث.","The command is now pending. The Store device will apply it when online, then the list will reflect the confirmed state.")
-                            )
-                        }else info(t("تعذر إرسال الأمر","Command failed"),networkMessage(r.exceptionOrNull()))
-                    }
-                }.start()
-            }
-        }
-        d.show()
+        invalidateRemoteRequests()
+        receiver.serverUrl = grant.serverUrl
+        notice = t("تم حفظ الربط. جارٍ التحقق من الخادم.", "Link saved. Verifying with server.")
+        render()
+        refreshCapabilities(silent = false, refreshCurrentSection = false)
     }
-    private fun employeeActions(e:ReceiverEmployeeAdminClient.Employee){
-        if(e.pendingCommand){
-            info(
-                t("الأمر قيد التنفيذ","Command pending"),
-                t("يوجد أمر ${pendingActionLabel(e.pendingAction)} ينتظر جهاز المحل. لا يمكن إرسال أمر جديد لنفس الموظف حتى ينتهي الحالي.","A ${pendingActionLabel(e.pendingAction)} command is waiting for the Store device. A new command cannot be sent for this employee until it completes.")
+
+    private fun refreshCapabilities(silent: Boolean, refreshCurrentSection: Boolean) {
+        if (receiver.serverUrl.isBlank()) {
+            if (!silent) showError(t("غير مرتبط", "Not linked"), t("اربط الهاتف أولًا من شاشة الحالة.", "Link the phone first from Status."))
+            return
+        }
+        if (capabilitiesInFlight) return
+        capabilitiesInFlight = true
+        val generation = ++capabilitiesGeneration
+        if (!silent && alive()) render()
+
+        Thread {
+            val result = CentralServerClient.receiverCapabilities(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            runOnUiThread {
+                if (generation != capabilitiesGeneration) return@runOnUiThread
+                capabilitiesInFlight = false
+                if (!alive()) return@runOnUiThread
+
+                if (result.isSuccess) {
+                    val x = result.getOrThrow()
+                    receiver.canReceiveReports = x.canReceiveReports
+                    receiver.canMessageEmployees = x.canMessageEmployees
+                    // Protocol name retained for compatibility; V137 meaning is Employee Management only.
+                    receiver.canManageStore = x.canManageStore
+                    receiver.capabilityStoreName = x.storeName
+                    receiver.capabilityBranchId = x.branchId
+                    lastServerRefreshAt = System.currentTimeMillis()
+                    notice = if (silent) "" else t("تم تحديث الصلاحيات والحالة من الخادم ✓", "Permissions and status refreshed ✓")
+                    render()
+                    if (refreshCurrentSection) refreshSelectedSection(silent = true)
+                } else {
+                    if (!silent) showError(t("تعذر التحديث", "Refresh failed"), networkMessage(result.exceptionOrNull()))
+                    render()
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun refreshSelectedSection(silent: Boolean) {
+        when (section) {
+            Section.STATUS -> Unit
+            Section.REPORTS -> if (receiver.canReceiveReports) refreshReports(silent)
+            Section.MESSAGES -> if (receiver.canMessageEmployees) refreshMessages(silent)
+            Section.EMPLOYEES -> if (receiver.canManageStore) refreshEmployees(silent)
+        }
+    }
+
+    private fun refreshReports(silent: Boolean) {
+        if (!receiver.canReceiveReports || receiver.serverUrl.isBlank() || reportsInFlight) return
+        reportsInFlight = true
+        val generation = ++reportsGeneration
+        if (alive()) render()
+
+        Thread {
+            val result = CentralServerClient.receiverInbox(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            runOnUiThread {
+                if (generation != reportsGeneration) return@runOnUiThread
+                reportsInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    result.getOrThrow().forEach { receiver.receive(it.packageText) }
+                    lastServerRefreshAt = System.currentTimeMillis()
+                    if (!silent) notice = t("تم تحديث التقارير ✓", "Reports refreshed ✓")
+                } else if (!silent) {
+                    showError(t("تعذر تحديث التقارير", "Could not refresh reports"), networkMessage(result.exceptionOrNull()))
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun refreshMessages(silent: Boolean) {
+        if (!receiver.canMessageEmployees || receiver.serverUrl.isBlank() || messagesInFlight) return
+        messagesInFlight = true
+        val generation = ++messagesGeneration
+        if (alive()) render()
+
+        Thread {
+            val employees = CentralServerClient.receiverEmployees(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            val replies = if (employees.isSuccess) {
+                CentralServerClient.receiverMessagesInbox(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            } else Result.failure(employees.exceptionOrNull() ?: IllegalStateException("messages unavailable"))
+
+            runOnUiThread {
+                if (generation != messagesGeneration) return@runOnUiThread
+                messagesInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (employees.isSuccess && replies.isSuccess) {
+                    messageEmployees = employees.getOrThrow()
+                    messageReplies = replies.getOrThrow().map { ReplyRow(it.employeeId, it.body, it.createdAt) }
+                    if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) selectedMessageEmployeeId = null
+                    lastServerRefreshAt = System.currentTimeMillis()
+                    if (!silent) notice = t("تم تحديث الرسائل ✓", "Messages refreshed ✓")
+                } else if (!silent) {
+                    showError(t("تعذر تحديث الرسائل", "Could not refresh messages"),
+                        networkMessage(employees.exceptionOrNull() ?: replies.exceptionOrNull()))
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun sendMessage(employeeId: String, body: String) {
+        if (messageSendInFlight || !receiver.canMessageEmployees) return
+        messageSendInFlight = true
+        if (alive()) render()
+        Thread {
+            val result = CentralServerClient.receiverSendEmployeeMessage(
+                receiver.serverUrl, receiver.receiverId, receiver.secret,
+                employeeId, t("رسالة من الإدارة", "Management message"), body, "NORMAL", false
             )
-            return
-        }
-        AlertDialog.Builder(this)
-            .setTitle("${e.employeeName} • ${e.employeeId}")
-            .setItems(arrayOf(t("تعديل","Edit"),if(e.enabled)t("إيقاف","Disable")else t("تفعيل","Enable"))){_,i->
-                if(i==0) editEmployee(e)
-                else Thread{
-                    val r=ReceiverEmployeeAdminClient.setEnabled(receiver.serverUrl,receiver.receiverId,receiver.secret,e.employeeId,!e.enabled)
-                    runOnUiThread{
-                        if(r.isSuccess){
-                            info(
-                                t("تم إرسال الأمر ✓","Command sent ✓"),
-                                t("تم إرسال أمر ${if(e.enabled)"إيقاف" else "تفعيل"} الموظف إلى جهاز المحل وهو الآن قيد التنفيذ.","The employee ${if(e.enabled)"disable" else "enable"} command was sent to the Store device and is now pending.")
-                            )
-                        }else info(t("تعذر إرسال الأمر","Command failed"),networkMessage(r.exceptionOrNull()))
-                    }
-                }.start()
+            runOnUiThread {
+                messageSendInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    notice = t("تم إرسال الرسالة ✓", "Message sent ✓")
+                } else {
+                    showError(t("تعذر إرسال الرسالة", "Message failed"), networkMessage(result.exceptionOrNull()))
+                }
+                render()
             }
-            .setNegativeButton(t("إلغاء","Cancel"),null)
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun refreshEmployees(silent: Boolean) {
+        if (!receiver.canManageStore || receiver.serverUrl.isBlank() || employeesInFlight) return
+        employeesInFlight = true
+        val generation = ++employeesGeneration
+        if (alive()) render()
+
+        Thread {
+            val result = ReceiverEmployeeAdminClient.list(receiver.serverUrl, receiver.receiverId, receiver.secret)
+            runOnUiThread {
+                if (generation != employeesGeneration) return@runOnUiThread
+                employeesInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    managedEmployees = result.getOrThrow()
+                    lastServerRefreshAt = System.currentTimeMillis()
+                    if (!silent) notice = t("تم تحديث قائمة الموظفين ✓", "Employee list refreshed ✓")
+                } else if (!silent) {
+                    showError(t("إدارة الموظفين", "Employee management"), networkMessage(result.exceptionOrNull()))
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun submitEmployeeEdit(
+        existing: ReceiverEmployeeAdminClient.Employee?,
+        employeeId: String,
+        name: String,
+        branchId: String
+    ) {
+        if (employeeCommandInFlight || !receiver.canManageStore) return
+        employeeCommandInFlight = true
+        render()
+        Thread {
+            val result = if (existing == null) {
+                ReceiverEmployeeAdminClient.add(receiver.serverUrl, receiver.receiverId, receiver.secret, employeeId, name, branchId)
+            } else {
+                ReceiverEmployeeAdminClient.update(receiver.serverUrl, receiver.receiverId, receiver.secret, employeeId, name, branchId)
+            }
+            runOnUiThread {
+                employeeCommandInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    employeeEditorOpen = false
+                    editingEmployeeId = null
+                    notice = t(
+                        "تم إرسال الأمر إلى الخادم — قيد الإرسال حتى يستلمه جهاز المحل.",
+                        "Command queued — pending until the Store device receives it."
+                    )
+                    render()
+                    refreshEmployees(silent = true)
+                } else {
+                    showError(t("تعذر إرسال الأمر", "Command failed"), networkMessage(result.exceptionOrNull()))
+                    render()
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun confirmDisableEmployee(e: ReceiverEmployeeAdminClient.Employee) {
+        if (!alive()) return
+        AlertDialog.Builder(this)
+            .setTitle(t("تأكيد إيقاف الموظف", "Confirm employee disable"))
+            .setMessage(t("هل تريد إيقاف ${e.employeeName}؟ سيُرسل الأمر إلى جهاز المحل للتنفيذ.", "Disable ${e.employeeName}? The command will be sent to the Store device."))
+            .setPositiveButton(t("إيقاف", "Disable")) { _, _ -> submitEmployeeStatus(e, false) }
+            .setNegativeButton(t("إلغاء", "Cancel"), null)
             .show()
     }
 
-    private fun chooseEmployeeForMessage(){Thread{val r=CentralServerClient.receiverEmployees(receiver.serverUrl,receiver.receiverId,receiver.secret);runOnUiThread{val es=r.getOrNull().orEmpty();if(es.isEmpty()){info(t("الموظفون","Employees"),t("لا يوجد موظفون متاحون.","No employees available."));return@runOnUiThread};AlertDialog.Builder(this).setTitle(t("اختر الموظف","Choose employee")).setItems(es.map{"${it.employeeName} • ${it.employeeId}"}.toTypedArray()){_,i->val e=es[i];val f=UiKit.field(this,p,t("اكتب الرسالة","Write message"));AlertDialog.Builder(this).setTitle(e.employeeName).setView(f).setPositiveButton(t("إرسال","Send")){_,_->Thread{CentralServerClient.receiverSendEmployeeMessage(receiver.serverUrl,receiver.receiverId,receiver.secret,e.employeeId,t("رسالة من الإدارة","Management message"),f.text.toString(),"NORMAL",false)}.start()}.setNegativeButton(t("إلغاء","Cancel"),null).show()}.show()}}.start()}
-    private fun showReplies(){Thread{val r=CentralServerClient.receiverMessagesInbox(receiver.serverUrl,receiver.receiverId,receiver.secret);runOnUiThread{val x=r.getOrNull().orEmpty();info(t("ردود الموظفين","Employee replies"),if(x.isEmpty())t("لا توجد ردود.","No replies.")else x.take(30).joinToString("\n\n"){"${it.employeeId}: ${it.body}"})}}.start()}
-    private fun pendingActionLabel(action:String):String=when(action.uppercase(Locale.US)){
-        "ADD"->t("إضافة","Add")
-        "UPDATE"->t("تعديل","Edit")
-        "STATUS"->t("تغيير الحالة","Status change")
-        else->t("إدارة","Management")
+    private fun submitEmployeeStatus(e: ReceiverEmployeeAdminClient.Employee, enabled: Boolean) {
+        if (employeeCommandInFlight || !receiver.canManageStore) return
+        employeeCommandInFlight = true
+        render()
+        Thread {
+            val result = ReceiverEmployeeAdminClient.setEnabled(
+                receiver.serverUrl, receiver.receiverId, receiver.secret, e.employeeId, enabled
+            )
+            runOnUiThread {
+                employeeCommandInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    notice = t(
+                        "تم إرسال أمر ${if (enabled) "التفعيل" else "الإيقاف"} — قيد الإرسال حتى يؤكده جهاز المحل.",
+                        "${if (enabled) "Enable" else "Disable"} command queued until Store acknowledgement."
+                    )
+                    render()
+                    refreshEmployees(silent = true)
+                } else {
+                    showError(t("تعذر إرسال الأمر", "Command failed"), networkMessage(result.exceptionOrNull()))
+                    render()
+                }
+            }
+        }.apply { isDaemon = true }.start()
     }
 
-    private fun networkMessage(error:Throwable?):String{
-        val raw=error?.message.orEmpty()
-        return when{
-            raw.contains("Failed to connect to /",true) && raw.contains(":",true) ->
-                t("تعذر الوصول إلى الخادم عبر الشبكة الحالية. سيحاول التطبيق IPv4 تلقائيًا؛ تحقق من الإنترنت ثم أعد المحاولة.","The server could not be reached on the current network. The app retries over IPv4 automatically; check connectivity and try again.")
-            raw.contains("Unable to resolve host",true) || raw.contains("No address associated",true) || raw.contains("UnknownHost",true) ->
-                t("تعذر حل عنوان الخادم. سيستخدم التطبيق DNS وIPv4 الاحتياطيين تلقائيًا؛ تحقق من الإنترنت ثم أعد المحاولة.","The server hostname could not be resolved. The app uses fallback DNS and IPv4 automatically; check connectivity and try again.")
-            raw.contains("timeout",true) || raw.contains("timed out",true) ->
-                t("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.","The server connection timed out. Check connectivity and try again.")
-            raw.startsWith("HTTP 404",true) ->
-                t("خدمة إدارة الموظفين غير متاحة على الخادم الحالي. حدّث الخادم ثم أعد المحاولة.","Employee management is unavailable on the current server. Update the server and try again.")
-            raw.isBlank()->t("تعذر الاتصال بالخادم.","Could not connect to the server.")
-            else->raw
+    private fun invalidateRemoteRequests() {
+        capabilitiesGeneration++
+        reportsGeneration++
+        messagesGeneration++
+        employeesGeneration++
+        capabilitiesInFlight = false
+        reportsInFlight = false
+        messagesInFlight = false
+        employeesInFlight = false
+    }
+
+    private fun mark(v: Boolean) = if (v) "✓" else "— ${t("غير مسموح", "Not allowed")}"
+
+    private fun commandStatusText(status: String): String = when (status.uppercase(Locale.US)) {
+        "PENDING" -> t("قيد الإرسال", "Pending")
+        "DISPATCHED" -> t("وصل لجهاز المحل", "Reached Store device")
+        "APPLIED" -> t("تم التنفيذ", "Applied")
+        "FAILED" -> t("فشل التنفيذ", "Failed")
+        else -> ""
+    }
+
+    private fun pendingActionLabel(action: String): String = when (action.uppercase(Locale.US)) {
+        "ADD" -> t("إضافة", "Add")
+        "UPDATE" -> t("تعديل", "Edit")
+        "STATUS" -> t("تغيير الحالة", "Status change")
+        else -> if (action.isBlank()) "" else t("إدارة", "Management")
+    }
+
+    private fun safeServerError(raw: String): String {
+        if (raw.contains("Failed to connect to /", true) || raw.contains("2606:", true) || raw.contains("ENETUNREACH", true)) {
+            return t("تعذر الاتصال بالخادم عبر الشبكة الحالية.", "Could not connect to the server on the current network.")
+        }
+        return raw.take(220)
+    }
+
+    private fun networkMessage(error: Throwable?): String {
+        val raw = error?.message.orEmpty()
+        return when {
+            raw.contains("Failed to connect to /", true) ||
+                raw.contains("Network is unreachable", true) ||
+                raw.contains("ENETUNREACH", true) ||
+                raw.contains("Unable to resolve host", true) ||
+                raw.contains("No address associated", true) ||
+                raw.contains("UnknownHost", true) ->
+                t(
+                    "تعذر الاتصال بالخادم عبر الشبكة الحالية، وسيتم استخدام مسار اتصال بديل تلقائيًا.",
+                    "The server could not be reached on the current network; an alternate connection path is used automatically."
+                )
+            raw.contains("timeout", true) || raw.contains("timed out", true) ->
+                t("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت وأعد المحاولة.", "The server connection timed out. Check connectivity and try again.")
+            raw.startsWith("HTTP 404", true) ->
+                t("الخدمة المطلوبة غير متاحة على إصدار الخادم الحالي.", "The requested service is unavailable on the current server version.")
+            raw.contains("صلاحية") || raw.contains("الموظف") || raw.contains("يوجد أمر") ->
+                safeServerError(raw)
+            else ->
+                t("تعذر تنفيذ الطلب عبر الشبكة الحالية. أعد المحاولة بعد التحقق من الاتصال.", "The request could not be completed on the current network. Check connectivity and try again.")
         }
     }
 
-    private fun info(title:String,msg:String){AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton(t("حسنًا","OK"),null).show()}
-    companion object{private const val REQ_GRANT=7301}
+    private fun showError(title: String, message: String) {
+        if (!alive()) return
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(t("حسنًا", "OK"), null)
+            .show()
+    }
+
+    private fun formatTime(value: Long): String =
+        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(value))
+
+    companion object {
+        private const val REQ_GRANT = 7301
+        private const val KEY_SECTION = "receiver_section"
+        private const val KEY_REPORT_INDEX = "receiver_report_index"
+    }
 }
