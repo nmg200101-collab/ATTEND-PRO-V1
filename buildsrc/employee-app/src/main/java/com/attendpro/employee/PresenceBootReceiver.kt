@@ -11,6 +11,7 @@ class PresenceBootReceiver : BroadcastReceiver() {
         val identity = EmployeeIdentityStore(context)
         if (!identity.isConfigured) return
         EmployeeMessageFastPoller142.start(context)
+        EmployeeMessageFastPoller142.start(context)
         EmployeeLateAlertScheduler.sync(context, identity)
         if (identity.autoPresence && intent?.action == android.bluetooth.BluetoothAdapter.ACTION_STATE_CHANGED &&
             intent.getIntExtra(android.bluetooth.BluetoothAdapter.EXTRA_STATE, -1) != android.bluetooth.BluetoothAdapter.STATE_ON) return
