@@ -91,6 +91,11 @@ class MainActivity : Activity() {
                         startAutomaticActivationRecovery()
                     } else {
                         autoSyncIfReady()
+                        ReceiverEmployeeCommandSync.syncIfDue(
+                            this@MainActivity,
+                            repo,
+                            force = true
+                        ) { message -> runOnUiThread { if (::status.isInitialized) status.text = message } }
                         refreshDashboard()
                     }
                 }
@@ -178,6 +183,10 @@ class MainActivity : Activity() {
             // Remote receiver permissions are limited to reports, employee messaging and employee management.
             // General Store settings are never pulled from receiver phones.
             autoSyncIfReady()
+            ReceiverEmployeeCommandSync.syncIfDue(
+                this@MainActivity,
+                repo
+            ) { message -> runOnUiThread { if (::status.isInitialized) status.text = message } }
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
             val lateNow = System.currentTimeMillis()
@@ -284,6 +293,11 @@ class MainActivity : Activity() {
         buildElegantUi()
         refreshDashboard()
         ensurePresenceDiscoveryRunning()
+        ReceiverEmployeeCommandSync.syncIfDue(
+            this,
+            repo,
+            force = true
+        ) { message -> runOnUiThread { if (::status.isInitialized) status.text = message } }
         validateCentralActivation(silent = true)
         autoSyncIfReady()
     }
