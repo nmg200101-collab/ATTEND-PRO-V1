@@ -1040,7 +1040,7 @@ object CentralServerClient {
         parseMessages1975(request(serverUrl, "/api/v1/messages/employee/poll", "POST", JSONObject().apply {
             put("storeId", storeId); put("employeeId", employeeId); put("pairingSecret", pairingSecret); put("installationId", installationId)
             put("includeRead", includeRead); put("limit", limit.coerceIn(1, 100))
-        }))
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500))
     }
 
     fun markEmployeeMessageRead(serverUrl: String, storeId: String, employeeId: String, pairingSecret: String, installationId: String, messageId: String): Result<Unit> = runCatching {
