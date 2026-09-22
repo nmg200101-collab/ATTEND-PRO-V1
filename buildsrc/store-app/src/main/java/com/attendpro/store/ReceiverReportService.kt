@@ -118,7 +118,8 @@ class ReceiverReportService : Service() {
                 receiver.receiverId,
                 receiver.secret,
                 ::acceptOfflineReport,
-                ::nearbyInvite
+                ::nearbyInvite,
+                ::acceptNearbyGrant
             ) { updateStatus(it) }.also { it.start() }
         }
     }
