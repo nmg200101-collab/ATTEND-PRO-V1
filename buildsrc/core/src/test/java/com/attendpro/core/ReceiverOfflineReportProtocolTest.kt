@@ -28,6 +28,27 @@ class ReceiverOfflineReportProtocolTest {
         assertNull(ReceiverOfflineReportProtocol.decodeEnvelope(raw, "RCV-OTHER", secret))
     }
 
+    @Test fun nearbyDiscoveryAndGrantRoundTrip() {
+        val nonce = ReceiverOfflineReportProtocol.newNonce()
+        val probe = ReceiverOfflineReportProtocol.nearbyProbe(nonce)
+        assertEquals(nonce, ReceiverOfflineReportProtocol.parseNearbyProbe(probe))
+
+        val invite = "APRRI1:test-nearby-invite"
+        val reply = ReceiverOfflineReportProtocol.nearbyReply(nonce, invite)
+        assertEquals(invite, ReceiverOfflineReportProtocol.parseNearbyReply(reply, nonce))
+        assertNull(ReceiverOfflineReportProtocol.parseNearbyReply(reply, "other-nonce"))
+
+        val grant = "APRRG1:test-final-grant"
+        val encoded = ReceiverOfflineReportProtocol.encodeNearbyGrant(receiverId, grant, secret)
+        assertEquals(grant, ReceiverOfflineReportProtocol.decodeNearbyGrant(encoded, receiverId, secret))
+        assertNull(ReceiverOfflineReportProtocol.decodeNearbyGrant(encoded, "RCV-OTHER", secret))
+        assertNull(ReceiverOfflineReportProtocol.decodeNearbyGrant(encoded, receiverId, "wrong-secret"))
+
+        val ack = ReceiverOfflineReportProtocol.nearbyGrantAck(receiverId, secret)
+        assertTrue(ReceiverOfflineReportProtocol.verifyNearbyGrantAck(ack, receiverId, secret))
+        assertFalse(ReceiverOfflineReportProtocol.verifyNearbyGrantAck(ack, receiverId, "wrong-secret"))
+    }
+
     @Test fun discoveryAndAckAreAuthenticated() {
         val nonce = ReceiverOfflineReportProtocol.newNonce()
         val probe = ReceiverOfflineReportProtocol.discoveryProbe(receiverId, nonce)
