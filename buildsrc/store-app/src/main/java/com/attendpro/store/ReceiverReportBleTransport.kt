@@ -342,6 +342,8 @@ object ReceiverReportBleClient {
             if (!gatt.discoverServices() || !sync.awaitServices(5_000)) {
                 return ReceiverReportDeliveryResultWithPayload(false, "BLE", "تعذر اكتشاف خدمة الربط القريب", "")
             }
+            gatt.requestMtu(DESIRED_MTU)
+            sync.awaitMtu(1_500)
             val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
                 ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "خدمة الربط القريب غير موجودة", "")
             val inviteChar = service.getCharacteristic(ReceiverReportBleServer.INVITE_UUID)
