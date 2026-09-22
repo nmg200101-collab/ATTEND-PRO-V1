@@ -482,7 +482,7 @@ class ReportReceiverActivity : Activity() {
             "Messages — ${binding?.storeName ?: "—"}"
         )))
         card.addView(UiKit.button(this, p,
-            if (messagesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الموظفين والردود", "Refresh employees and replies")
+            if (messagesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الرسائل والردود", "Refresh messages and replies")
         ).apply {
             isEnabled = !messagesInFlight
             setOnClickListener { refreshMessages(silent = false) }
@@ -520,10 +520,16 @@ class ReportReceiverActivity : Activity() {
         }
 
         card.addView(UiKit.sectionLabel(this, p, t("الردود المستلمة", "Received replies")))
-        if (messageReplies.isEmpty()) {
+        val cachedReplies = receiver.receivedMessageReplies(binding?.storeId.orEmpty()).map {
+            ReplyRow(it.employeeId, it.body, it.createdAt)
+        }
+        val visibleReplies = (messageReplies + cachedReplies)
+            .distinctBy { "${it.employeeId}|${it.createdAt}|${it.body}" }
+            .sortedByDescending { it.createdAt }
+        if (visibleReplies.isEmpty()) {
             card.addView(UiKit.subtitle(this, p, t("لا توجد ردود.", "No replies.")))
         } else {
-            messageReplies.take(40).forEach { row ->
+            visibleReplies.take(80).forEach { row ->
                 val whenText = if (row.createdAt > 0L) " • ${formatTime(row.createdAt)}" else ""
                 card.addView(UiKit.subtitle(this, p, "${row.employeeId}$whenText\n${row.body}"))
             }
@@ -731,7 +737,10 @@ class ReportReceiverActivity : Activity() {
                 if (!alive()) return@runOnUiThread
                 if (employees.isSuccess && replies.isSuccess) {
                     messageEmployees = employees.getOrThrow()
-                    messageReplies = replies.getOrThrow().map { ReplyRow(it.employeeId, it.body, it.createdAt) }
+                    val remoteReplies = replies.getOrThrow()
+                    receiver.cacheMessageReplies(storeId, remoteReplies)
+                    messageReplies = receiver.receivedMessageReplies(storeId)
+                        .map { ReplyRow(it.employeeId, it.body, it.createdAt) }
                     if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) selectedMessageEmployeeId = null
                     markActiveServerContact(storeId)
                     if (!silent) notice = t("تم تحديث رسائل المحل ✓", "Store messages refreshed ✓")
