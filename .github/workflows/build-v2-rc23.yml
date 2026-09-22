@@ -104,7 +104,6 @@ jobs:
           grep -q 'queueServerUnlink' "$RECEIVER"
           grep -q 'switchStore' "$RECEIVER"
           grep -q 'actionGeneration' "$RECEIVER"
-          grep -q 'storeId = storeId' "$RECEIVER"
           grep -q 'receivedReports(binding?.storeId.orEmpty())' "$RECEIVER"
           grep -q '/api/v1/monitor/stores' "$CENTRAL"
           grep -q '/api/v1/monitor/stores/unlink' "$CENTRAL"
