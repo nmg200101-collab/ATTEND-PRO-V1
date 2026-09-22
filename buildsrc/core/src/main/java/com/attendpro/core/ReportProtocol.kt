@@ -48,7 +48,9 @@ object ReportProtocol {
             o.optString("i", "").trim()
         )
         val now = System.currentTimeMillis()
-        if (grant.expiresAt + CLOCK_SKEW_GRACE_MS < now || !grant.serverUrl.startsWith("https://", ignoreCase = true)) null else grant
+        if (grant.expiresAt + CLOCK_SKEW_GRACE_MS < now ||
+            (grant.serverUrl.isNotBlank() && !grant.serverUrl.startsWith("https://", ignoreCase = true))
+        ) null else grant
     }.getOrNull()
 
     fun newSecret(): String = Base64.encodeToString(ByteArray(32).also { SecureRandom().nextBytes(it) }, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
@@ -182,7 +184,9 @@ class ReportReceiverStore(context: Context) {
                 lastServerRefreshAt = o.optLong("lastServerRefreshAt", 0L),
                 storeLastSeenAt = o.optLong("storeLastSeenAt", 0L)
             )
-        }.getOrNull() }.filter { it.serverUrl.startsWith("https://", true) }
+        }.getOrNull() }.filter {
+            (it.storeId.isNotBlank() && it.serverUrl.isBlank()) || it.serverUrl.startsWith("https://", true)
+        }
 
         if (items.isNotEmpty()) return items.sortedByDescending { it.linkedAt }
         val migrated = legacyBinding() ?: return emptyList()
@@ -367,12 +371,24 @@ class ReportReceiverStore(context: Context) {
 
     fun receive(raw: String, storeId: String = activeStoreId): ReceivedReport? {
         val pkg = ReportProtocol.decodePackage(raw, receiverId, secret) ?: return null
-        val item = ReceivedReport(pkg.transferId, pkg.storeName, pkg.branchId, pkg.periodLabel, pkg.createdAt, System.currentTimeMillis(), pkg.reportText, pkg.confirmationCode, storeId)
-        val existing = receivedReports().filterNot { it.transferId == item.transferId }
+        val all = receivedReports()
+        val duplicate = all.firstOrNull {
+            it.transferId == pkg.transferId &&
+                (storeId.isBlank() || it.storeId.isBlank() || it.storeId == storeId)
+        }
+        if (duplicate != null) return duplicate
+
+        val item = ReceivedReport(
+            pkg.transferId, pkg.storeName, pkg.branchId, pkg.periodLabel, pkg.createdAt,
+            System.currentTimeMillis(), pkg.reportText, pkg.confirmationCode, storeId
+        )
         val a = JSONArray()
-        (listOf(item) + existing).take(100).forEach { r -> a.put(JSONObject().apply {
-            put("transferId", r.transferId); put("storeName", r.storeName); put("branchId", r.branchId); put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt); put("reportText", r.reportText); put("confirmationCode", r.confirmationCode); put("storeId", r.storeId)
+        (listOf(item) + all).take(100).forEach { r -> a.put(JSONObject().apply {
+            put("transferId", r.transferId); put("storeName", r.storeName); put("branchId", r.branchId)
+            put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt)
+            put("reportText", r.reportText); put("confirmationCode", r.confirmationCode); put("storeId", r.storeId)
         }) }
-        prefs.edit().putString("receivedReports", a.toString()).apply(); return item
+        prefs.edit().putString("receivedReports", a.toString()).apply()
+        return item
     }
 }
