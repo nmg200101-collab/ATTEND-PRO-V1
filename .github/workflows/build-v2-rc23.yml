@@ -65,7 +65,7 @@ jobs:
           grep -q 'اكتشاف هاتف قريب' "$CENTER"
           grep -q 'discoverNearbyReceiver' "$CENTER"
           grep -q 'deliverNearbyGrantAsync' "$CENTER"
-          grep -q 'pending_receiver_syncs_v141' "$CENTER"
+          grep -q 'pending_receiver_syncs_v140' "$CENTER"
           grep -q 'تم حفظ الهاتف فورًا' "$CENTER"
           test "$(grep -c 'setContentView(' "$CENTER")" -eq 1
           ! grep -q 'buildUi' "$CENTER"
@@ -193,9 +193,9 @@ jobs:
 
           # V141 identity.
           grep -q 'versionCode = 141' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-REPORTS-MESSAGING-ONLY"' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 141' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-REPORTS-MESSAGING-ONLY"' buildsrc/employee-app/build.gradle.kts
 
           # RC29 field-proven pairing/direct-link files are immutable in V141.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
@@ -257,11 +257,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='141' versionName='2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='141' versionName='2.0.0-RC29-V141-RECEIVER-REPORTS-MESSAGING-ONLY'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V141-RECEIVER-DELIVERY-RELIABILITY-SIGNED
+          name: ATTEND-PRO-V141-RECEIVER-REPORTS-MESSAGING-ONLY-SIGNED
           path: signed/
           retention-days: 30
