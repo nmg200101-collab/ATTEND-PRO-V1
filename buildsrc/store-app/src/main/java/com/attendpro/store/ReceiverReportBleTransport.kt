@@ -362,7 +362,26 @@ object ReceiverReportBleClient {
         }
     }
 
-    @SuppressLint("MissingPermission")
+    fun sendNearbyGrant(
+        context: Context,
+        receiverId: String,
+        secret: String,
+        grantText: String
+    ): ReceiverReportDeliveryResult {
+        val encoded = runCatching {
+            ReceiverOfflineReportProtocol.encodeNearbyGrant(receiverId, grantText, secret)
+        }.getOrElse {
+            return ReceiverReportDeliveryResult(false, "BLE", it.message ?: "تعذر تجهيز ربط Bluetooth")
+        }
+        val raw = sendRaw(context, receiverId, encoded)
+        if (!raw.success) return ReceiverReportDeliveryResult(false, "BLE", raw.detail)
+        return if (ReceiverOfflineReportProtocol.verifyNearbyGrantAck(raw.ack, receiverId, secret)) {
+            ReceiverReportDeliveryResult(true, "BLE", "اكتمل الربط القريب عبر Bluetooth")
+        } else {
+            ReceiverReportDeliveryResult(false, "BLE", "وصل الربط عبر Bluetooth دون ACK موثوق")
+        }
+    }
+
     fun send(
         context: Context,
         receiverId: String,
@@ -371,16 +390,32 @@ object ReceiverReportBleClient {
         transferId: String,
         envelope: String
     ): ReceiverReportDeliveryResult {
+        val raw = sendRaw(context, receiverId, envelope)
+        if (!raw.success) return ReceiverReportDeliveryResult(false, "BLE", raw.detail)
+        val transport = ReceiverOfflineReportProtocol.verifyAck(
+            raw.ack, receiverId, storeId, transferId, secret
+        ) ?: return ReceiverReportDeliveryResult(false, "BLE", "ACK Bluetooth غير موثوق")
+        return ReceiverReportDeliveryResult(true, transport, "تم الاستلام عبر Bluetooth")
+    }
+
+    private data class RawSendResult(
+        val success: Boolean,
+        val ack: String = "",
+        val detail: String = ""
+    )
+
+    @SuppressLint("MissingPermission")
+    private fun sendRaw(context: Context, receiverId: String, rawPayload: String): RawSendResult {
         if (!ReceiverReportBluetoothSupport.hasPermissions(context)) {
-            return ReceiverReportDeliveryResult(false, "BLE", "صلاحيات Bluetooth غير ممنوحة")
+            return RawSendResult(false, detail = "صلاحيات Bluetooth غير ممنوحة")
         }
         val manager = context.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-            ?: return ReceiverReportDeliveryResult(false, "BLE", "Bluetooth غير متاح")
+            ?: return RawSendResult(false, detail = "Bluetooth غير متاح")
         val adapter = manager.adapter
-            ?: return ReceiverReportDeliveryResult(false, "BLE", "Bluetooth غير متاح")
-        if (!adapter.isEnabled) return ReceiverReportDeliveryResult(false, "BLE", "Bluetooth غير مفعّل")
+            ?: return RawSendResult(false, detail = "Bluetooth غير متاح")
+        if (!adapter.isEnabled) return RawSendResult(false, detail = "Bluetooth غير مفعّل")
         val scanner = adapter.bluetoothLeScanner
-            ?: return ReceiverReportDeliveryResult(false, "BLE", "BLE Scanner غير متاح")
+            ?: return RawSendResult(false, detail = "BLE Scanner غير متاح")
 
         val wantedHash = ReceiverOfflineReportProtocol.receiverHash(receiverId)
         val parcel = ParcelUuid(ReceiverReportBleServer.SERVICE_UUID)
@@ -391,8 +426,7 @@ object ReceiverReportBleClient {
             val latch = CountDownLatch(1)
             val callback = object : ScanCallback() {
                 override fun onScanResult(callbackType: Int, result: ScanResult) {
-                    val record = result.scanRecord ?: return
-                    val hash = record.getServiceData(parcel) ?: return
+                    val hash = result.scanRecord?.getServiceData(parcel) ?: return
                     if (hash.contentEquals(wantedHash)) {
                         found[0] = result.device
                         latch.countDown()
@@ -418,44 +452,34 @@ object ReceiverReportBleClient {
             }
         }
 
-        // Some Android/OEM Bluetooth stacks fail to return a device when a service UUID
-        // filter is used even though the advertisement is visible. Try the efficient
-        // filtered scan first, then an unfiltered fallback while still authenticating the
-        // receiver by its advertised receiverId hash.
-        val filtered = listOf(ScanFilter.Builder().setServiceUuid(parcel).build())
-        val device = scanWindow(filtered, 2_500L)
+        val device = scanWindow(listOf(ScanFilter.Builder().setServiceUuid(parcel).build()), 2_000L)
             ?: scanWindow(emptyList(), 2_500L)
-            ?: return ReceiverReportDeliveryResult(
-                false, "BLE",
-                "لم يظهر هاتف الاستلام عبر BLE بعد المسح المفلتر والاحتياطي"
-            )
+            ?: return RawSendResult(false, detail = "لم يظهر هاتف الاستلام عبر BLE")
 
         val sync = SyncGattCallback()
         val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
         try {
-            if (!sync.awaitConnected(6_000)) return ReceiverReportDeliveryResult(false, "BLE", "تعذر الاتصال بهاتف الاستلام")
+            if (!sync.awaitConnected(6_000)) return RawSendResult(false, detail = "تعذر الاتصال بهاتف الاستلام")
             if (!gatt.discoverServices() || !sync.awaitServices(6_000)) {
-                return ReceiverReportDeliveryResult(false, "BLE", "تعذر اكتشاف خدمة تقارير Bluetooth")
+                return RawSendResult(false, detail = "تعذر اكتشاف خدمة Bluetooth")
             }
             gatt.requestMtu(DESIRED_MTU)
             sync.awaitMtu(1_500)
 
             val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
-                ?: return ReceiverReportDeliveryResult(false, "BLE", "خدمة التقرير غير موجودة")
+                ?: return RawSendResult(false, detail = "خدمة الاستلام غير موجودة")
             val write = service.getCharacteristic(ReceiverReportBleServer.WRITE_UUID)
-                ?: return ReceiverReportDeliveryResult(false, "BLE", "قناة إرسال التقرير غير موجودة")
+                ?: return RawSendResult(false, detail = "قناة الإرسال غير موجودة")
             val ack = service.getCharacteristic(ReceiverReportBleServer.ACK_UUID)
-                ?: return ReceiverReportDeliveryResult(false, "BLE", "قناة تأكيد التقرير غير موجودة")
+                ?: return RawSendResult(false, detail = "قناة ACK غير موجودة")
 
-            val bytes = envelope.toByteArray(Charsets.UTF_8)
+            val bytes = rawPayload.toByteArray(Charsets.UTF_8)
             val mtu = sync.mtu.coerceAtLeast(23)
             val maxPayload = (mtu - 3 - FRAME_HEADER).coerceAtLeast(8).coerceAtMost(235)
             val maxAllowed = if (mtu >= 100) 180_000 else 24_000
-            if (bytes.size > maxAllowed) {
-                return ReceiverReportDeliveryResult(false, "BLE", "حجم التقرير كبير لقناة BLE الحالية؛ سيتم استخدام LAN أو الخادم")
-            }
+            if (bytes.size > maxAllowed) return RawSendResult(false, detail = "الحجم أكبر من قناة BLE الحالية")
             val total = ceil(bytes.size.toDouble() / maxPayload.toDouble()).toInt().coerceAtLeast(1)
-            if (total > 12000) return ReceiverReportDeliveryResult(false, "BLE", "عدد أجزاء BLE تجاوز الحد الآمن")
+            if (total > 12000) return RawSendResult(false, detail = "عدد أجزاء BLE تجاوز الحد الآمن")
             val session = SecureRandom().nextInt()
 
             for (index in 0 until total) {
@@ -463,22 +487,20 @@ object ReceiverReportBleClient {
                 val to = minOf(bytes.size, from + maxPayload)
                 val payload = bytes.copyOfRange(from, to)
                 val frame = ByteBuffer.allocate(FRAME_HEADER + payload.size).order(ByteOrder.BIG_ENDIAN).apply {
-                    put(0x41.toByte()); put(0x52.toByte()); putInt(session); putShort(index.toShort()); putShort(total.toShort())
+                    put(0x41.toByte()); put(0x52.toByte()); putInt(session)
+                    putShort(index.toShort()); putShort(total.toShort())
                     put(payload.size.toByte()); put(payload)
                 }.array()
                 if (!sync.write(gatt, write, frame, 2_500)) {
-                    return ReceiverReportDeliveryResult(false, "BLE", "انقطع إرسال BLE عند الجزء ${index + 1} من $total")
+                    return RawSendResult(false, detail = "انقطع إرسال BLE عند الجزء ${index + 1} من $total")
                 }
             }
 
             val ackBytes = sync.read(gatt, ack, 4_000)
-                ?: return ReceiverReportDeliveryResult(false, "BLE", "لم يصل ACK من هاتف الاستلام")
-            val transport = ReceiverOfflineReportProtocol.verifyAck(
-                String(ackBytes, Charsets.UTF_8), receiverId, storeId, transferId, secret
-            ) ?: return ReceiverReportDeliveryResult(false, "BLE", "ACK Bluetooth غير موثوق")
-            return ReceiverReportDeliveryResult(true, transport, "تم الاستلام عبر Bluetooth")
+                ?: return RawSendResult(false, detail = "لم يصل ACK من هاتف الاستلام")
+            return RawSendResult(true, String(ackBytes, Charsets.UTF_8), "")
         } catch (t: Throwable) {
-            return ReceiverReportDeliveryResult(false, "BLE", t.message ?: "تعذر النقل عبر Bluetooth")
+            return RawSendResult(false, detail = t.message ?: "تعذر النقل عبر Bluetooth")
         } finally {
             runCatching { gatt.disconnect() }
             runCatching { gatt.close() }
