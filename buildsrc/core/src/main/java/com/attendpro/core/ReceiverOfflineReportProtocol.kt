@@ -21,6 +21,8 @@ object ReceiverOfflineReportProtocol {
     private const val DISCOVERY_PROBE = "APRD1"
     private const val DISCOVERY_REPLY = "APRA1"
     private const val ACK_PREFIX = "APACK1"
+    private const val NEAR_PROBE = "APRN1"
+    private const val NEAR_REPLY = "APRN2"
     private const val MAX_PACKAGE_BYTES = 900_000
     private const val MAX_ID_BYTES = 512
     private const val MAC_BYTES = 16
@@ -90,6 +92,22 @@ object ReceiverOfflineReportProtocol {
     }.getOrNull()
 
     fun newNonce(): String = b64(ByteArray(12).also { SecureRandom().nextBytes(it) })
+
+    fun nearbyProbe(nonce: String = newNonce()): String = "$NEAR_PROBE|$nonce"
+
+    fun parseNearbyProbe(raw: String): String? {
+        val p = raw.trim().split('|')
+        return if (p.size == 2 && p[0] == NEAR_PROBE && p[1].length >= 8) p[1] else null
+    }
+
+    fun nearbyReply(nonce: String, invite: String): String =
+        "$NEAR_REPLY|$nonce|${b64(invite.toByteArray(Charsets.UTF_8))}"
+
+    fun parseNearbyReply(raw: String, nonce: String): String? = runCatching {
+        val p = raw.trim().split('|', limit = 3)
+        if (p.size != 3 || p[0] != NEAR_REPLY || p[1] != nonce) return@runCatching null
+        String(b64d(p[2]), Charsets.UTF_8).takeIf { it.isNotBlank() }
+    }.getOrNull()
 
     fun discoveryProbe(receiverId: String, nonce: String = newNonce()): String =
         listOf(DISCOVERY_PROBE, receiverId.trim(), nonce).joinToString("|")
