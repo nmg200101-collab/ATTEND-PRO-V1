@@ -84,14 +84,169 @@ class ReportReceiverActivity : Activity() {
     private fun scanGrant(){startActivityForResult(Intent(this,QrScannerActivity::class.java).putExtra(QrScannerActivity.EXTRA_PROMPT,t("امسح QR الربط النهائي","Scan final link QR")),REQ_GRANT)}
     @Deprecated("Deprecated in Java") override fun onActivityResult(r:Int,c:Int,d:Intent?){super.onActivityResult(r,c,d);if(r!=REQ_GRANT||c!=RESULT_OK)return;val raw=d?.getStringExtra(QrScannerActivity.EXTRA_RESULT).orEmpty();val g=ReportProtocol.decodeRemoteGrant(raw,receiver.receiverId)?:run{info(t("QR غير صالح","Invalid QR"),t("الرمز غير صالح أو منتهي.","The code is invalid or expired."));return};receiver.serverUrl=g.serverUrl;refreshRemote(false)}
 
-    private fun refreshRemote(silent:Boolean){if(receiver.serverUrl.isBlank()){if(!silent)info(t("غير مرتبط","Not linked"),t("اربط الهاتف أولًا من تبويب التفعيل.","Link the phone first from Activation."));return};Thread{val r=CentralServerClient.receiverCapabilities(receiver.serverUrl,receiver.receiverId,receiver.secret);if(r.isSuccess){val x=r.getOrThrow();receiver.canReceiveReports=x.canReceiveReports;receiver.canMessageEmployees=x.canMessageEmployees;receiver.canManageStore=x.canManageStore;receiver.capabilityStoreName=x.storeName;receiver.capabilityBranchId=x.branchId;if(receiver.canReceiveReports)CentralServerClient.receiverInbox(receiver.serverUrl,receiver.receiverId,receiver.secret).getOrNull()?.forEach{receiver.receive(it.packageText)}};runOnUiThread{if(!silent)info(if(r.isSuccess)t("تم التحديث ✓","Updated ✓") else t("تعذر التحديث","Refresh failed"),r.exceptionOrNull()?.message?:t("تم تحديث الصلاحيات.","Permissions refreshed."));buildUi()}}.start()}
+    private fun refreshRemote(silent:Boolean){
+        if(receiver.serverUrl.isBlank()){
+            if(!silent)info(t("غير مرتبط","Not linked"),t("اربط الهاتف أولًا من تبويب التفعيل.","Link the phone first from Activation."))
+            return
+        }
+        Thread{
+            val r=CentralServerClient.receiverCapabilities(receiver.serverUrl,receiver.receiverId,receiver.secret)
+            if(r.isSuccess){
+                val x=r.getOrThrow()
+                receiver.canReceiveReports=x.canReceiveReports
+                receiver.canMessageEmployees=x.canMessageEmployees
+                receiver.canManageStore=x.canManageStore
+                receiver.capabilityStoreName=x.storeName
+                receiver.capabilityBranchId=x.branchId
+                if(receiver.canReceiveReports){
+                    CentralServerClient.receiverInbox(receiver.serverUrl,receiver.receiverId,receiver.secret)
+                        .getOrNull()?.forEach{receiver.receive(it.packageText)}
+                }
+            }
+            runOnUiThread{
+                if(!silent){
+                    info(
+                        if(r.isSuccess)t("تم التحديث ✓","Updated ✓") else t("تعذر التحديث","Refresh failed"),
+                        if(r.isSuccess)t("تم تحديث الصلاحيات والحالة من الخادم.","Permissions and status were refreshed from the server.")
+                        else networkMessage(r.exceptionOrNull())
+                    )
+                }
+                buildUi()
+            }
+        }.start()
+    }
 
-    private fun openEmployees(){Thread{val r=ReceiverEmployeeAdminClient.list(receiver.serverUrl,receiver.receiverId,receiver.secret);runOnUiThread{if(r.isFailure){info(t("إدارة الموظفين","Employee management"),r.exceptionOrNull()?.message?:"Error");return@runOnUiThread};val es=r.getOrThrow();val labels=mutableListOf(t("＋ إضافة موظف","＋ Add employee"));labels.addAll(es.map{"${it.employeeName} • ${it.employeeId} • ${if(it.enabled)t("نشط","Active") else t("موقوف","Disabled")}"});AlertDialog.Builder(this).setTitle(t("إدارة الموظفين","Employee management")).setItems(labels.toTypedArray()){_,i->if(i==0)editEmployee(null) else employeeActions(es[i-1])}.setNegativeButton(t("إغلاق","Close"),null).show()}}.start()}
-    private fun editEmployee(e:ReceiverEmployeeAdminClient.Employee?){val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(24,8,24,0)};val id=UiKit.field(this,p,t("رقم الموظف","Employee ID")).apply{setText(e?.employeeId.orEmpty());isEnabled=e==null};val name=UiKit.field(this,p,t("اسم الموظف","Employee name")).apply{setText(e?.employeeName.orEmpty())};val branch=UiKit.field(this,p,t("الفرع","Branch")).apply{setText(e?.branchId?:"MAIN")};box.addView(id);box.addView(name);box.addView(branch);val d=AlertDialog.Builder(this).setTitle(if(e==null)t("إضافة موظف","Add employee")else t("تعديل موظف","Edit employee")).setView(box).setPositiveButton(t("حفظ","Save"),null).setNegativeButton(t("إلغاء","Cancel"),null).create();d.setOnShowListener{d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{val eid=id.text.toString().trim();val n=name.text.toString().trim();val b=branch.text.toString().trim().ifBlank{"MAIN"};if(eid.isBlank()||n.length<2)return@setOnClickListener;Thread{val r=if(e==null)ReceiverEmployeeAdminClient.add(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b)else ReceiverEmployeeAdminClient.update(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b);runOnUiThread{if(r.isSuccess){d.dismiss();openEmployees()}else info(t("تعذر الحفظ","Save failed"),r.exceptionOrNull()?.message?:"Error")}}.start()}};d.show()}
-    private fun employeeActions(e:ReceiverEmployeeAdminClient.Employee){AlertDialog.Builder(this).setTitle("${e.employeeName} • ${e.employeeId}").setItems(arrayOf(t("تعديل","Edit"),if(e.enabled)t("إيقاف","Disable")else t("تفعيل","Enable"))){_,i->if(i==0)editEmployee(e) else Thread{val r=ReceiverEmployeeAdminClient.setEnabled(receiver.serverUrl,receiver.receiverId,receiver.secret,e.employeeId,!e.enabled);runOnUiThread{if(r.isSuccess)openEmployees()else info(t("تعذر التحديث","Update failed"),r.exceptionOrNull()?.message?:"Error")}}.start()}.setNegativeButton(t("إلغاء","Cancel"),null).show()}
+    private fun openEmployees(){
+        if(receiver.serverUrl.isBlank()){
+            info(t("إدارة الموظفين","Employee management"),t("اربط هاتف الاستلام بالخادم أولًا.","Link the receiver phone to the server first."))
+            return
+        }
+        Thread{
+            val r=ReceiverEmployeeAdminClient.list(receiver.serverUrl,receiver.receiverId,receiver.secret)
+            runOnUiThread{
+                if(r.isFailure){
+                    info(t("إدارة الموظفين","Employee management"),networkMessage(r.exceptionOrNull()))
+                    return@runOnUiThread
+                }
+                val es=r.getOrThrow()
+                val labels=mutableListOf(t("＋ إضافة موظف","＋ Add employee"))
+                labels.addAll(es.map{
+                    val state=if(it.pendingCommand){
+                        t("قيد التنفيذ","Pending") + (if(it.pendingAction.isNotBlank()) " • ${pendingActionLabel(it.pendingAction)}" else "")
+                    } else if(it.enabled) t("نشط","Active") else t("موقوف","Disabled")
+                    "${it.employeeName} • ${it.employeeId} • $state"
+                })
+                AlertDialog.Builder(this)
+                    .setTitle(t("إدارة الموظفين","Employee management"))
+                    .setMessage(t(
+                        "التغييرات تُرسل إلى جهاز المحل ثم تُطبق محليًا وتُؤكَّد للخادم. ظهور «قيد التنفيذ» يعني أن الأمر ينتظر جهاز المحل.",
+                        "Changes are sent to the Store device, applied locally, then acknowledged to the server. Pending means the command is waiting for the Store device."
+                    ))
+                    .setItems(labels.toTypedArray()){_,i->
+                        if(i==0) editEmployee(null) else employeeActions(es[i-1])
+                    }
+                    .setNeutralButton(t("تحديث","Refresh")){_,_->openEmployees()}
+                    .setNegativeButton(t("إغلاق","Close"),null)
+                    .show()
+            }
+        }.start()
+    }
+    private fun editEmployee(e:ReceiverEmployeeAdminClient.Employee?){
+        if(e?.pendingCommand==true){
+            info(t("الأمر قيد التنفيذ","Command pending"),t("انتظر حتى يستلم جهاز المحل الأمر الحالي ويؤكده، ثم حدّث القائمة.","Wait until the Store device applies the current command and acknowledges it, then refresh the list."))
+            return
+        }
+        val box=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;setPadding(24,8,24,0)}
+        val id=UiKit.field(this,p,t("رقم الموظف","Employee ID")).apply{setText(e?.employeeId.orEmpty());isEnabled=e==null}
+        val name=UiKit.field(this,p,t("اسم الموظف","Employee name")).apply{setText(e?.employeeName.orEmpty())}
+        val branch=UiKit.field(this,p,t("الفرع","Branch")).apply{setText(e?.branchId?:"MAIN")}
+        box.addView(id);box.addView(name);box.addView(branch)
+        val d=AlertDialog.Builder(this)
+            .setTitle(if(e==null)t("إضافة موظف","Add employee")else t("تعديل موظف","Edit employee"))
+            .setMessage(t("سيُرسل التغيير إلى جهاز المحل للتطبيق الفعلي. لا يتم تعديل بيانات الاقتران أو Bluetooth أو GPS.","The change is sent to the Store device for actual application. Pairing, Bluetooth and GPS data are not modified."))
+            .setView(box)
+            .setPositiveButton(t("إرسال الأمر","Send command"),null)
+            .setNegativeButton(t("إلغاء","Cancel"),null)
+            .create()
+        d.setOnShowListener{
+            d.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+                val eid=id.text.toString().trim()
+                val n=name.text.toString().trim()
+                val b=branch.text.toString().trim().ifBlank{"MAIN"}
+                if(eid.isBlank()){id.error=t("مطلوب","Required");return@setOnClickListener}
+                if(n.length<2){name.error=t("الاسم غير مكتمل","Name is incomplete");return@setOnClickListener}
+                Thread{
+                    val r=if(e==null)
+                        ReceiverEmployeeAdminClient.add(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b)
+                    else
+                        ReceiverEmployeeAdminClient.update(receiver.serverUrl,receiver.receiverId,receiver.secret,eid,n,b)
+                    runOnUiThread{
+                        if(r.isSuccess){
+                            d.dismiss()
+                            info(
+                                t("تم إرسال الأمر ✓","Command sent ✓"),
+                                t("الأمر الآن قيد التنفيذ. سيطبقه جهاز المحل عند اتصاله بالخادم ثم تتحدث القائمة تلقائيًا بعد التحديث.","The command is now pending. The Store device will apply it when online, then the list will reflect the confirmed state.")
+                            )
+                        }else info(t("تعذر إرسال الأمر","Command failed"),networkMessage(r.exceptionOrNull()))
+                    }
+                }.start()
+            }
+        }
+        d.show()
+    }
+    private fun employeeActions(e:ReceiverEmployeeAdminClient.Employee){
+        if(e.pendingCommand){
+            info(
+                t("الأمر قيد التنفيذ","Command pending"),
+                t("يوجد أمر ${pendingActionLabel(e.pendingAction)} ينتظر جهاز المحل. لا يمكن إرسال أمر جديد لنفس الموظف حتى ينتهي الحالي.","A ${pendingActionLabel(e.pendingAction)} command is waiting for the Store device. A new command cannot be sent for this employee until it completes.")
+            )
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle("${e.employeeName} • ${e.employeeId}")
+            .setItems(arrayOf(t("تعديل","Edit"),if(e.enabled)t("إيقاف","Disable")else t("تفعيل","Enable"))){_,i->
+                if(i==0) editEmployee(e)
+                else Thread{
+                    val r=ReceiverEmployeeAdminClient.setEnabled(receiver.serverUrl,receiver.receiverId,receiver.secret,e.employeeId,!e.enabled)
+                    runOnUiThread{
+                        if(r.isSuccess){
+                            info(
+                                t("تم إرسال الأمر ✓","Command sent ✓"),
+                                t("تم إرسال أمر ${if(e.enabled)"إيقاف" else "تفعيل"} الموظف إلى جهاز المحل وهو الآن قيد التنفيذ.","The employee ${if(e.enabled)"disable" else "enable"} command was sent to the Store device and is now pending.")
+                            )
+                        }else info(t("تعذر إرسال الأمر","Command failed"),networkMessage(r.exceptionOrNull()))
+                    }
+                }.start()
+            }
+            .setNegativeButton(t("إلغاء","Cancel"),null)
+            .show()
+    }
 
     private fun chooseEmployeeForMessage(){Thread{val r=CentralServerClient.receiverEmployees(receiver.serverUrl,receiver.receiverId,receiver.secret);runOnUiThread{val es=r.getOrNull().orEmpty();if(es.isEmpty()){info(t("الموظفون","Employees"),t("لا يوجد موظفون متاحون.","No employees available."));return@runOnUiThread};AlertDialog.Builder(this).setTitle(t("اختر الموظف","Choose employee")).setItems(es.map{"${it.employeeName} • ${it.employeeId}"}.toTypedArray()){_,i->val e=es[i];val f=UiKit.field(this,p,t("اكتب الرسالة","Write message"));AlertDialog.Builder(this).setTitle(e.employeeName).setView(f).setPositiveButton(t("إرسال","Send")){_,_->Thread{CentralServerClient.receiverSendEmployeeMessage(receiver.serverUrl,receiver.receiverId,receiver.secret,e.employeeId,t("رسالة من الإدارة","Management message"),f.text.toString(),"NORMAL",false)}.start()}.setNegativeButton(t("إلغاء","Cancel"),null).show()}.show()}}.start()}
     private fun showReplies(){Thread{val r=CentralServerClient.receiverMessagesInbox(receiver.serverUrl,receiver.receiverId,receiver.secret);runOnUiThread{val x=r.getOrNull().orEmpty();info(t("ردود الموظفين","Employee replies"),if(x.isEmpty())t("لا توجد ردود.","No replies.")else x.take(30).joinToString("\n\n"){"${it.employeeId}: ${it.body}"})}}.start()}
+    private fun pendingActionLabel(action:String):String=when(action.uppercase(Locale.US)){
+        "ADD"->t("إضافة","Add")
+        "UPDATE"->t("تعديل","Edit")
+        "STATUS"->t("تغيير الحالة","Status change")
+        else->t("إدارة","Management")
+    }
+
+    private fun networkMessage(error:Throwable?):String{
+        val raw=error?.message.orEmpty()
+        return when{
+            raw.contains("Failed to connect to /",true) && raw.contains(":",true) ->
+                t("تعذر الوصول إلى الخادم عبر الشبكة الحالية. سيحاول التطبيق IPv4 تلقائيًا؛ تحقق من الإنترنت ثم أعد المحاولة.","The server could not be reached on the current network. The app retries over IPv4 automatically; check connectivity and try again.")
+            raw.contains("Unable to resolve host",true) || raw.contains("No address associated",true) || raw.contains("UnknownHost",true) ->
+                t("تعذر حل عنوان الخادم. سيستخدم التطبيق DNS وIPv4 الاحتياطيين تلقائيًا؛ تحقق من الإنترنت ثم أعد المحاولة.","The server hostname could not be resolved. The app uses fallback DNS and IPv4 automatically; check connectivity and try again.")
+            raw.contains("timeout",true) || raw.contains("timed out",true) ->
+                t("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة.","The server connection timed out. Check connectivity and try again.")
+            raw.startsWith("HTTP 404",true) ->
+                t("خدمة إدارة الموظفين غير متاحة على الخادم الحالي. حدّث الخادم ثم أعد المحاولة.","Employee management is unavailable on the current server. Update the server and try again.")
+            raw.isBlank()->t("تعذر الاتصال بالخادم.","Could not connect to the server.")
+            else->raw
+        }
+    }
+
     private fun info(title:String,msg:String){AlertDialog.Builder(this).setTitle(title).setMessage(msg).setPositiveButton(t("حسنًا","OK"),null).show()}
     companion object{private const val REQ_GRANT=7301}
 }
