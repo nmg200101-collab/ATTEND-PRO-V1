@@ -185,7 +185,6 @@ class StoreReceiverPermissionsActivity : Activity() {
         val active = phones.count { it.active }
         val reportPhones = phones.count { it.active && it.canReceiveReports }
         val messagePhones = phones.count { it.active && it.canMessageEmployees }
-        val employeePhones = phones.count { it.active && it.canManageStore }
 
         content.addView(UiKit.card(this, p, 10).apply {
             addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("نظرة عامة", "Overview")))
@@ -193,8 +192,8 @@ class StoreReceiverPermissionsActivity : Activity() {
                 t("$active هاتف نشط من ${phones.size}", "$active active of ${phones.size} phones"), 20f
             ))
             addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
-                "استلام التقارير: $reportPhones\nمراسلة الموظفين: $messagePhones\nإدارة الموظفين: $employeePhones",
-                "Receive reports: $reportPhones\nEmployee messaging: $messagePhones\nEmployee management: $employeePhones"
+                "استلام التقارير: $reportPhones\nمراسلة الموظفين: $messagePhones",
+                "Receive reports: $reportPhones\nEmployee messaging: $messagePhones"
             )))
             addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
                 "المسار الوحيد لإدارة هواتف الاستلام هو: التقارير ← هواتف الاستلام.",
@@ -261,17 +260,12 @@ class StoreReceiverPermissionsActivity : Activity() {
                         t("إرسال الرسائل واستلام الردود.", "Send messages and receive replies."),
                         phone.canMessageEmployees
                     )
-                    val manage = permissionCheckBox(
-                        t("إدارة الموظفين", "Employee management"),
-                        t("عرض/إضافة/تعديل/تفعيل/إيقاف الموظفين فقط.", "View/add/edit/enable/disable employees only."),
-                        phone.canManageStore
-                    )
-                    addView(reports); addView(messages); addView(manage)
+                    addView(reports); addView(messages)
                     addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
                         if (remoteInFlight) t("جاري الحفظ والتحقق…", "Saving and verifying…")
                         else t("حفظ صلاحيات هذا الهاتف", "Save this phone permissions"), false).apply {
                         isEnabled = !remoteInFlight
-                        setOnClickListener { savePermissions(phone, reports.isChecked, messages.isChecked, manage.isChecked) }
+                        setOnClickListener { savePermissions(phone, reports.isChecked, messages.isChecked) }
                     })
                 }
                 addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
@@ -317,19 +311,17 @@ class StoreReceiverPermissionsActivity : Activity() {
             card.addView(UiKit.subtitle(this, p, t("المعرف: ${invite.receiverId}", "ID: ${invite.receiverId}")))
             val reports = permissionCheckBox(t("استلام التقارير", "Receive reports"), t("استلام تقارير الحضور.", "Receive attendance reports."), true)
             val messages = permissionCheckBox(t("مراسلة الموظفين", "Message employees"), t("إرسال الرسائل واستلام الردود.", "Send messages and receive replies."), false)
-            val manage = permissionCheckBox(t("إدارة الموظفين", "Employee management"), t("عرض/إضافة/تعديل/تفعيل/إيقاف الموظفين فقط.", "View/add/edit/enable/disable employees only."), false)
             card.addView(reports)
             card.addView(messages)
-            card.addView(manage)
             card.addView(UiKit.button(this, p,
                 if (remoteInFlight) t("جاري الربط…", "Linking…") else t("حفظ وربط الهاتف", "Save and link phone")
             ).apply {
                 isEnabled = !remoteInFlight
                 setOnClickListener {
-                    if (!reports.isChecked && !messages.isChecked && !manage.isChecked) {
+                    if (!reports.isChecked && !messages.isChecked) {
                         showError(t("اختر صلاحية", "Choose a permission"), t("يجب اختيار صلاحية واحدة على الأقل.", "Select at least one permission."))
                     } else {
-                        completeAdd(invite, reports.isChecked, messages.isChecked, manage.isChecked)
+                        completeAdd(invite, reports.isChecked, messages.isChecked)
                     }
                 }
             })
@@ -396,7 +388,7 @@ class StoreReceiverPermissionsActivity : Activity() {
         render()
     }
 
-    private fun completeAdd(invite: ReportProtocol.ReceiverInvite, reports: Boolean, messages: Boolean, manage: Boolean) {
+    private fun completeAdd(invite: ReportProtocol.ReceiverInvite, reports: Boolean, messages: Boolean) {
         if (invite.expiresAt < System.currentTimeMillis() || invite.receiverId.isBlank() || invite.secret.isBlank()) {
             showError(t("تعذر الربط", "Link failed"), t("رمز الهاتف منتهي أو غير صالح.", "The phone code is expired or invalid."))
             return
@@ -406,7 +398,7 @@ class StoreReceiverPermissionsActivity : Activity() {
             return
         }
 
-        repo.setReportReceiverPermissions(invite.receiverId, reports, messages, manage)
+        repo.setReportReceiverPermissions(invite.receiverId, reports, messages, false)
         markMeta(invite.receiverId, META_PERMISSION_UPDATE)
         addPendingSync(invite.receiverId)
 
@@ -552,7 +544,7 @@ class StoreReceiverPermissionsActivity : Activity() {
             val permissions = if (register.isSuccess) {
                 CentralServerClient.setReceiverPermissions(
                     repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                    phone.receiverId, phone.canReceiveReports, phone.canMessageEmployees, phone.canManageStore
+                    phone.receiverId, phone.canReceiveReports, phone.canMessageEmployees, false
                 )
             } else Result.failure(register.exceptionOrNull() ?: IllegalStateException("register failed"))
             val verified = if (permissions.isSuccess && phone.active) {
@@ -561,7 +553,7 @@ class StoreReceiverPermissionsActivity : Activity() {
                 ).map { remote ->
                     remote.canReceiveReports == phone.canReceiveReports &&
                         remote.canMessageEmployees == phone.canMessageEmployees &&
-                        remote.canManageStore == phone.canManageStore
+                        !remote.canManageStore
                 }
             } else Result.success(!phone.active)
 
@@ -603,10 +595,10 @@ class StoreReceiverPermissionsActivity : Activity() {
         }
     }
 
-    private fun savePermissions(phone: AuthorizedReportReceiver, reports: Boolean, messages: Boolean, manage: Boolean) {
+    private fun savePermissions(phone: AuthorizedReportReceiver, reports: Boolean, messages: Boolean) {
         if (remoteInFlight) return
         selectedReceiverId = phone.receiverId
-        repo.setReportReceiverPermissions(phone.receiverId, reports, messages, manage)
+        repo.setReportReceiverPermissions(phone.receiverId, reports, messages, false)
         markMeta(phone.receiverId, META_PERMISSION_UPDATE)
 
         if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) {
@@ -622,21 +614,21 @@ class StoreReceiverPermissionsActivity : Activity() {
             val identity = DeviceIdentity(this)
             var push = CentralServerClient.setReceiverPermissions(
                 repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                phone.receiverId, reports, messages, manage
+                phone.receiverId, reports, messages, false
             )
 
             fun verified(): Result<Boolean> =
                 CentralServerClient.receiverCapabilities(repo.serverUrl, phone.receiverId, phone.secret, repo.storeId).map { remote ->
                     remote.canReceiveReports == reports &&
                         remote.canMessageEmployees == messages &&
-                        remote.canManageStore == manage
+                        !remote.canManageStore
                 }
 
             var verify = if (push.isSuccess && phone.active) verified() else Result.success(!phone.active)
             if (push.isSuccess && phone.active && verify.getOrNull() == false) {
                 push = CentralServerClient.setReceiverPermissions(
                     repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
-                    phone.receiverId, reports, messages, manage
+                    phone.receiverId, reports, messages, false
                 )
                 if (push.isSuccess) verify = verified()
             }
@@ -797,8 +789,7 @@ class StoreReceiverPermissionsActivity : Activity() {
 
     private fun permissionsText(phone: AuthorizedReportReceiver): String = listOf(
         permissionLine(phone.canReceiveReports, t("استلام التقارير", "Receive reports")),
-        permissionLine(phone.canMessageEmployees, t("مراسلة الموظفين", "Message employees")),
-        permissionLine(phone.canManageStore, t("إدارة الموظفين", "Employee management"))
+        permissionLine(phone.canMessageEmployees, t("مراسلة الموظفين", "Message employees"))
     ).joinToString("\n")
 
     private fun permissionLine(allowed: Boolean, label: String) =
