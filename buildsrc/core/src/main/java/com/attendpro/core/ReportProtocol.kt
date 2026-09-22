@@ -132,6 +132,22 @@ data class ReceiverMessageReply(
     val readAt: Long
 )
 
+data class ReceiverOutgoingMessage(
+    val localId: String,
+    val storeId: String,
+    val employeeId: String,
+    val title: String,
+    val body: String,
+    val priority: String,
+    val createdAt: Long,
+    val state: String = "PENDING",
+    val attempts: Int = 0,
+    val lastAttemptAt: Long = 0L,
+    val nextAttemptAt: Long = 0L,
+    val remoteMessageId: String = "",
+    val lastError: String = ""
+)
+
 class ReportReceiverStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences("report_receiver_store", Context.MODE_PRIVATE)
@@ -414,6 +430,122 @@ class ReportReceiverStore(context: Context) {
         }) }
         prefs.edit().putString("receiverMessageRepliesV141", a.toString()).apply()
         return added
+    }
+
+    fun outgoingMessages(storeId: String = ""): List<ReceiverOutgoingMessage> {
+        val raw = prefs.getString("receiverOutgoingMessagesV142", "[]") ?: "[]"
+        val a = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        val all = (0 until a.length()).mapNotNull { i -> runCatching {
+            val o = a.getJSONObject(i)
+            ReceiverOutgoingMessage(
+                localId = o.optString("localId", ""),
+                storeId = o.optString("storeId", ""),
+                employeeId = o.optString("employeeId", ""),
+                title = o.optString("title", ""),
+                body = o.optString("body", ""),
+                priority = o.optString("priority", "NORMAL"),
+                createdAt = o.optLong("createdAt", 0L),
+                state = o.optString("state", "PENDING"),
+                attempts = o.optInt("attempts", 0),
+                lastAttemptAt = o.optLong("lastAttemptAt", 0L),
+                nextAttemptAt = o.optLong("nextAttemptAt", 0L),
+                remoteMessageId = o.optString("remoteMessageId", ""),
+                lastError = o.optString("lastError", "")
+            )
+        }.getOrNull() }
+            .filter { it.localId.isNotBlank() && it.storeId.isNotBlank() && it.employeeId.isNotBlank() && it.body.isNotBlank() }
+            .sortedByDescending { it.createdAt }
+        return if (storeId.isBlank()) all else all.filter { it.storeId == storeId }
+    }
+
+    @Synchronized
+    fun queueOutgoingMessage(
+        storeId: String,
+        employeeId: String,
+        title: String,
+        body: String,
+        priority: String = "NORMAL"
+    ): ReceiverOutgoingMessage? {
+        if (storeId.isBlank() || employeeId.isBlank() || body.isBlank()) return null
+        val item = ReceiverOutgoingMessage(
+            localId = "RCVOUT-" + UUID.randomUUID().toString(),
+            storeId = storeId,
+            employeeId = employeeId,
+            title = title.take(160),
+            body = body.trim().take(2000),
+            priority = priority.uppercase().takeIf { it in setOf("NORMAL", "IMPORTANT", "URGENT") } ?: "NORMAL",
+            createdAt = System.currentTimeMillis()
+        )
+        saveOutgoingMessages(listOf(item) + outgoingMessages())
+        return item
+    }
+
+    fun dueOutgoingMessages(now: Long = System.currentTimeMillis()): List<ReceiverOutgoingMessage> =
+        outgoingMessages().filter {
+            it.state != "SENT" && it.state != "CANCELLED" &&
+                it.nextAttemptAt <= now && it.attempts < 12
+        }.sortedBy { it.createdAt }
+
+    @Synchronized
+    fun markOutgoingAttempt(localId: String, error: String = "", remoteMessageId: String = ""): ReceiverOutgoingMessage? {
+        val all = outgoingMessages().toMutableList()
+        val index = all.indexOfFirst { it.localId == localId }
+        if (index < 0) return null
+        val old = all[index]
+        val now = System.currentTimeMillis()
+        val attempts = old.attempts + 1
+        val sent = remoteMessageId.isNotBlank()
+        val retryDelay = when {
+            sent -> 0L
+            attempts <= 1 -> 2_500L
+            attempts == 2 -> 5_000L
+            attempts == 3 -> 10_000L
+            attempts <= 5 -> 20_000L
+            else -> 60_000L
+        }
+        val updated = old.copy(
+            state = if (sent) "SENT" else if (attempts >= 12) "FAILED" else "RETRY",
+            attempts = attempts,
+            lastAttemptAt = now,
+            nextAttemptAt = if (sent) 0L else now + retryDelay,
+            remoteMessageId = remoteMessageId,
+            lastError = if (sent) "" else error.take(300)
+        )
+        all[index] = updated
+        saveOutgoingMessages(all)
+        return updated
+    }
+
+    @Synchronized
+    fun retryOutgoingMessage(localId: String): Boolean {
+        val all = outgoingMessages().toMutableList()
+        val index = all.indexOfFirst { it.localId == localId }
+        if (index < 0) return false
+        val old = all[index]
+        all[index] = old.copy(state = "PENDING", attempts = 0, nextAttemptAt = 0L, lastError = "")
+        saveOutgoingMessages(all)
+        return true
+    }
+
+    @Synchronized
+    private fun saveOutgoingMessages(items: List<ReceiverOutgoingMessage>) {
+        val a = JSONArray()
+        items.sortedByDescending { it.createdAt }.take(200).forEach { m -> a.put(JSONObject().apply {
+            put("localId", m.localId)
+            put("storeId", m.storeId)
+            put("employeeId", m.employeeId)
+            put("title", m.title)
+            put("body", m.body)
+            put("priority", m.priority)
+            put("createdAt", m.createdAt)
+            put("state", m.state)
+            put("attempts", m.attempts)
+            put("lastAttemptAt", m.lastAttemptAt)
+            put("nextAttemptAt", m.nextAttemptAt)
+            put("remoteMessageId", m.remoteMessageId)
+            put("lastError", m.lastError)
+        }) }
+        prefs.edit().putString("receiverOutgoingMessagesV142", a.toString()).commit()
     }
 
     fun receivedReports(storeId: String = ""): List<ReceivedReport> {
