@@ -21,11 +21,14 @@ object ReceiverEmployeeAdminClient {
         val pendingAction:String = "",
         val commandStatus:String = "",
         val commandError:String = "",
-        val commandUpdatedAt:Long = 0L
+        val commandUpdatedAt:Long = 0L,
+        val commandEmployeeName:String = "",
+        val commandBranchId:String = "",
+        val commandEnabled:Boolean? = null
     )
 
-    fun list(serverUrl:String, receiverId:String, secret:String):Result<List<Employee>> = runCatching {
-        val o=post(serverUrl,"/api/v1/monitor/employees/manage-list",JSONObject().apply{put("receiverId",receiverId);put("secret",secret)})
+    fun list(serverUrl:String, receiverId:String, secret:String, storeId:String = ""):Result<List<Employee>> = runCatching {
+        val o=post(serverUrl,"/api/v1/monitor/employees/manage-list",JSONObject().apply{put("receiverId",receiverId);put("secret",secret);if(storeId.isNotBlank())put("storeId",storeId)})
         val a=o.optJSONArray("employees")?:JSONArray()
         (0 until a.length()).map { i ->
             val x=a.getJSONObject(i)
@@ -40,16 +43,22 @@ object ReceiverEmployeeAdminClient {
                 x.optString("pendingAction",""),
                 x.optString("commandStatus",""),
                 x.optString("commandError",""),
-                x.optLong("commandUpdatedAt",0L)
+                x.optLong("commandUpdatedAt",0L),
+                x.optString("commandEmployeeName",""),
+                x.optString("commandBranchId",""),
+                if (x.has("commandEnabled") && !x.isNull("commandEnabled")) x.optBoolean("commandEnabled") else null
             )
         }
     }
-    fun add(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/add",receiverId,secret,id,name,branch,null)
-    fun update(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String)=command(serverUrl,"/api/v1/monitor/employees/update",receiverId,secret,id,name,branch,null)
-    fun setEnabled(serverUrl:String,receiverId:String,secret:String,id:String,enabled:Boolean)=command(serverUrl,"/api/v1/monitor/employees/status",receiverId,secret,id,"","",enabled)
+    fun add(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String,storeId:String = "")=
+        command(serverUrl,"/api/v1/monitor/employees/add",receiverId,secret,id,name,branch,null,storeId)
+    fun update(serverUrl:String,receiverId:String,secret:String,id:String,name:String,branch:String,storeId:String = "")=
+        command(serverUrl,"/api/v1/monitor/employees/update",receiverId,secret,id,name,branch,null,storeId)
+    fun setEnabled(serverUrl:String,receiverId:String,secret:String,id:String,enabled:Boolean,storeId:String = "")=
+        command(serverUrl,"/api/v1/monitor/employees/status",receiverId,secret,id,"","",enabled,storeId)
 
-    private fun command(url:String,path:String,rid:String,secret:String,id:String,name:String,branch:String,enabled:Boolean?):Result<Unit> = runCatching {
-        val body=JSONObject().apply{put("receiverId",rid);put("secret",secret);put("employeeId",id);if(name.isNotBlank())put("employeeName",name);if(branch.isNotBlank())put("branchId",branch);if(enabled!=null)put("enabled",enabled)}
+    private fun command(url:String,path:String,rid:String,secret:String,id:String,name:String,branch:String,enabled:Boolean?,storeId:String):Result<Unit> = runCatching {
+        val body=JSONObject().apply{put("receiverId",rid);put("secret",secret);if(storeId.isNotBlank())put("storeId",storeId);put("employeeId",id);if(name.isNotBlank())put("employeeName",name);if(branch.isNotBlank())put("branchId",branch);if(enabled!=null)put("enabled",enabled)}
         post(url,path,body); Unit
     }
     private fun post(base:String,path:String,body:JSONObject):JSONObject {
