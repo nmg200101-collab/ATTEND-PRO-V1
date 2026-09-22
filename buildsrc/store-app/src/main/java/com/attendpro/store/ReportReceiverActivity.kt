@@ -107,8 +107,8 @@ class ReportReceiverActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::receiver.isInitialized && receiver.serverUrl.isNotBlank()) {
-            refreshCapabilities(silent = true, refreshCurrentSection = true)
+        if (::receiver.isInitialized && receiver.storeBindings().isNotEmpty()) {
+            refreshStoreBindings(silent = true, refreshCurrentSection = true)
         }
     }
 
@@ -168,6 +168,7 @@ class ReportReceiverActivity : Activity() {
             })
         }
         when (section) {
+            Section.STORES -> renderStores()
             Section.STATUS -> renderStatus()
             Section.REPORTS -> renderReports()
             Section.MESSAGES -> renderMessages()
@@ -177,15 +178,16 @@ class ReportReceiverActivity : Activity() {
 
     private fun renderHeader() {
         header.removeAllViews()
-        val linked = receiver.serverUrl.isNotBlank()
+        val active = receiver.activeBinding()
+        val storeCount = receiver.storeBindings().count { it.active }
         header.addView(UiKit.heroCard(this, p, 10).apply {
             addView(UiKit.title(this@ReportReceiverActivity, p, t("هاتف الاستلام", "Receiver Phone"), 24f).apply {
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
             })
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "${receiver.capabilityStoreName.ifBlank { "غير مرتبط" }} • ${receiver.capabilityBranchId.ifBlank { "—" }}\n${receiver.receiverName} • ${if (linked) "متصل بالخادم" else "غير مرتبط"}",
-                "${receiver.capabilityStoreName.ifBlank { "Not linked" }} • ${receiver.capabilityBranchId.ifBlank { "—" }}\n${receiver.receiverName} • ${if (linked) "Server linked" else "Not linked"}"
+                "${active?.storeName ?: "غير مرتبط"} • ${active?.branchId ?: "—"}\n${receiver.receiverName} • المحلات المرتبطة: $storeCount",
+                "${active?.storeName ?: "Not linked"} • ${active?.branchId ?: "—"}\n${receiver.receiverName} • Linked stores: $storeCount"
             )).apply {
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
@@ -196,10 +198,13 @@ class ReportReceiverActivity : Activity() {
     private fun renderTabs() {
         tabs.removeAllViews()
         val card = UiKit.card(this, p, 7)
-        addTab(card, Section.STATUS, t("الحالة", "Status"))
-        if (receiver.canReceiveReports) addTab(card, Section.REPORTS, t("التقارير", "Reports"))
-        if (receiver.canMessageEmployees) addTab(card, Section.MESSAGES, t("الرسائل", "Messages"))
-        if (receiver.canManageStore) addTab(card, Section.EMPLOYEES, t("الموظفون", "Employees"))
+        addTab(card, Section.STORES, t("المحلات", "Stores"))
+        if (receiver.activeBinding() != null) {
+            addTab(card, Section.STATUS, t("الحالة", "Status"))
+            if (receiver.canReceiveReports) addTab(card, Section.REPORTS, t("التقارير", "Reports"))
+            if (receiver.canMessageEmployees) addTab(card, Section.MESSAGES, t("الرسائل", "Messages"))
+            if (receiver.canManageStore) addTab(card, Section.EMPLOYEES, t("الموظفون", "Employees"))
+        }
         tabs.addView(card)
     }
 
@@ -210,6 +215,7 @@ class ReportReceiverActivity : Activity() {
                 notice = ""
                 selectedReportIndex = null
                 employeeEditorOpen = false
+                selectedEmployeeId = null
                 render()
                 refreshSelectedSection(silent = true)
             }
@@ -217,9 +223,165 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun coerceSectionToPermissions() {
+        if (receiver.activeBinding() == null) {
+            section = Section.STORES
+            return
+        }
         if (section == Section.REPORTS && !receiver.canReceiveReports) section = Section.STATUS
         if (section == Section.MESSAGES && !receiver.canMessageEmployees) section = Section.STATUS
         if (section == Section.EMPLOYEES && !receiver.canManageStore) section = Section.STATUS
+    }
+
+    private fun renderStores() {
+        val bindings = receiver.storeBindings()
+        val activeId = receiver.activeBinding()?.storeId.orEmpty()
+        content.addView(UiKit.card(this, p, 9).apply {
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("المحلات المرتبطة", "Linked stores")))
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "يمكن لهاتف الاستلام إدارة أكثر من محل. كل محل يحتفظ بصلاحياته وتقاريره ورسائله وموظفيه بصورة مستقلة.",
+                "This receiver can manage multiple stores. Each store keeps independent permissions, reports, messages and employees."
+            )))
+            addView(UiKit.button(this@ReportReceiverActivity, p,
+                if (storesInFlight) t("جاري تحديث المحلات…", "Refreshing stores…") else t("تحديث قائمة المحلات", "Refresh store list"),
+                false
+            ).apply {
+                isEnabled = !storesInFlight
+                setOnClickListener { refreshStoreBindings(silent = false, refreshCurrentSection = false) }
+            })
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("＋ إضافة محل جديد", "＋ Add store"), false).apply {
+                setOnClickListener { showIdentityQr = !showIdentityQr; render() }
+            })
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("مسح QR الربط النهائي للمحل", "Scan store final link QR"), false).apply {
+                setOnClickListener { scanGrant() }
+            })
+        })
+
+        if (showIdentityQr) {
+            val raw = ReportProtocol.encodeInvite(receiver.newInvite())
+            val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrNull()
+            content.addView(UiKit.card(this, p, 8).apply {
+                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("QR تعريف هاتف الاستلام", "Receiver identity QR")))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "في جهاز المحل الجديد افتح «هواتف الاستلام والصلاحيات» ← «إضافة هاتف» ثم امسح هذا الرمز.",
+                    "On the new Store device open Receiver phones & permissions → Add phone, then scan this code."
+                )))
+                if (qr != null) {
+                    addView(ImageView(this@ReportReceiverActivity).apply {
+                        setImageBitmap(qr)
+                        adjustViewBounds = true
+                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 700)
+                    })
+                }
+            })
+        }
+
+        if (bindings.isEmpty()) {
+            content.addView(UiKit.card(this, p, 8).apply {
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "لا يوجد محل مرتبط بعد. أضف أول محل باستخدام QR.",
+                    "No store is linked yet. Add the first store using QR."
+                )))
+            })
+            return
+        }
+
+        bindings.forEach { binding ->
+            content.addView(UiKit.card(this, p, 8).apply {
+                val selected = binding.storeId.isNotBlank() && binding.storeId == activeId
+                val state = if (binding.active) t("نشط", "Active") else t("موقوف", "Disabled")
+                val last = if (binding.lastServerRefreshAt > 0L) formatTime(binding.lastServerRefreshAt) else t("لم يتم بعد", "Not yet")
+                addView(UiKit.title(this@ReportReceiverActivity, p,
+                    "${if (selected) "✓ " else ""}${binding.storeName} • ${binding.branchId}", 18f))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "الحالة: $state\nآخر مزامنة: $last\nالصلاحيات: ${permissionsSummary(binding)}",
+                    "Status: $state\nLast sync: $last\nPermissions: ${permissionsSummary(binding)}"
+                )))
+                if (binding.active) {
+                    addView(UiKit.button(this@ReportReceiverActivity, p,
+                        if (selected) t("المحل الحالي", "Current store") else t("فتح هذا المحل", "Open this store"),
+                        selected
+                    ).apply {
+                        isEnabled = !selected
+                        setOnClickListener { switchStore(binding) }
+                    })
+                }
+                if (binding.storeId.isNotBlank()) {
+                    addView(UiKit.button(this@ReportReceiverActivity, p, t("حذف / فك ارتباط هذا المحل", "Remove / unlink this store"), false).apply {
+                        setOnClickListener { confirmUnlinkStore(binding) }
+                    })
+                } else {
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                        "ربط قديم من V137 — اضغط تحديث قائمة المحلات لترقيته تلقائيًا.",
+                        "Legacy V137 link — refresh the store list to upgrade it automatically."
+                    )))
+                }
+            })
+        }
+    }
+
+    private fun permissionsSummary(binding: ReceiverStoreBinding): String {
+        val parts = mutableListOf<String>()
+        if (binding.canReceiveReports) parts += t("تقارير", "Reports")
+        if (binding.canMessageEmployees) parts += t("رسائل", "Messages")
+        if (binding.canManageStore) parts += t("موظفون", "Employees")
+        return if (parts.isEmpty()) t("بدون صلاحيات", "No permissions") else parts.joinToString(" • ")
+    }
+
+    private fun switchStore(binding: ReceiverStoreBinding) {
+        if (!binding.active || binding.storeId.isBlank()) return
+        invalidateRemoteRequests()
+        if (!receiver.selectStore(binding.storeId)) return
+        lastServerRefreshAt = binding.lastServerRefreshAt
+        selectedReportIndex = null
+        selectedMessageEmployeeId = null
+        selectedEmployeeId = null
+        managedEmployees = emptyList()
+        messageEmployees = emptyList()
+        messageReplies = emptyList()
+        employeeEditorOpen = false
+        section = Section.STATUS
+        notice = t("تم اختيار ${binding.storeName}.", "${binding.storeName} selected.")
+        render()
+        refreshCapabilities(silent = true, refreshCurrentSection = false)
+    }
+
+    private fun confirmUnlinkStore(binding: ReceiverStoreBinding) {
+        if (!alive() || binding.storeId.isBlank()) return
+        AlertDialog.Builder(this)
+            .setTitle(t("فك ارتباط المحل", "Unlink store"))
+            .setMessage(t(
+                "سيتم حذف ارتباط «${binding.storeName}» من هاتف الاستلام فقط. لن يُحذف المحل أو الموظفون أو سجلات الحضور.",
+                "Only the link to “${binding.storeName}” will be removed from this receiver. Store, employees and attendance records will not be deleted."
+            ))
+            .setPositiveButton(t("فك الارتباط", "Unlink")) { _, _ -> unlinkStore(binding) }
+            .setNegativeButton(t("إلغاء", "Cancel"), null)
+            .show()
+    }
+
+    private fun unlinkStore(binding: ReceiverStoreBinding) {
+        if (storesInFlight || binding.storeId.isBlank()) return
+        storesInFlight = true
+        val generation = ++storesGeneration
+        render()
+        Thread {
+            val result = CentralServerClient.receiverUnlinkStore(
+                binding.serverUrl, receiver.receiverId, receiver.secret, binding.storeId
+            )
+            runOnUiThread {
+                if (generation != storesGeneration) return@runOnUiThread
+                storesInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (result.isSuccess) {
+                    receiver.removeStoreBinding(binding.storeId)
+                    invalidateRemoteRequests()
+                    section = Section.STORES
+                    notice = t("تم فك ارتباط المحل دون حذف بياناته ✓", "Store unlinked without deleting its data ✓")
+                } else {
+                    showError(t("تعذر فك الارتباط", "Could not unlink"), networkMessage(result.exceptionOrNull()))
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun renderStatus() {
