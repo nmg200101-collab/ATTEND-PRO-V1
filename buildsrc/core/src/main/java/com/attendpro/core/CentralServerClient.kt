@@ -691,6 +691,18 @@ object CentralServerClient {
         Unit
     }
 
+    fun deleteReceiverBinding(
+        serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, receiverId: String
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        request(
+            serverUrl, "/api/v1/report-receivers/delete", "POST",
+            JSONObject().put("receiverId", receiverId),
+            bearer = storeToken, deviceIdentity = identity, storeId = storeId
+        )
+        Unit
+    }
+
     fun setReceiverPermissions(
         serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, receiverId: String,
         canReceiveReports: Boolean, canMessageEmployees: Boolean, canManageStore: Boolean
