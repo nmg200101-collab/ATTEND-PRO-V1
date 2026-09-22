@@ -28,6 +28,7 @@ class EmployeeMessages1975Activity : Activity() {
         super.onCreate(savedInstanceState)
         identity = EmployeeIdentityStore(this)
         localStore = EmployeeLocalMessageStore1977(this)
+        EmployeeMessageFastPoller142.start(this)
         load()
     }
 
