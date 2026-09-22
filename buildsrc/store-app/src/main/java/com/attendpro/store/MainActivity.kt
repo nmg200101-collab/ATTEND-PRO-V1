@@ -543,33 +543,44 @@ class MainActivity : Activity() {
     private fun isDnsResolutionError(error: Throwable?): Boolean {
         val raw = error?.message.orEmpty()
         return raw.contains("Unable to resolve host", ignoreCase = true) ||
-            raw.contains("No address associated with hostname", ignoreCase = true)
+            raw.contains("No address associated with hostname", ignoreCase = true) ||
+            raw.contains("UnknownHost", ignoreCase = true) ||
+            raw.contains("DNS", ignoreCase = true)
+    }
+
+    private fun isNetworkRouteError(error: Throwable?): Boolean {
+        val raw = error?.message.orEmpty()
+        return raw.contains("Failed to connect", ignoreCase = true) ||
+            raw.contains("Network is unreachable", ignoreCase = true) ||
+            raw.contains("ENETUNREACH", ignoreCase = true) ||
+            raw.contains("EHOSTUNREACH", ignoreCase = true)
     }
 
     private fun activationConnectionMessage(error: Throwable?): String {
         val raw = error?.message.orEmpty()
         return when {
             isDnsResolutionError(error) ->
-                "تعذر العثور على عنوان الخادم عبر DNS. تحقق من الإنترنت أو غيّر DNS الخاص ثم أعد المحاولة."
+                "تعذر حل عنوان الخادم بعد محاولات DNS الآمنة وIPv4 الاحتياطية. تحقق من وجود اتصال إنترنت ثم أعد المحاولة."
+            isNetworkRouteError(error) ->
+                "تعذر الوصول إلى الخادم عبر مسار الشبكة الحالي حتى بعد التحويل التلقائي إلى IPv4. جرّب بيانات الهاتف أو Wi-Fi ثم أعد المحاولة."
             raw.contains("timeout", ignoreCase = true) ->
-                "انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة."
-            raw.isBlank() -> "تعذر الاتصال بالخادم."
+                "انتهت مهلة الاتصال بالخادم بعد محاولات الاتصال الاحتياطية. تحقق من الإنترنت ثم أعد المحاولة."
+            raw.isBlank() -> "تعذر الاتصال بالخادم بعد تجربة مسارات الاتصال الاحتياطية."
             else -> raw
         }
     }
 
     private fun showDnsRecoveryDialog(error: Throwable?) {
         val message = activationConnectionMessage(error) +
-            "\n\nالخادم: ${repo.serverUrl}\n\nيمكنك فتح إعدادات DNS الخاصة مباشرة، أو تغيير بيانات المحل والخادم."
+            "\n\nالخادم: ${repo.serverUrl}\n\nالتطبيق يجرب تلقائيًا DNS النظام وDNS الآمن وIPv4 الاحتياطي قبل إظهار هذه الرسالة."
         AlertDialog.Builder(this)
             .setTitle("تعذر الوصول إلى الخادم")
             .setMessage(message)
-            .setPositiveButton("فتح إعدادات DNS") { _, _ ->
-                val action = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) "android.settings.PRIVATE_DNS_SETTINGS" else Settings.ACTION_WIRELESS_SETTINGS
-                runCatching { startActivity(Intent(action)) }
+            .setPositiveButton("إعادة المحاولة") { _, _ -> forceCentralActivationRecovery() }
+            .setNeutralButton("إعدادات الشبكة") { _, _ ->
+                runCatching { startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS)) }
                     .onFailure { runCatching { startActivity(Intent(Settings.ACTION_SETTINGS)) } }
             }
-            .setNeutralButton("إعداد بيانات الخادم") { _, _ -> editActivationSetup() }
             .setNegativeButton("إغلاق", null)
             .show()
     }
