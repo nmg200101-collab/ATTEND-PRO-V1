@@ -50,6 +50,7 @@ class StoreReceiverPermissionsActivity : Activity() {
     private var linkProgress = ""
 
     @Volatile private var remoteInFlight = false
+    @Volatile private var nearDiscoveryInFlight = false
     @Volatile private var requestGeneration = 0L
 
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
@@ -84,6 +85,7 @@ class StoreReceiverPermissionsActivity : Activity() {
         if (::content.isInitialized && alive()) {
             render()
             flushPendingReceiverDeletes()
+            flushPendingReceiverSyncs()
         }
     }
 
@@ -300,6 +302,13 @@ class StoreReceiverPermissionsActivity : Activity() {
             isEnabled = !remoteInFlight
             setOnClickListener { scanReceiver() }
         })
+        card.addView(UiKit.button(this, p,
+            if (nearDiscoveryInFlight) t("جاري اكتشاف الهاتف القريب…", "Discovering nearby phone…")
+            else t("اكتشاف هاتف قريب", "Discover nearby phone"), false
+        ).apply {
+            isEnabled = !nearDiscoveryInFlight
+            setOnClickListener { discoverNearbyReceiver() }
+        })
 
         pendingInvite?.let { invite ->
             card.addView(UiKit.title(this, p, invite.name.ifBlank { t("هاتف استلام", "Receiver phone") }, 18f))
@@ -384,94 +393,147 @@ class StoreReceiverPermissionsActivity : Activity() {
     }
 
     private fun completeAdd(invite: ReportProtocol.ReceiverInvite, reports: Boolean, messages: Boolean, manage: Boolean) {
-        if (remoteInFlight) return
         if (invite.expiresAt < System.currentTimeMillis() || invite.receiverId.isBlank() || invite.secret.isBlank()) {
             showError(t("تعذر الربط", "Link failed"), t("رمز الهاتف منتهي أو غير صالح.", "The phone code is expired or invalid."))
             return
         }
+        if (!repo.authorizeReportReceiver(invite)) {
+            showError(t("تعذر الحفظ", "Save failed"), t("تعذر حفظ الهاتف محليًا.", "Could not save the phone locally."))
+            return
+        }
 
-        remoteInFlight = true
-        linkProgress = t("2/5 بدء حفظ الربط…", "2/5 Starting link save…")
-        val generation = ++requestGeneration
+        repo.setReportReceiverPermissions(invite.receiverId, reports, messages, manage)
+        markMeta(invite.receiverId, META_PERMISSION_UPDATE)
+        addPendingSync(invite.receiverId)
+
+        val grant = ReportProtocol.RemoteReceiverGrant(
+            invite.receiverId,
+            repo.serverUrl,
+            repo.storeName,
+            repo.branchId,
+            System.currentTimeMillis() + 10 * 60_000L,
+            storeId = repo.storeId
+        )
+        finalGrantText = ReportProtocol.encodeRemoteGrant(grant)
+        pendingInvite = null
+        selectedReceiverId = invite.receiverId
+        linkProgress = t(
+            "تم حفظ الهاتف فورًا ✓ — مزامنة الخادم تعمل في الخلفية.",
+            "Phone saved immediately ✓ — server sync is running in the background."
+        )
+        notice = t(
+            "يمكنك الآن مسح QR الربط النهائي من هاتف الاستلام دون انتظار الخادم.",
+            "You can scan the final link QR on the receiver phone now without waiting for the server."
+        )
         render()
+        syncReceiverBindingAsync(invite.receiverId)
+    }
 
+
+    private fun discoverNearbyReceiver() {
+        if (nearDiscoveryInFlight) return
+        nearDiscoveryInFlight = true
+        linkProgress = t("جاري البحث عبر Wi‑Fi/Hotspot…", "Searching over Wi‑Fi/Hotspot…")
+        render()
         Thread {
-            var finalError: Throwable? = null
-            var verified = false
-            try {
-                val centralAvailable = repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()
-                if (centralAvailable) {
-                    postLinkProgress(generation, t("2/5 تسجيل الهاتف في الخادم…", "2/5 Registering phone with server…"))
-                    CentralServerClient.registerReceiver(
-                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
-                        invite.receiverId, invite.name, invite.secret
-                    ).getOrThrow()
-
-                    postLinkProgress(generation, t("3/5 حفظ الصلاحيات…", "3/5 Saving permissions…"))
-                    CentralServerClient.setReceiverPermissions(
-                        repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
-                        invite.receiverId, reports, messages, manage
-                    ).getOrThrow()
-
-                    postLinkProgress(generation, t("4/5 التحقق النهائي من الربط…", "4/5 Verifying final link…"))
-                    val remote = CentralServerClient.receiverCapabilities(
-                        repo.serverUrl, invite.receiverId, invite.secret, repo.storeId
-                    ).getOrThrow()
-                    check(
-                        remote.storeId == repo.storeId &&
-                            remote.canReceiveReports == reports &&
-                            remote.canMessageEmployees == messages &&
-                            remote.canManageStore == manage
-                    ) { "لم تتطابق بيانات الربط بعد الحفظ" }
-                    verified = true
+            val lan = ReceiverReportLanClient.discoverNearbyInvite()
+            var result = lan
+            if (!lan.success) {
+                if (ReceiverReportBluetoothSupport.missingPermissions(this).isNotEmpty()) {
+                    runOnUiThread {
+                        nearDiscoveryInFlight = false
+                        linkProgress = t("يحتاج Bluetooth إلى الصلاحيات لإكمال اكتشاف القرب.", "Bluetooth permissions are required to continue nearby discovery.")
+                        ReceiverReportBluetoothSupport.request(this, REQ_NEAR_BLUETOOTH)
+                        render()
+                    }
+                    return@Thread
                 }
-
-                check(repo.authorizeReportReceiver(invite)) { "تعذر حفظ الهاتف محليًا" }
-                repo.setReportReceiverPermissions(invite.receiverId, reports, messages, manage)
-                markMeta(invite.receiverId, META_PERMISSION_UPDATE)
-                if (verified) markMeta(invite.receiverId, META_SERVER_SYNC)
-            } catch (t: Throwable) {
-                finalError = t
+                result = ReceiverReportBleClient.discoverNearbyInvite(this)
             }
-
+            val invite = if (result.success) ReportProtocol.decodeInvite(result.payload) else null
             runOnUiThread {
-                if (generation != requestGeneration) return@runOnUiThread
-                remoteInFlight = false
+                nearDiscoveryInFlight = false
                 if (!alive()) return@runOnUiThread
-
-                if (finalError == null) {
-                    val grant = ReportProtocol.RemoteReceiverGrant(
-                        invite.receiverId,
-                        repo.serverUrl,
-                        repo.storeName,
-                        repo.branchId,
-                        System.currentTimeMillis() + 10 * 60_000L,
-                        storeId = repo.storeId
-                    )
-                    finalGrantText = ReportProtocol.encodeRemoteGrant(grant)
-                    pendingInvite = null
-                    selectedReceiverId = invite.receiverId
-                    linkProgress = if (verified)
-                        t("5/5 اكتمل الربط والتحقق ✓", "5/5 Link and verification complete ✓")
-                    else
-                        t("5/5 تم الحفظ المحلي ✓ — ستتم مزامنة الخادم عند عودة الإنترنت", "5/5 Saved locally ✓ — server sync will complete when internet returns")
-                    notice = t(
-                        "تم حفظ الهاتف. امسح QR الربط النهائي من هاتف الاستلام.",
-                        "Phone saved. Scan the final link QR on the receiver phone."
-                    )
-                } else {
+                if (invite != null) {
+                    pendingInvite = invite
+                    finalGrantText = ""
                     linkProgress = t(
-                        "توقف الربط بأمان — يمكنك الضغط على «حفظ وربط الهاتف» لإعادة المحاولة من نفس QR.",
-                        "Link stopped safely — press Save and link phone to retry using the same QR."
+                        "تم اكتشاف هاتف الاستلام عبر ${result.transport} ✓",
+                        "Receiver phone discovered over ${result.transport} ✓"
                     )
+                    notice = t("حدد الصلاحيات ثم اضغط حفظ وربط الهاتف.", "Choose permissions, then tap Save and link phone.")
+                } else {
                     showError(
-                        t("تعذر إكمال الربط", "Could not complete link"),
-                        networkMessage(finalError)
+                        t("لم يتم العثور على هاتف قريب", "No nearby phone found"),
+                        t(
+                            "فعّل «الارتباط القريب لمدة دقيقتين» في هاتف الاستلام، ثم أعد المحاولة.\n${result.detail}",
+                            "Enable “Nearby linking for 2 minutes” on the receiver phone, then try again.\n${result.detail}"
+                        )
                     )
                 }
                 render()
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun pendingSyncs(): Set<String> =
+        meta.getStringSet(META_PENDING_SYNCS, emptySet()).orEmpty().filter { it.isNotBlank() }.toSet()
+
+    private fun addPendingSync(receiverId: String) {
+        meta.edit().putStringSet(META_PENDING_SYNCS, pendingSyncs() + receiverId).apply()
+    }
+
+    private fun removePendingSync(receiverId: String) {
+        meta.edit().putStringSet(META_PENDING_SYNCS, pendingSyncs() - receiverId).apply()
+    }
+
+    private fun syncReceiverBindingAsync(receiverId: String) {
+        if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) return
+        val phone = repo.authorizedReportReceivers().firstOrNull { it.receiverId == receiverId } ?: return
+        Thread {
+            val identity = DeviceIdentity(this)
+            val register = CentralServerClient.registerReceiver(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
+                phone.receiverId, phone.name, phone.secret
+            )
+            val permissions = if (register.isSuccess) {
+                CentralServerClient.setReceiverPermissions(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
+                    phone.receiverId, phone.canReceiveReports, phone.canMessageEmployees, phone.canManageStore
+                )
+            } else Result.failure(register.exceptionOrNull() ?: IllegalStateException("register failed"))
+            val verified = if (permissions.isSuccess && phone.active) {
+                CentralServerClient.receiverCapabilities(
+                    repo.serverUrl, phone.receiverId, phone.secret, repo.storeId
+                ).map { remote ->
+                    remote.canReceiveReports == phone.canReceiveReports &&
+                        remote.canMessageEmployees == phone.canMessageEmployees &&
+                        remote.canManageStore == phone.canManageStore
+                }
+            } else Result.success(!phone.active)
+
+            runOnUiThread {
+                if (!alive()) return@runOnUiThread
+                if (register.isSuccess && permissions.isSuccess && verified.getOrNull() == true) {
+                    removePendingSync(phone.receiverId)
+                    markMeta(phone.receiverId, META_SERVER_SYNC)
+                    markMeta(phone.receiverId, META_PERMISSION_UPDATE)
+                    linkProgress = t("اكتملت مزامنة الهاتف مع الخادم ✓", "Phone server sync completed ✓")
+                } else {
+                    addPendingSync(phone.receiverId)
+                    linkProgress = t(
+                        "الهاتف محفوظ ويعمل محليًا؛ مزامنة الخادم ستُعاد تلقائيًا.",
+                        "Phone is saved and works locally; server sync will retry automatically."
+                    )
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun flushPendingReceiverSyncs() {
+        if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) return
+        pendingSyncs().take(10).forEach(::syncReceiverBindingAsync)
     }
 
     private fun postLinkProgress(generation: Long, value: String) {
@@ -610,45 +672,33 @@ class StoreReceiverPermissionsActivity : Activity() {
 
     private fun removePhone(phone: AuthorizedReportReceiver) {
         if (remoteInFlight) return
-        remoteInFlight = true
-        val generation = ++requestGeneration
+
+        repo.removeReportReceiver(phone.receiverId)
+        addPendingDelete(phone.receiverId)
+        removePendingSync(phone.receiverId)
+        meta.edit()
+            .remove(metaKey(phone.receiverId, META_SERVER_SYNC))
+            .remove(metaKey(phone.receiverId, META_PERMISSION_UPDATE))
+            .apply()
+        selectedReceiverId = ""
+        notice = t(
+            "تم حذف الهاتف من هذا الجهاز فورًا ✓ ويجري سحب الربط من الخادم في الخلفية.",
+            "Phone removed from this device immediately ✓. Server unlink continues in the background."
+        )
         render()
 
+        if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) return
         Thread {
-            val remoteResult = if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-                CentralServerClient.deleteReceiverBinding(
-                    repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), phone.receiverId
-                )
-            } else {
-                Result.failure(IllegalStateException("SERVER_OFFLINE"))
-            }
-
+            val result = CentralServerClient.deleteReceiverBinding(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), phone.receiverId
+            )
             runOnUiThread {
-                if (generation != requestGeneration) return@runOnUiThread
-                remoteInFlight = false
                 if (!alive()) return@runOnUiThread
-
-                // Local deletion is immediate and authoritative for this Store UI.
-                repo.removeReportReceiver(phone.receiverId)
-                meta.edit()
-                    .remove(metaKey(phone.receiverId, META_SERVER_SYNC))
-                    .remove(metaKey(phone.receiverId, META_PERMISSION_UPDATE))
-                    .apply()
-                selectedReceiverId = ""
-                if (remoteResult.isSuccess) {
+                if (result.isSuccess) {
                     removePendingDelete(phone.receiverId)
-                    notice = t(
-                        "تم حذف الهاتف وفك ارتباطه بالكامل من هذا المحل ✓",
-                        "Phone fully removed and unlinked from this store ✓"
-                    )
-                } else {
-                    addPendingDelete(phone.receiverId)
-                    notice = t(
-                        "تم حذف الهاتف من هذا الجهاز ✓ وسيكتمل سحب الربط من الخادم تلقائيًا عند عودة الإنترنت.",
-                        "Phone removed from this device ✓. Server unlink will finish automatically when internet returns."
-                    )
+                    notice = t("تم فك الارتباط من الخادم أيضًا ✓", "Server unlink also completed ✓")
+                    render()
                 }
-                render()
             }
         }.apply { isDaemon = true }.start()
     }
@@ -725,6 +775,13 @@ class StoreReceiverPermissionsActivity : Activity() {
         }
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_NEAR_BLUETOOTH) {
+            discoverNearbyReceiver()
+        }
+    }
+
     private fun formatTime(value: Long) =
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(value))
 
@@ -742,10 +799,12 @@ class StoreReceiverPermissionsActivity : Activity() {
 
     companion object {
         private const val REQ_RECEIVER_QR = 9317
+        private const val REQ_NEAR_BLUETOOTH = 9318
         private const val KEY_TAB = "receiver_center_tab"
         private const val KEY_RECEIVER_ID = "receiver_center_selected"
         private const val META_SERVER_SYNC = "server_sync"
         private const val META_PERMISSION_UPDATE = "permission_update"
         private const val META_PENDING_DELETES = "pending_receiver_deletes_v139"
+        private const val META_PENDING_SYNCS = "pending_receiver_syncs_v140"
     }
 }
