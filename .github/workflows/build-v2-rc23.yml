@@ -100,7 +100,7 @@ jobs:
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, EMPLOYEES }' "$RECEIVER"
           grep -q 'renderStores' "$RECEIVER"
           grep -q 'refreshStoreBindings' "$RECEIVER"
-          grep -q 'receiverUnlinkStore' "$RECEIVER"
+          grep -q 'queueServerUnlink' "$RECEIVER"
           grep -q 'switchStore' "$RECEIVER"
           grep -q 'actionGeneration' "$RECEIVER"
           grep -q 'storeId = storeId' "$RECEIVER"
