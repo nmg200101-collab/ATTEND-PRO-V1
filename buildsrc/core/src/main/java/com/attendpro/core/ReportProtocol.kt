@@ -310,7 +310,7 @@ class ReportReceiverStore(context: Context) {
             if (current.storeId.isNotBlank()) it.storeId == current.storeId
             else it.storeId.isBlank() && it.serverUrl == current.serverUrl
         }
-        if (index < 0) return@synchronized null
+        if (index < 0) return null
         val updated = current.copy(
             storeId = storeId.ifBlank { current.storeId },
             storeName = storeName.ifBlank { current.storeName },
