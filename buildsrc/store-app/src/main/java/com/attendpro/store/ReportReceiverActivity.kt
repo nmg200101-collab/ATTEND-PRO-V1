@@ -73,6 +73,7 @@ class ReportReceiverActivity : Activity() {
     @Volatile private var reportsGeneration = 0L
     @Volatile private var messagesGeneration = 0L
     @Volatile private var employeesGeneration = 0L
+    @Volatile private var actionGeneration = 0L
 
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
     private fun alive() = !isFinishing && !isDestroyed
@@ -118,6 +119,7 @@ class ReportReceiverActivity : Activity() {
         reportsGeneration++
         messagesGeneration++
         employeesGeneration++
+        actionGeneration++
         super.onDestroy()
     }
 
