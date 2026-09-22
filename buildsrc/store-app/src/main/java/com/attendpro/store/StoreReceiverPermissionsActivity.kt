@@ -439,7 +439,8 @@ class StoreReceiverPermissionsActivity : Activity() {
                     markMeta(invite.receiverId, META_PERMISSION_UPDATE)
                     val grant = ReportProtocol.RemoteReceiverGrant(
                         invite.receiverId, repo.serverUrl, repo.storeName, repo.branchId,
-                        System.currentTimeMillis() + 10 * 60_000L
+                        System.currentTimeMillis() + 10 * 60_000L,
+                        storeId = repo.storeId
                     )
                     finalGrantText = ReportProtocol.encodeRemoteGrant(grant)
                     pendingInvite = null
@@ -476,7 +477,7 @@ class StoreReceiverPermissionsActivity : Activity() {
             )
 
             fun verified(): Result<Boolean> =
-                CentralServerClient.receiverCapabilities(repo.serverUrl, phone.receiverId, phone.secret).map { remote ->
+                CentralServerClient.receiverCapabilities(repo.serverUrl, phone.receiverId, phone.secret, repo.storeId).map { remote ->
                     remote.canReceiveReports == reports &&
                         remote.canMessageEmployees == messages &&
                         remote.canManageStore == manage
