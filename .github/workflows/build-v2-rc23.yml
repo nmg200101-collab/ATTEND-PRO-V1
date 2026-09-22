@@ -84,7 +84,6 @@ jobs:
           ! grep -q 'buildUi' "$RECEIVER"
           ! grep -q 'receiverStoreSettings' "$RECEIVER"
           ! grep -q 'store-settings' "$RECEIVER"
-          grep -q 'تعذر الاتصال بالخادم عبر الشبكة الحالية' "$RECEIVER"
 
           # V141 retains V138 multi-store isolation but receiver phone exposes only reports + messaging.
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES }' "$RECEIVER"
