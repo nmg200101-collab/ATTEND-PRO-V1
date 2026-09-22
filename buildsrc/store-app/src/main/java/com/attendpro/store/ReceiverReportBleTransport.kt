@@ -314,27 +314,48 @@ object ReceiverReportBleClient {
         val scanner = adapter.bluetoothLeScanner
             ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "BLE Scanner غير متاح", "")
         val parcel = ParcelUuid(ReceiverReportBleServer.SERVICE_UUID)
-        val found = arrayOfNulls<BluetoothDevice>(1)
-        val latch = CountDownLatch(1)
-        val callback = object : ScanCallback() {
-            override fun onScanResult(callbackType: Int, result: ScanResult) {
-                if (result.scanRecord?.serviceUuids?.contains(parcel) == true) {
-                    found[0] = result.device
-                    latch.countDown()
+        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+
+        fun scanWindow(filters: List<ScanFilter>, timeoutMs: Long): BluetoothDevice? {
+            val found = arrayOfNulls<BluetoothDevice>(1)
+            val latch = CountDownLatch(1)
+            val callback = object : ScanCallback() {
+                override fun onScanResult(callbackType: Int, result: ScanResult) {
+                    val record = result.scanRecord ?: return
+                    if (record.serviceUuids?.contains(parcel) == true ||
+                        record.getServiceData(parcel) != null
+                    ) {
+                        found[0] = result.device
+                        latch.countDown()
+                    }
+                }
+
+                override fun onBatchScanResults(results: MutableList<ScanResult>) {
+                    results.firstOrNull { result ->
+                        val record = result.scanRecord
+                        record?.serviceUuids?.contains(parcel) == true || record?.getServiceData(parcel) != null
+                    }?.let {
+                        found[0] = it.device
+                        latch.countDown()
+                    }
                 }
             }
+            return try {
+                scanner.startScan(filters, settings, callback)
+                latch.await(timeoutMs, TimeUnit.MILLISECONDS)
+                found[0]
+            } finally {
+                runCatching { scanner.stopScan(callback) }
+            }
         }
-        try {
-            scanner.startScan(
-                listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
-                ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
-                callback
+
+        val device = scanWindow(listOf(ScanFilter.Builder().setServiceUuid(parcel).build()), 2_000L)
+            ?: scanWindow(emptyList(), 2_500L)
+            ?: return ReceiverReportDeliveryResultWithPayload(
+                false, "BLE",
+                "لم يظهر هاتف في وضع الارتباط القريب بعد المسح المفلتر والاحتياطي",
+                ""
             )
-            latch.await(3_000, TimeUnit.MILLISECONDS)
-        } finally {
-            runCatching { scanner.stopScan(callback) }
-        }
-        val device = found[0] ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "لم يظهر هاتف في وضع الارتباط القريب", "")
         val sync = SyncGattCallback()
         val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
         try {
