@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.employee"
         minSdk = 26
         targetSdk = 36
-        versionCode = 139
-        versionName = "2.0.0-RC29-V139-RECEIVER-OFFLINE-STABILIZATION"
+        versionCode = 140
+        versionName = "2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY"
     }
 
     compileOptions {
