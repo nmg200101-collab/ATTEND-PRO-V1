@@ -23,15 +23,33 @@ import kotlin.concurrent.thread
  */
 class ReceiverReportService : Service() {
     companion object {
-        private const val CHANNEL_ID = "receiver_reports_v140"
-        private const val NOTIFICATION_ID = 2140
-        private const val POLL_MS = 12_000L
+        private const val CHANNEL_ID = "receiver_reports_v142"
+        private const val NOTIFICATION_ID = 2142
+        private const val LOOP_MS = 750L
+        private const val REPORT_POLL_MS = 3_500L
+        private const val MESSAGE_POLL_MS = 4_000L
+        private const val OUTBOX_POLL_MS = 1_250L
+        private const val MAINTENANCE_MS = 10_000L
         const val PREFS = "receiver_report_service_v140"
         const val KEY_NEAR_PAIRING_UNTIL = "near_pairing_until"
         private const val KEY_PENDING_UNLINKS = "pending_unlinks"
 
+        const val ACTION_SYNC_NOW = "com.attendpro.store.RECEIVER_SYNC_NOW_V142"
+        const val ACTION_DATA_CHANGED = "com.attendpro.store.RECEIVER_DATA_CHANGED_V142"
+        const val EXTRA_KIND = "kind"
+        const val EXTRA_STORE_ID = "storeId"
+        const val KIND_REPORTS = "reports"
+        const val KIND_MESSAGES = "messages"
+        const val KIND_OUTBOX = "outbox"
+        const val KIND_BINDINGS = "bindings"
+
         fun ensureStarted(context: Context) {
             val intent = Intent(context, ReceiverReportService::class.java)
+            if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+        }
+
+        fun requestImmediateSync(context: Context) {
+            val intent = Intent(context, ReceiverReportService::class.java).setAction(ACTION_SYNC_NOW)
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
         }
 
@@ -65,21 +83,34 @@ class ReceiverReportService : Service() {
 
     private lateinit var receiver: ReportReceiverStore
     private val running = AtomicBoolean(false)
+    private val reportsInFlight = AtomicBoolean(false)
+    private val messagesInFlight = AtomicBoolean(false)
+    private val outboxInFlight = AtomicBoolean(false)
+    private val maintenanceInFlight = AtomicBoolean(false)
     private var worker: Thread? = null
     private var lanServer: ReceiverReportLanServer? = null
     private var bleServer: ReceiverReportBleServer? = null
+    @Volatile private var nextReportPollAt = 0L
+    @Volatile private var nextMessagePollAt = 0L
+    @Volatile private var nextOutboxPollAt = 0L
+    @Volatile private var nextMaintenanceAt = 0L
 
     override fun onCreate() {
         super.onCreate()
         receiver = ReportReceiverStore(this)
-        startForeground(NOTIFICATION_ID, buildNotification("جاهز لاستلام التقارير"))
+        startForeground(NOTIFICATION_ID, buildNotification("جاهز لاستلام التقارير والرسائل"))
         running.set(true)
         startTransports()
-        worker = thread(name = "receiver-report-v140", isDaemon = true) { loop() }
+        worker = thread(name = "receiver-sync-v142", isDaemon = true) { loop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startTransports()
+        if (intent?.action == ACTION_SYNC_NOW) {
+            nextReportPollAt = 0L
+            nextMessagePollAt = 0L
+            nextOutboxPollAt = 0L
+        }
         return START_STICKY
     }
 
@@ -148,23 +179,63 @@ class ReceiverReportService : Service() {
 
     private fun loop() {
         while (running.get()) {
+            val now = System.currentTimeMillis()
             runCatching {
-                startTransports()
-                flushPendingUnlinks()
-                pollServerReports()
-                pollServerMessages()
+                if (now >= nextMaintenanceAt) launchMaintenance(now)
+                if (now >= nextReportPollAt) launchReportPoll(now)
+                if (now >= nextMessagePollAt) launchMessagePoll(now)
+                if (now >= nextOutboxPollAt) launchOutbox(now)
+
                 val hasBindings = receiver.storeBindings().any { it.active }
                 val pairing = nearbyPairingActive(this)
-                if (!hasBindings && !pairing) {
+                val pendingOutbox = receiver.outgoingMessages().any { it.state != "SENT" && it.state != "CANCELLED" }
+                if (!hasBindings && !pairing && !pendingOutbox) {
                     stopSelf()
                     return
                 }
             }
             try {
-                Thread.sleep(POLL_MS)
+                Thread.sleep(LOOP_MS)
             } catch (_: InterruptedException) {
                 return
             }
+        }
+    }
+
+    private fun launchMaintenance(now: Long) {
+        nextMaintenanceAt = now + MAINTENANCE_MS
+        if (!maintenanceInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-maintenance-v142", isDaemon = true) {
+            try {
+                startTransports()
+                flushPendingUnlinks()
+            } finally {
+                maintenanceInFlight.set(false)
+            }
+        }
+    }
+
+    private fun launchReportPoll(now: Long) {
+        nextReportPollAt = now + REPORT_POLL_MS
+        if (!reportsInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-reports-v142", isDaemon = true) {
+            try { pollServerReports() } finally { reportsInFlight.set(false) }
+        }
+    }
+
+    private fun launchMessagePoll(now: Long) {
+        nextMessagePollAt = now + MESSAGE_POLL_MS
+        if (!messagesInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-messages-v142", isDaemon = true) {
+            try { pollServerMessages() } finally { messagesInFlight.set(false) }
+        }
+    }
+
+    private fun launchOutbox(now: Long) {
+        nextOutboxPollAt = now + OUTBOX_POLL_MS
+        if (!outboxInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-outbox-v142", isDaemon = true) {
+            try { flushOutgoingMessages() } finally { outboxInFlight.set(false) }
         }
     }
 
