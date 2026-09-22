@@ -19,20 +19,34 @@ object ReportProtocol {
 
     data class ReceiverInvite(val receiverId: String, val name: String, val secret: String, val expiresAt: Long)
     data class ReportPackage(val receiverId: String, val transferId: String, val storeName: String, val branchId: String, val periodLabel: String, val createdAt: Long, val reportText: String, val confirmationCode: String)
-    data class RemoteReceiverGrant(val receiverId: String, val serverUrl: String, val storeName: String, val branchId: String, val expiresAt: Long)
+    data class RemoteReceiverGrant(
+        val receiverId: String,
+        val serverUrl: String,
+        val storeName: String,
+        val branchId: String,
+        val expiresAt: Long,
+        val storeId: String = ""
+    )
 
     fun encodeRemoteGrant(grant: RemoteReceiverGrant): String = REMOTE_GRANT_PREFIX + b64(JSONObject().apply {
-        put("v", 1); put("r", grant.receiverId.trim()); put("u", grant.serverUrl.trim()); put("m", grant.storeName); put("b", grant.branchId); put("e", grant.expiresAt)
+        put("v", 2); put("r", grant.receiverId.trim()); put("u", grant.serverUrl.trim()); put("m", grant.storeName); put("b", grant.branchId); put("e", grant.expiresAt); put("i", grant.storeId.trim())
     }.toString().toByteArray(Charsets.UTF_8))
 
     fun decodeRemoteGrant(text: String, expectedReceiverId: String): RemoteReceiverGrant? = runCatching {
         val clean = text.trim(); if (!clean.startsWith(REMOTE_GRANT_PREFIX)) return@runCatching null
         val o = JSONObject(String(b64d(clean.removePrefix(REMOTE_GRANT_PREFIX)), Charsets.UTF_8))
-        if (o.optInt("v", 1) != 1) return@runCatching null
+        if (o.optInt("v", 1) !in 1..2) return@runCatching null
         val encodedReceiverId = o.optString("r", "").trim()
         val expected = expectedReceiverId.trim()
         if (encodedReceiverId.isBlank() || expected.isBlank() || !encodedReceiverId.equals(expected, ignoreCase = true)) return@runCatching null
-        val grant = RemoteReceiverGrant(encodedReceiverId, o.getString("u").trim(), o.optString("m", "ATTEND PRO"), o.optString("b", "MAIN"), o.getLong("e"))
+        val grant = RemoteReceiverGrant(
+            encodedReceiverId,
+            o.getString("u").trim(),
+            o.optString("m", "ATTEND PRO"),
+            o.optString("b", "MAIN"),
+            o.getLong("e"),
+            o.optString("i", "").trim()
+        )
         val now = System.currentTimeMillis()
         if (grant.expiresAt + CLOCK_SKEW_GRACE_MS < now || !grant.serverUrl.startsWith("https://", ignoreCase = true)) null else grant
     }.getOrNull()
@@ -79,7 +93,31 @@ object ReportProtocol {
     private fun b64d(text: String): ByteArray = Base64.decode(text, Base64.NO_WRAP or Base64.URL_SAFE or Base64.NO_PADDING)
 }
 
-data class ReceivedReport(val transferId: String, val storeName: String, val branchId: String, val periodLabel: String, val createdAt: Long, val receivedAt: Long, val reportText: String, val confirmationCode: String)
+data class ReceivedReport(
+    val transferId: String,
+    val storeName: String,
+    val branchId: String,
+    val periodLabel: String,
+    val createdAt: Long,
+    val receivedAt: Long,
+    val reportText: String,
+    val confirmationCode: String,
+    val storeId: String = ""
+)
+
+data class ReceiverStoreBinding(
+    val storeId: String,
+    val serverUrl: String,
+    val storeName: String,
+    val branchId: String,
+    val active: Boolean = true,
+    val canReceiveReports: Boolean = true,
+    val canMessageEmployees: Boolean = false,
+    val canManageStore: Boolean = false,
+    val linkedAt: Long = System.currentTimeMillis(),
+    val lastServerRefreshAt: Long = 0L,
+    val storeLastSeenAt: Long = 0L
+)
 
 class ReportReceiverStore(context: Context) {
     private val appContext = context.applicationContext
@@ -110,23 +148,230 @@ class ReportReceiverStore(context: Context) {
     var capabilityStoreName: String get() = prefs.getString("capabilityStoreName", "") ?: ""; set(value) = prefs.edit().putString("capabilityStoreName", value).apply()
     var capabilityBranchId: String get() = prefs.getString("capabilityBranchId", "") ?: ""; set(value) = prefs.edit().putString("capabilityBranchId", value).apply()
 
-    fun newInvite(): ReportProtocol.ReceiverInvite = ReportProtocol.ReceiverInvite(receiverId, receiverName, secret, System.currentTimeMillis() + 10 * 60_000L)
-
-    fun receivedReports(): List<ReceivedReport> {
-        val a = JSONArray(prefs.getString("receivedReports", "[]") ?: "[]")
-        return (0 until a.length()).mapNotNull { i -> runCatching {
-            val o = a.getJSONObject(i)
-            ReceivedReport(o.getString("transferId"), o.optString("storeName", "ATTEND PRO"), o.optString("branchId", "MAIN"), o.optString("periodLabel", "تقرير"), o.optLong("createdAt", 0L), o.optLong("receivedAt", 0L), o.optString("reportText", ""), o.optString("confirmationCode", ""))
-        }.getOrNull() }.sortedByDescending { it.receivedAt }
+    private fun legacyBinding(): ReceiverStoreBinding? {
+        val url = prefs.getString("serverUrl", "").orEmpty().trim()
+        if (url.isBlank()) return null
+        return ReceiverStoreBinding(
+            storeId = "",
+            serverUrl = url,
+            storeName = prefs.getString("capabilityStoreName", "").orEmpty(),
+            branchId = prefs.getString("capabilityBranchId", "MAIN").orEmpty().ifBlank { "MAIN" },
+            canReceiveReports = prefs.getBoolean("canReceiveReports", true),
+            canMessageEmployees = prefs.getBoolean("canMessageEmployees", false),
+            canManageStore = prefs.getBoolean("canManageStore", false),
+            linkedAt = prefs.getLong("legacyLinkedAt", System.currentTimeMillis()),
+            lastServerRefreshAt = prefs.getLong("remoteLastRefreshAt", 0L)
+        )
     }
 
-    fun receive(raw: String): ReceivedReport? {
+    fun storeBindings(): List<ReceiverStoreBinding> {
+        val raw = prefs.getString("storeBindingsV138", "[]") ?: "[]"
+        val array = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        val items = (0 until array.length()).mapNotNull { i -> runCatching {
+            val o = array.getJSONObject(i)
+            ReceiverStoreBinding(
+                storeId = o.optString("storeId", "").trim(),
+                serverUrl = o.optString("serverUrl", "").trim(),
+                storeName = o.optString("storeName", "ATTEND PRO"),
+                branchId = o.optString("branchId", "MAIN").ifBlank { "MAIN" },
+                active = o.optBoolean("active", true),
+                canReceiveReports = o.optBoolean("canReceiveReports", true),
+                canMessageEmployees = o.optBoolean("canMessageEmployees", false),
+                canManageStore = o.optBoolean("canManageStore", false),
+                linkedAt = o.optLong("linkedAt", System.currentTimeMillis()),
+                lastServerRefreshAt = o.optLong("lastServerRefreshAt", 0L),
+                storeLastSeenAt = o.optLong("storeLastSeenAt", 0L)
+            )
+        }.getOrNull() }.filter { it.serverUrl.startsWith("https://", true) }
+
+        if (items.isNotEmpty()) return items.sortedByDescending { it.linkedAt }
+        val migrated = legacyBinding() ?: return emptyList()
+        saveStoreBindings(listOf(migrated))
+        return listOf(migrated)
+    }
+
+    private fun saveStoreBindings(items: List<ReceiverStoreBinding>) {
+        val array = JSONArray()
+        items.take(50).forEach { item -> array.put(JSONObject().apply {
+            put("storeId", item.storeId)
+            put("serverUrl", item.serverUrl)
+            put("storeName", item.storeName)
+            put("branchId", item.branchId)
+            put("active", item.active)
+            put("canReceiveReports", item.canReceiveReports)
+            put("canMessageEmployees", item.canMessageEmployees)
+            put("canManageStore", item.canManageStore)
+            put("linkedAt", item.linkedAt)
+            put("lastServerRefreshAt", item.lastServerRefreshAt)
+            put("storeLastSeenAt", item.storeLastSeenAt)
+        }) }
+        prefs.edit().putString("storeBindingsV138", array.toString()).apply()
+    }
+
+    var activeStoreId: String
+        get() = prefs.getString("activeStoreIdV138", "").orEmpty()
+        set(value) = prefs.edit().putString("activeStoreIdV138", value.trim()).apply()
+
+    fun activeBinding(): ReceiverStoreBinding? {
+        val items = storeBindings()
+        val selected = activeStoreId
+        return items.firstOrNull { selected.isNotBlank() && it.storeId == selected }
+            ?: items.firstOrNull { it.active }
+            ?: items.firstOrNull()
+    }
+
+    fun selectStore(storeId: String): Boolean {
+        val target = storeBindings().firstOrNull { it.storeId == storeId && it.active } ?: return false
+        activeStoreId = target.storeId
+        syncLegacyView(target)
+        return true
+    }
+
+    fun upsertBinding(grant: ReportProtocol.RemoteReceiverGrant): ReceiverStoreBinding {
+        val items = storeBindings().toMutableList()
+        val storeId = grant.storeId.trim()
+        val index = when {
+            storeId.isNotBlank() -> items.indexOfFirst { it.storeId == storeId }
+            else -> items.indexOfFirst {
+                it.serverUrl.equals(grant.serverUrl, true) &&
+                    it.storeName == grant.storeName &&
+                    it.branchId == grant.branchId
+            }
+        }
+        val previous = items.getOrNull(index)
+        val value = ReceiverStoreBinding(
+            storeId = storeId.ifBlank { previous?.storeId.orEmpty() },
+            serverUrl = grant.serverUrl.trim(),
+            storeName = grant.storeName.ifBlank { previous?.storeName ?: "ATTEND PRO" },
+            branchId = grant.branchId.ifBlank { previous?.branchId ?: "MAIN" },
+            active = true,
+            canReceiveReports = previous?.canReceiveReports ?: true,
+            canMessageEmployees = previous?.canMessageEmployees ?: false,
+            canManageStore = previous?.canManageStore ?: false,
+            linkedAt = previous?.linkedAt ?: System.currentTimeMillis(),
+            lastServerRefreshAt = previous?.lastServerRefreshAt ?: 0L,
+            storeLastSeenAt = previous?.storeLastSeenAt ?: 0L
+        )
+        if (index >= 0) items[index] = value else items.add(0, value)
+        saveStoreBindings(items)
+        activeStoreId = value.storeId
+        syncLegacyView(value)
+        return value
+    }
+
+    fun updateActiveBinding(
+        storeId: String,
+        storeName: String,
+        branchId: String,
+        canReceiveReports: Boolean,
+        canMessageEmployees: Boolean,
+        canManageStore: Boolean,
+        lastServerRefreshAt: Long,
+        storeLastSeenAt: Long = 0L
+    ): ReceiverStoreBinding? {
+        val items = storeBindings().toMutableList()
+        val current = activeBinding() ?: return null
+        var index = items.indexOfFirst {
+            if (current.storeId.isNotBlank()) it.storeId == current.storeId
+            else it.storeId.isBlank() && it.serverUrl == current.serverUrl
+        }
+        if (index < 0) return null
+        val updated = current.copy(
+            storeId = storeId.ifBlank { current.storeId },
+            storeName = storeName.ifBlank { current.storeName },
+            branchId = branchId.ifBlank { current.branchId },
+            canReceiveReports = canReceiveReports,
+            canMessageEmployees = canMessageEmployees,
+            canManageStore = canManageStore,
+            lastServerRefreshAt = lastServerRefreshAt,
+            storeLastSeenAt = storeLastSeenAt
+        )
+        if (updated.storeId.isNotBlank()) {
+            val duplicate = items.indexOfFirst { it.storeId == updated.storeId && it !== items.getOrNull(index) }
+            if (duplicate >= 0 && duplicate != index) {
+                items.removeAt(duplicate)
+                if (duplicate < index) index--
+            }
+        }
+        items[index] = updated
+        saveStoreBindings(items)
+        if (updated.storeId.isNotBlank()) activeStoreId = updated.storeId
+        syncLegacyView(updated)
+        return updated
+    }
+
+    fun syncBindingsFromServer(remote: List<ReceiverStoreBinding>) {
+        if (remote.isEmpty()) return
+        val existing = storeBindings().associateBy { it.storeId }.toMutableMap()
+        remote.forEach { item ->
+            val old = existing[item.storeId]
+            existing[item.storeId] = item.copy(linkedAt = old?.linkedAt ?: item.linkedAt)
+        }
+        val merged = existing.values.filter { it.storeId.isNotBlank() }.sortedByDescending { it.linkedAt }
+        saveStoreBindings(merged)
+        if (activeStoreId.isBlank() || merged.none { it.storeId == activeStoreId && it.active }) {
+            activeStoreId = merged.firstOrNull { it.active }?.storeId.orEmpty()
+        }
+        activeBinding()?.let { syncLegacyView(it) }
+    }
+
+    fun removeStoreBinding(storeId: String) {
+        val remaining = storeBindings().filterNot { it.storeId == storeId }
+        saveStoreBindings(remaining)
+        if (activeStoreId == storeId) activeStoreId = remaining.firstOrNull { it.active }?.storeId.orEmpty()
+        val active = activeBinding()
+        if (active != null) syncLegacyView(active) else {
+            prefs.edit()
+                .putString("serverUrl", "")
+                .putString("capabilityStoreName", "")
+                .putString("capabilityBranchId", "")
+                .putBoolean("canReceiveReports", true)
+                .putBoolean("canMessageEmployees", false)
+                .putBoolean("canManageStore", false)
+                .apply()
+        }
+    }
+
+    private fun syncLegacyView(binding: ReceiverStoreBinding) {
+        prefs.edit()
+            .putString("serverUrl", binding.serverUrl)
+            .putString("capabilityStoreName", binding.storeName)
+            .putString("capabilityBranchId", binding.branchId)
+            .putBoolean("canReceiveReports", binding.canReceiveReports)
+            .putBoolean("canMessageEmployees", binding.canMessageEmployees)
+            .putBoolean("canManageStore", binding.canManageStore)
+            .putLong("remoteLastRefreshAt", binding.lastServerRefreshAt)
+            .apply()
+    }
+
+    fun newInvite(): ReportProtocol.ReceiverInvite = ReportProtocol.ReceiverInvite(receiverId, receiverName, secret, System.currentTimeMillis() + 10 * 60_000L)
+
+    fun receivedReports(storeId: String = ""): List<ReceivedReport> {
+        val a = JSONArray(prefs.getString("receivedReports", "[]") ?: "[]")
+        val all = (0 until a.length()).mapNotNull { i -> runCatching {
+            val o = a.getJSONObject(i)
+            ReceivedReport(
+                o.getString("transferId"),
+                o.optString("storeName", "ATTEND PRO"),
+                o.optString("branchId", "MAIN"),
+                o.optString("periodLabel", "تقرير"),
+                o.optLong("createdAt", 0L),
+                o.optLong("receivedAt", 0L),
+                o.optString("reportText", ""),
+                o.optString("confirmationCode", ""),
+                o.optString("storeId", "")
+            )
+        }.getOrNull() }.sortedByDescending { it.receivedAt }
+        return if (storeId.isBlank()) all else all.filter { it.storeId == storeId || it.storeId.isBlank() }
+    }
+
+    fun receive(raw: String, storeId: String = activeStoreId): ReceivedReport? {
         val pkg = ReportProtocol.decodePackage(raw, receiverId, secret) ?: return null
-        val item = ReceivedReport(pkg.transferId, pkg.storeName, pkg.branchId, pkg.periodLabel, pkg.createdAt, System.currentTimeMillis(), pkg.reportText, pkg.confirmationCode)
+        val item = ReceivedReport(pkg.transferId, pkg.storeName, pkg.branchId, pkg.periodLabel, pkg.createdAt, System.currentTimeMillis(), pkg.reportText, pkg.confirmationCode, storeId)
         val existing = receivedReports().filterNot { it.transferId == item.transferId }
         val a = JSONArray()
         (listOf(item) + existing).take(100).forEach { r -> a.put(JSONObject().apply {
-            put("transferId", r.transferId); put("storeName", r.storeName); put("branchId", r.branchId); put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt); put("reportText", r.reportText); put("confirmationCode", r.confirmationCode)
+            put("transferId", r.transferId); put("storeName", r.storeName); put("branchId", r.branchId); put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt); put("reportText", r.reportText); put("confirmationCode", r.confirmationCode); put("storeId", r.storeId)
         }) }
         prefs.edit().putString("receivedReports", a.toString()).apply(); return item
     }
