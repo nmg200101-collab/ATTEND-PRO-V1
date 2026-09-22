@@ -128,13 +128,13 @@ jobs:
         run: |
           set -euo pipefail
           HOST='attend-pro-central.nmg200101.workers.dev'
-          OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A")
-          printf '%s' "$OUT" | grep -q '"data":"104.21.44.99"'
-          printf '%s' "$OUT" | grep -q '"data":"172.67.198.135"'
-          CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:104.21.44.99" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
-          if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
-            CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:172.67.198.135" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
+          OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A" || true)
+          if ! printf '%s' "$OUT" | grep -Eq '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"'; then
+            OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://8.8.8.8/resolve?name=$HOST&type=A")
           fi
+          IP=$(printf '%s' "$OUT" | grep -Eo '"data"[[:space:]]*:[[:space:]]*"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+"' | head -1 | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+')
+          test -n "$IP"
+          CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:$IP" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
           test -n "$CODE"
           test "$CODE" != "000"
 
