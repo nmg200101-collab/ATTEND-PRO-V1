@@ -103,7 +103,8 @@ class ReceiverReportService : Service() {
                 receiver.receiverId,
                 receiver.secret,
                 ::acceptOfflineReport,
-                ::nearbyInvite
+                ::nearbyInvite,
+                ::acceptNearbyGrant
             ) { updateStatus(it) }.also { it.start() }
         }
 
@@ -125,6 +126,14 @@ class ReceiverReportService : Service() {
     private fun nearbyInvite(): String? {
         if (!nearbyPairingActive(this)) return null
         return com.attendpro.core.ReportProtocol.encodeInvite(receiver.newInvite())
+    }
+
+    private fun acceptNearbyGrant(rawGrant: String): Boolean {
+        val grant = com.attendpro.core.ReportProtocol.decodeRemoteGrant(rawGrant, receiver.receiverId) ?: return false
+        receiver.upsertBinding(grant)
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, 0L).apply()
+        updateStatus("اكتمل ربط ${grant.storeName} عبر القرب ✓")
+        return true
     }
 
     private fun acceptOfflineReport(envelope: ReceiverOfflineReportProtocol.Envelope): Boolean {
