@@ -16,6 +16,7 @@ import com.attendpro.core.AuthorizedReportReceiver
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.DeviceIdentity
 import com.attendpro.core.ReportProtocol
+import com.attendpro.core.ReceiverOfflineReportProtocol
 import com.attendpro.core.ShiftWindow
 import com.attendpro.core.StoreRepository
 import com.attendpro.core.UiKit
@@ -25,7 +26,10 @@ import java.util.Date
 import java.util.Locale
 
 class ReportsActivity : Activity() {
-    companion object { const val EXTRA_STORE_ADMIN_SESSION = "store_admin_session" }
+    companion object {
+        const val EXTRA_STORE_ADMIN_SESSION = "store_admin_session"
+        private const val REQ_REPORT_BLUETOOTH = 7411
+    }
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
@@ -38,6 +42,7 @@ class ReportsActivity : Activity() {
     private var period = Period.TODAY
     private var authorized = false
     @Volatile private var syncInProgress = false
+    private var bluetoothPermissionAsked = false
 
     private enum class Period(val title: String) {
         TODAY("اليوم"), WEEK("آخر 7 أيام"), MONTH("هذا الشهر"), ALL("كل السجلات")
@@ -70,7 +75,13 @@ class ReportsActivity : Activity() {
     override fun onResume() {
         super.onResume()
         if (::repo.isInitialized && !repo.isCentralActivationActive()) { showCentralActivationRequired(); return }
-        if (authorized) buildUi()
+        if (authorized) {
+            if (!bluetoothPermissionAsked && ReceiverReportBluetoothSupport.missingPermissions(this).isNotEmpty()) {
+                bluetoothPermissionAsked = true
+                ReceiverReportBluetoothSupport.request(this, REQ_REPORT_BLUETOOTH)
+            }
+            buildUi()
+        }
     }
 
     private fun showCentralActivationRequired() {
@@ -252,29 +263,103 @@ class ReportsActivity : Activity() {
             append(t("الموظفون: ${s.uniqueEmployees} • الحضور: ${s.checkIns} • الانصراف: ${s.checkOuts} • حالات التأخير: ${s.lateEmployees} • الانصراف المبكر: ${s.earlyDepartures}\n\n", "Employees: ${s.uniqueEmployees} • check-ins: ${s.checkIns} • check-outs: ${s.checkOuts} • late: ${s.lateEmployees} • early departures: ${s.earlyDepartures}\n\n"))
             append(reportPreview(events))
         }
-        val pkg = ReportProtocol.ReportPackage(receiver.receiverId, transfer.transferId, repo.storeName, repo.branchId, periodLabel(), System.currentTimeMillis(), reportText, code)
-        val encrypted = runCatching { ReportProtocol.encodePackage(pkg, receiver.secret) }.getOrElse { info(t("المشاركة", "Sharing"), t("تعذر تشفير التقرير: ${it.message ?: "خطأ"}", "Unable to encrypt report: ${it.message ?: "Error"}")); return }
-        repo.markReportReceiverUsed(receiver.receiverId)
-
-        if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
-            info(t("إرسال عبر الإنترنت", "Sending online"), t("جاري رفع التقرير المشفر إلى هاتف «${receiver.name}» عبر الخادم المركزي. سيبقى محتوى التقرير مشفرًا للحزمة الموجهة لهذا الهاتف.", "Uploading the encrypted report to ${receiver.name} through the central server. Report content remains encrypted for that phone."))
-            Thread {
-                val r = CentralServerClient.pushReport(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), receiver.receiverId, transfer.transferId, encrypted, transfer.confirmationCodeHash)
-                runOnUiThread {
-                    if (r.isSuccess) {
-                        info(t("تم الإرسال عن بُعد ✓", "Remote delivery complete ✓"), t("وصل التقرير إلى صندوق الهاتف المصرح له عبر الإنترنت. عند فتحه في «استلام التقارير» سيتم تأكيد الاستلام مركزيًا.\nرقم النقل: ${transfer.transferId}", "The report reached the authorized phone inbox online. Receipt will be confirmed centrally when opened.\nTransfer ID: ${transfer.transferId}"))
-                    } else {
-                        info(t("تعذر الإرسال عبر الخادم", "Server delivery failed"), t("${r.exceptionOrNull()?.message ?: "خطأ"}\n\nسيتم فتح المشاركة اليدوية كخيار احتياطي.", "${r.exceptionOrNull()?.message ?: "Error"}\n\nManual sharing will open as a fallback."))
-                        shareEncryptedFallback(receiver, encrypted)
-                    }
-                    buildUi()
-                }
-            }.apply { isDaemon = true }.start()
+        val pkg = ReportProtocol.ReportPackage(
+            receiver.receiverId, transfer.transferId, repo.storeName, repo.branchId,
+            periodLabel(), System.currentTimeMillis(), reportText, code
+        )
+        val encrypted = runCatching { ReportProtocol.encodePackage(pkg, receiver.secret) }.getOrElse {
+            info(t("المشاركة", "Sharing"), t("تعذر تشفير التقرير: ${it.message ?: "خطأ"}", "Unable to encrypt report: ${it.message ?: "Error"}"))
             return
         }
-        shareEncryptedFallback(receiver, encrypted)
-        info(t("تم تجهيز النقل", "Transfer prepared"), t("لا يوجد تفعيل مركزي نشط، لذلك تم استخدام المشاركة اليدوية المشفرة.\nرقم النقل: ${transfer.transferId}", "Central activation is unavailable, so encrypted manual sharing was used.\nTransfer ID: ${transfer.transferId}"))
-        buildUi()
+        val localEnvelope = runCatching {
+            ReceiverOfflineReportProtocol.encodeEnvelope(
+                receiver.receiverId, repo.storeId, transfer.transferId, encrypted, receiver.secret
+            )
+        }.getOrElse {
+            info(t("المشاركة", "Sharing"), t("تعذر تجهيز النقل المحلي: ${it.message ?: "خطأ"}", "Unable to prepare local transfer: ${it.message ?: "Error"}"))
+            return
+        }
+        repo.markReportReceiverUsed(receiver.receiverId)
+
+        info(
+            t("إرسال التقرير", "Sending report"),
+            t(
+                "سيبحث التطبيق أولًا عن هاتف «${receiver.name}» عبر Wi‑Fi/Hotspot المحلي، ثم Bluetooth، ثم الخادم عند توفر الإنترنت.",
+                "The app will first look for “${receiver.name}” over local Wi‑Fi/Hotspot, then Bluetooth, then the server when internet is available."
+            )
+        )
+
+        Thread {
+            val lan = ReceiverReportLanClient.send(
+                receiver.receiverId, receiver.secret, repo.storeId, transfer.transferId, localEnvelope
+            )
+            if (lan.success) {
+                runOnUiThread {
+                    repo.confirmReportTransferTrusted(transfer.transferId)
+                    info(
+                        t("تم الاستلام محليًا ✓", "Local delivery complete ✓"),
+                        t(
+                            "استلم هاتف «${receiver.name}» التقرير عبر Wi‑Fi/Hotspot بدون إنترنت.\nرقم النقل: ${transfer.transferId}",
+                            "“${receiver.name}” received the report over Wi‑Fi/Hotspot without internet.\nTransfer ID: ${transfer.transferId}"
+                        )
+                    )
+                    buildUi()
+                }
+                return@Thread
+            }
+
+            val ble = ReceiverReportBleClient.send(
+                this, receiver.receiverId, receiver.secret, repo.storeId, transfer.transferId, localEnvelope
+            )
+            if (ble.success) {
+                runOnUiThread {
+                    repo.confirmReportTransferTrusted(transfer.transferId)
+                    info(
+                        t("تم الاستلام عبر Bluetooth ✓", "Bluetooth delivery complete ✓"),
+                        t(
+                            "استلم هاتف «${receiver.name}» التقرير مباشرة عبر Bluetooth بدون إنترنت.\nرقم النقل: ${transfer.transferId}",
+                            "“${receiver.name}” received the report directly over Bluetooth without internet.\nTransfer ID: ${transfer.transferId}"
+                        )
+                    )
+                    buildUi()
+                }
+                return@Thread
+            }
+
+            val online = if (repo.isCentralActivationActive() && repo.serverUrl.isNotBlank()) {
+                CentralServerClient.pushReport(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this),
+                    receiver.receiverId, transfer.transferId, encrypted, transfer.confirmationCodeHash
+                )
+            } else {
+                Result.failure(IllegalStateException("الخادم غير متاح"))
+            }
+
+            runOnUiThread {
+                if (online.isSuccess) {
+                    info(
+                        t("تم الإرسال عبر الإنترنت ✓", "Online delivery complete ✓"),
+                        t(
+                            "لم يتوفر اتصال محلي، لذلك تم رفع التقرير إلى صندوق الهاتف عبر الخادم.\nرقم النقل: ${transfer.transferId}",
+                            "No local channel was available, so the report was uploaded to the phone inbox through the server.\nTransfer ID: ${transfer.transferId}"
+                        )
+                    )
+                } else {
+                    val bluetoothHint = if (ble.detail.contains("صلاحيات")) {
+                        t("\nBluetooth يحتاج منح الصلاحيات ثم إعادة المحاولة.", "\nBluetooth permissions must be granted before retrying.")
+                    } else ""
+                    info(
+                        t("تعذر التسليم التلقائي", "Automatic delivery unavailable"),
+                        t(
+                            "LAN: ${lan.detail}\nBluetooth: ${ble.detail}\nالخادم: ${online.exceptionOrNull()?.message ?: "غير متاح"}$bluetoothHint\n\nسيتم فتح المشاركة اليدوية المشفرة.",
+                            "LAN: ${lan.detail}\nBluetooth: ${ble.detail}\nServer: ${online.exceptionOrNull()?.message ?: "Unavailable"}$bluetoothHint\n\nEncrypted manual sharing will open."
+                        )
+                    )
+                    shareEncryptedFallback(receiver, encrypted)
+                }
+                buildUi()
+            }
+        }.apply { isDaemon = true }.start()
     }
 
     private fun shareEncryptedFallback(receiver: AuthorizedReportReceiver, encrypted: String) {
@@ -413,6 +498,13 @@ class ReportsActivity : Activity() {
 
     private fun shiftEndFor(time: Long, employee: com.attendpro.core.PairedEmployee): Long =
         shiftWindow1980(time, employee).end
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_REPORT_BLUETOOTH && authorized) {
+            buildUi()
+        }
+    }
 
     private fun info(title: String, message: String) {
         AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton(t("حسنًا", "OK"), null).show()
