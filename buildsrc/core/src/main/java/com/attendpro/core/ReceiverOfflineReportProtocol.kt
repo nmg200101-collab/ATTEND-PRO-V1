@@ -23,6 +23,8 @@ object ReceiverOfflineReportProtocol {
     private const val ACK_PREFIX = "APACK1"
     private const val NEAR_PROBE = "APRN1"
     private const val NEAR_REPLY = "APRN2"
+    private const val GRANT_PREFIX = "APGR1:"
+    private const val GRANT_ACK = "APGACK1"
     private const val MAX_PACKAGE_BYTES = 900_000
     private const val MAX_ID_BYTES = 512
     private const val MAC_BYTES = 16
@@ -152,6 +154,37 @@ object ReceiverOfflineReportProtocol {
         val unsigned = p.take(5).joinToString("|")
         if (!secureEquals(p[5], macText(secret, unsigned))) return null
         return p[4]
+    }
+
+    fun encodeNearbyGrant(receiverId: String, grantText: String, secret: String): String {
+        val body = "$receiverId\n$grantText".toByteArray(Charsets.UTF_8)
+        val mac = hmac(secret, body).copyOf(MAC_BYTES)
+        return GRANT_PREFIX + b64(body + mac)
+    }
+
+    fun decodeNearbyGrant(raw: String, expectedReceiverId: String, secret: String): String? = runCatching {
+        if (!raw.startsWith(GRANT_PREFIX)) return@runCatching null
+        val all = b64d(raw.removePrefix(GRANT_PREFIX))
+        if (all.size <= MAC_BYTES) return@runCatching null
+        val body = all.copyOfRange(0, all.size - MAC_BYTES)
+        val actual = all.copyOfRange(all.size - MAC_BYTES, all.size)
+        if (!MessageDigest.isEqual(actual, hmac(secret, body).copyOf(MAC_BYTES))) return@runCatching null
+        val text = String(body, Charsets.UTF_8)
+        val split = text.indexOf('\n')
+        if (split <= 0 || !text.substring(0, split).equals(expectedReceiverId, true)) return@runCatching null
+        text.substring(split + 1).takeIf { it.isNotBlank() }
+    }.getOrNull()
+
+    fun nearbyGrantAck(receiverId: String, secret: String): String {
+        val unsigned = "$GRANT_ACK|$receiverId"
+        return "$unsigned|${macText(secret, unsigned)}"
+    }
+
+    fun verifyNearbyGrantAck(raw: String, receiverId: String, secret: String): Boolean {
+        val p = raw.trim().split('|')
+        if (p.size != 3 || p[0] != GRANT_ACK || !p[1].equals(receiverId, true)) return false
+        val unsigned = p.take(2).joinToString("|")
+        return secureEquals(p[2], macText(secret, unsigned))
     }
 
     fun receiverHash(receiverId: String): ByteArray =
