@@ -860,6 +860,46 @@ class ReportReceiverActivity : Activity() {
 
     private fun mark(v: Boolean) = if (v) "✓" else "— ${t("غير مسموح", "Not allowed")}"
 
+    private fun safeServerError(raw: String): String {
+        if (raw.contains("Failed to connect to /", true) || raw.contains("2606:", true) || raw.contains("ENETUNREACH", true)) {
+            return t("تعذر الاتصال بالخادم عبر الشبكة الحالية.", "Could not connect to the server on the current network.")
+        }
+        return raw.take(220)
+    }
+
+    private fun networkMessage(error: Throwable?): String {
+        val raw = error?.message.orEmpty()
+        return when {
+            raw.contains("Failed to connect to /", true) ||
+                raw.contains("Network is unreachable", true) ||
+                raw.contains("ENETUNREACH", true) ||
+                raw.contains("Unable to resolve host", true) ||
+                raw.contains("No address associated", true) ||
+                raw.contains("UnknownHost", true) ->
+                t(
+                    "تعذر الاتصال بالخادم عبر الشبكة الحالية، وسيتم استخدام مسار اتصال بديل تلقائيًا.",
+                    "The server could not be reached on the current network; an alternate connection path is used automatically."
+                )
+            raw.contains("timeout", true) || raw.contains("timed out", true) ->
+                t("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت وأعد المحاولة.", "The server connection timed out. Check connectivity and try again.")
+            raw.startsWith("HTTP 404", true) ->
+                t("الخدمة المطلوبة غير متاحة على إصدار الخادم الحالي.", "The requested service is unavailable on the current server version.")
+            raw.contains("صلاحية") || raw.contains("الموظف") || raw.contains("يوجد أمر") ->
+                safeServerError(raw)
+            else ->
+                t("تعذر تنفيذ الطلب عبر الشبكة الحالية. أعد المحاولة بعد التحقق من الاتصال.", "The request could not be completed on the current network. Check connectivity and try again.")
+        }
+    }
+
+    private fun showError(title: String, message: String) {
+        if (!alive()) return
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setPositiveButton(t("حسنًا", "OK"), null)
+            .show()
+    }
+
 
     private fun formatTime(value: Long): String =
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(value))
