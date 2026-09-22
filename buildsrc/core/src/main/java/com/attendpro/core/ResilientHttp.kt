@@ -9,8 +9,11 @@ import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.Inet4Address
 import java.net.InetAddress
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.net.URL
 import java.net.URLEncoder
@@ -83,9 +86,28 @@ object ResilientHttp {
         return try {
             executeSystem(url, method, headers, body, connectTimeoutMs, readTimeoutMs)
         } catch (t: Throwable) {
-            if (!isDnsFailure(t)) throw t
+            if (!isRetryableNetworkFailure(t)) throw t
             executeWithSecureDns(url, method, headers, body, connectTimeoutMs, readTimeoutMs)
         }
+    }
+
+    fun isRetryableNetworkFailure(t: Throwable?): Boolean {
+        var x = t
+        repeat(12) {
+            if (x == null) return false
+            if (x is UnknownHostException || x is ConnectException || x is SocketTimeoutException) return true
+            val m = x?.message.orEmpty()
+            if (m.contains("Unable to resolve host", ignoreCase = true) ||
+                m.contains("No address associated with hostname", ignoreCase = true) ||
+                m.contains("UnknownHost", ignoreCase = true) ||
+                m.contains("secure DNS fallback", ignoreCase = true) ||
+                m.contains("Failed to connect to /", ignoreCase = true) ||
+                m.contains("Network is unreachable", ignoreCase = true) ||
+                m.contains("ENETUNREACH", ignoreCase = true) ||
+                m.contains("connect failed", ignoreCase = true)) return true
+            x = x?.cause
+        }
+        return false
     }
 
     fun isDnsFailure(t: Throwable?): Boolean {
@@ -167,18 +189,24 @@ object ResilientHttp {
 
     private object SecureFallbackDns : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
-            runCatching { Dns.SYSTEM.lookup(hostname) }
-                .getOrNull()
-                ?.takeIf { it.isNotEmpty() }
-                ?.let { return it }
+            val system = runCatching { Dns.SYSTEM.lookup(hostname) }.getOrNull().orEmpty()
+            val systemV4 = ipv4First(system)
+            if (systemV4.isNotEmpty()) return systemV4
 
             val encrypted = resolveEncrypted(hostname)
-            if (encrypted.isNotEmpty()) return encrypted
+            val encryptedV4 = ipv4First(encrypted)
+            if (encryptedV4.isNotEmpty()) return encryptedV4
 
             if (hostname.equals(ATTEND_WORKER_HOST, ignoreCase = true)) {
                 val pinned = attendWorkerEdgeFallback.mapNotNull { literalAddress(it) }
-                if (pinned.isNotEmpty()) return pinned
+                val pinnedV4 = ipv4First(pinned)
+                if (pinnedV4.isNotEmpty()) return pinnedV4
             }
+
+            // Only use IPv6 when no IPv4 route can be obtained at all. On many mobile
+            // networks Android can resolve AAAA but has no working IPv6 route.
+            if (system.isNotEmpty()) return system
+            if (encrypted.isNotEmpty()) return encrypted
 
             throw UnknownHostException(
                 "$hostname: system DNS and encrypted DNS failed; no verified fallback address is available"
@@ -189,13 +217,12 @@ object ResilientHttp {
     private fun resolveEncrypted(hostname: String, depth: Int = 0): List<InetAddress> {
         if (depth > 3) return emptyList()
 
-        val resolved = LinkedHashSet<InetAddress>()
+        val ipv4 = LinkedHashSet<InetAddress>()
+        val ipv6 = LinkedHashSet<InetAddress>()
         val cnames = LinkedHashSet<String>()
 
-        // Prefer IPv4 on mobile networks, but collect IPv6 as well.
         listOf("A", "AAAA").forEach { type ->
             resolvers.forEach { resolver ->
-                if (resolved.isNotEmpty() && type == "A") return@forEach
                 runCatching {
                     val response = queryResolver(resolver, hostname, type)
                     val answers = response.optJSONArray("Answer") ?: return@runCatching
@@ -203,22 +230,22 @@ object ResilientHttp {
                         val a = answers.optJSONObject(i) ?: continue
                         val data = a.optString("data", "").trim().trimEnd('.')
                         when (a.optInt("type", 0)) {
-                            1 -> if (isIpv4Literal(data)) literalAddress(data)?.let { resolved += it }
-                            28 -> if (data.contains(':')) literalAddress(data)?.let { resolved += it }
+                            1 -> if (isIpv4Literal(data)) literalAddress(data)?.let { ipv4 += it }
+                            28 -> if (data.contains(':')) literalAddress(data)?.let { ipv6 += it }
                             5 -> if (data.isNotBlank()) cnames += data
                         }
                     }
                 }
             }
+            if (type == "A" && ipv4.isNotEmpty()) return ipv4.toList()
         }
 
-        if (resolved.isNotEmpty()) return resolved.toList()
-
+        if (ipv4.isNotEmpty()) return ipv4.toList()
         cnames.forEach { alias ->
             val nested = resolveEncrypted(alias, depth + 1)
             if (nested.isNotEmpty()) return nested
         }
-        return emptyList()
+        return ipv6.toList()
     }
 
     private fun queryResolver(resolver: Resolver, hostname: String, type: String): JSONObject {
@@ -226,6 +253,8 @@ object ResilientHttp {
             override fun lookup(name: String): List<InetAddress> {
                 if (name.equals(resolver.host, ignoreCase = true)) {
                     val addresses = resolver.bootstrapIps.mapNotNull { literalAddress(it) }
+                    val v4 = ipv4First(addresses)
+                    if (v4.isNotEmpty()) return v4
                     if (addresses.isNotEmpty()) return addresses
                 }
                 return Dns.SYSTEM.lookup(name)
@@ -259,6 +288,12 @@ object ResilientHttp {
             val n = it.toIntOrNull()
             n != null && n in 0..255
         }
+    }
+
+    private fun ipv4First(addresses: List<InetAddress>): List<InetAddress> {
+        if (addresses.isEmpty()) return emptyList()
+        val v4 = addresses.filterIsInstance<Inet4Address>()
+        return if (v4.isNotEmpty()) v4 else emptyList()
     }
 
     private fun literalAddress(value: String): InetAddress? =
