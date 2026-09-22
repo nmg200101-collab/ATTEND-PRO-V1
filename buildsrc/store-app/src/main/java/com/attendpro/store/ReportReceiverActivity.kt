@@ -36,7 +36,7 @@ import java.util.Locale
  * cannot replace newer state.
  */
 class ReportReceiverActivity : Activity() {
-    private enum class Section { STORES, STATUS, REPORTS, MESSAGES, EMPLOYEES }
+    private enum class Section { STORES, STATUS, REPORTS, MESSAGES }
     private enum class EmployeeFilter { ALL, ACTIVE, DISABLED, PENDING, FAILED }
 
     private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
@@ -185,7 +185,6 @@ class ReportReceiverActivity : Activity() {
             Section.STATUS -> renderStatus()
             Section.REPORTS -> renderReports()
             Section.MESSAGES -> renderMessages()
-            Section.EMPLOYEES -> renderEmployees()
         }
     }
 
@@ -216,7 +215,6 @@ class ReportReceiverActivity : Activity() {
             addTab(card, Section.STATUS, t("الحالة", "Status"))
             if (receiver.canReceiveReports) addTab(card, Section.REPORTS, t("التقارير", "Reports"))
             if (receiver.canMessageEmployees) addTab(card, Section.MESSAGES, t("الرسائل", "Messages"))
-            if (receiver.canManageStore) addTab(card, Section.EMPLOYEES, t("الموظفون", "Employees"))
         }
         tabs.addView(card)
     }
@@ -242,7 +240,6 @@ class ReportReceiverActivity : Activity() {
         }
         if (section == Section.REPORTS && !receiver.canReceiveReports) section = Section.STATUS
         if (section == Section.MESSAGES && !receiver.canMessageEmployees) section = Section.STATUS
-        if (section == Section.EMPLOYEES && !receiver.canManageStore) section = Section.STATUS
     }
 
     private fun renderStores() {
@@ -351,7 +348,6 @@ class ReportReceiverActivity : Activity() {
         val parts = mutableListOf<String>()
         if (binding.canReceiveReports) parts += t("تقارير", "Reports")
         if (binding.canMessageEmployees) parts += t("رسائل", "Messages")
-        if (binding.canManageStore) parts += t("موظفون", "Employees")
         return if (parts.isEmpty()) t("بدون صلاحيات", "No permissions") else parts.joinToString(" • ")
     }
 
@@ -450,12 +446,11 @@ class ReportReceiverActivity : Activity() {
             addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الصلاحيات لهذا المحل", "Permissions for this store")))
             addView(UiKit.subtitle(this@ReportReceiverActivity, p,
                 "${mark(receiver.canReceiveReports)} ${t("استلام التقارير", "Receive reports")}\n" +
-                    "${mark(receiver.canMessageEmployees)} ${t("مراسلة الموظفين", "Message employees")}\n" +
-                    "${mark(receiver.canManageStore)} ${t("إدارة الموظفين فقط", "Employee management only")}"
+                    "${mark(receiver.canMessageEmployees)} ${t("مراسلة الموظفين", "Message employees")}\n"
             ))
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "إدارة الموظفين لا تمنح إعدادات مدير المحل أو النظام أو الاتصال أو Bluetooth أو GPS أو التفعيل.",
-                "Employee management never grants Store, system, connection, Bluetooth, GPS, or activation settings."
+                "هاتف الاستلام مخصص للتقارير ومراسلة الموظفين فقط، ولا يملك صلاحيات إدارة المحل أو النظام.",
+                "The receiver phone is limited to reports and employee messaging only; Store and system administration are not available."
             )))
         })
     }
@@ -839,7 +834,7 @@ class ReportReceiverActivity : Activity() {
                             active = x.active,
                             canReceiveReports = x.canReceiveReports,
                             canMessageEmployees = x.canMessageEmployees,
-                            canManageStore = x.canManageStore,
+                            canManageStore = false,
                             linkedAt = now,
                             lastServerRefreshAt = now,
                             storeLastSeenAt = x.storeLastSeenAt
@@ -894,7 +889,7 @@ class ReportReceiverActivity : Activity() {
                         branchId = x.branchId,
                         canReceiveReports = x.canReceiveReports,
                         canMessageEmployees = x.canMessageEmployees,
-                        canManageStore = x.canManageStore,
+                        canManageStore = false,
                         lastServerRefreshAt = now,
                         storeLastSeenAt = current.storeLastSeenAt
                     )
@@ -917,7 +912,6 @@ class ReportReceiverActivity : Activity() {
             Section.STATUS -> Unit
             Section.REPORTS -> if (receiver.canReceiveReports) refreshReports(silent)
             Section.MESSAGES -> if (receiver.canMessageEmployees) refreshMessages(silent)
-            Section.EMPLOYEES -> if (receiver.canManageStore) refreshEmployees(silent)
         }
     }
 
@@ -1191,7 +1185,7 @@ class ReportReceiverActivity : Activity() {
         val now = System.currentTimeMillis()
         receiver.updateActiveBinding(
             current.storeId, current.storeName, current.branchId,
-            current.canReceiveReports, current.canMessageEmployees, current.canManageStore,
+            current.canReceiveReports, current.canMessageEmployees, false,
             now, current.storeLastSeenAt
         )
         lastServerRefreshAt = now
