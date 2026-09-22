@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.CheckBox
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -29,6 +30,7 @@ class StoreReceiverPermissionsActivity : Activity() {
     private lateinit var repo: StoreRepository
     private val p by lazy { UiKit.palette(this) }
     private var tab = 0
+    private var selectedReceiverId: String = ""
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -39,11 +41,13 @@ class StoreReceiverPermissionsActivity : Activity() {
             return
         }
         tab = savedInstanceState?.getInt("tab", 0) ?: 0
+        selectedReceiverId = savedInstanceState?.getString("selectedReceiverId").orEmpty()
         buildUi()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putInt("tab", tab)
+        outState.putString("selectedReceiverId", selectedReceiverId)
         super.onSaveInstanceState(outState)
     }
 
@@ -111,7 +115,13 @@ class StoreReceiverPermissionsActivity : Activity() {
                       "ID: ${phone.receiverId}\nBranch: ${repo.branchId}\nAdded: ${formatTime(phone.createdAt)}\nLast use: ${formatTimeOrNever(phone.lastUsedAt)}")))
                 addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات الحالية", "Current permissions")))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, permissionsText(phone)))
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("إدارة الصلاحيات", "Manage permissions"), false).apply { setOnClickListener { editPermissions(phone) } })
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("إدارة الصلاحيات", "Manage permissions"), false).apply {
+                    setOnClickListener {
+                        selectedReceiverId = phone.receiverId
+                        tab = 2
+                        buildUi()
+                    }
+                })
                 addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, if (phone.active) t("إيقاف الهاتف", "Disable phone") else t("تفعيل الهاتف", "Enable phone"), false).apply {
                     setOnClickListener { setPhoneActive(phone, !phone.active) }
                 })
@@ -129,22 +139,86 @@ class StoreReceiverPermissionsActivity : Activity() {
     }
 
     private fun permissionsTab(root: LinearLayout) {
-        val phones = repo.authorizedReportReceivers()
-        if (phones.isEmpty()) {
+        val allPhones = repo.authorizedReportReceivers()
+        if (allPhones.isEmpty()) {
             root.addView(UiKit.card(this, p).apply {
                 addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات", "Permissions")))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t("أضف هاتفًا أولًا ثم عد إلى هذا التبويب.", "Add a phone first, then return to this tab.")))
             })
             return
         }
+
+        root.addView(UiKit.card(this, p, 9).apply {
+            addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("إدارة الصلاحيات", "Permission management")))
+            addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p,
+                t("حدد صلاحيات كل هاتف مباشرة ثم اضغط «حفظ الصلاحيات». كل هاتف مستقل عن الآخر، ولا تمنح «إدارة الموظفين» أي وصول إلى إعدادات المحل أو إدارة النظام.",
+                  "Choose each phone's permissions directly, then press Save permissions. Each phone is independent. Employee management never grants Store or System settings.")))
+        })
+
+        val phones = if (selectedReceiverId.isBlank()) allPhones else
+            allPhones.sortedByDescending { it.receiverId == selectedReceiverId }
+
         phones.forEach { phone ->
-            root.addView(UiKit.card(this, p, 10).apply {
-                addView(UiKit.title(this@StoreReceiverPermissionsActivity, p, t("صلاحيات: ${phone.name}", "Permissions: ${phone.name}"), 18f))
-                addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, permissionsText(phone)))
-                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("حفظ التغييرات / تعديل الصلاحيات", "Save changes / Edit permissions"), false).apply { setOnClickListener { editPermissions(phone) } })
+            val reports = permissionCheckBox(
+                t("استلام التقارير", "Receive reports"),
+                t("السماح لهذا الهاتف باستلام تقارير الحضور المرسلة من المحل.", "Allow this phone to receive attendance reports sent by the Store."),
+                phone.canReceiveReports
+            )
+            val messages = permissionCheckBox(
+                t("مراسلة الموظفين", "Message employees"),
+                t("السماح بإرسال الرسائل للموظفين واستلام ردودهم عبر الخادم.", "Allow sending messages to employees and receiving their replies through the server."),
+                phone.canMessageEmployees
+            )
+            val manage = permissionCheckBox(
+                t("إدارة الموظفين", "Employee management"),
+                t("عرض الموظفين وإضافة موظف وتعديل بياناته وتفعيله أو إيقافه فقط. لا تشمل إعدادات المحل أو النظام.", "List, add, edit, enable or disable employees only. Store and system settings are excluded."),
+                phone.canManageStore
+            )
+
+            root.addView(UiKit.card(this, p, 12).apply {
+                addView(UiKit.title(this@StoreReceiverPermissionsActivity, p, phone.name.ifBlank { t("هاتف استلام", "Receiver phone") }, 19f))
+                addView(UiKit.statusBadge(this@StoreReceiverPermissionsActivity, p,
+                    if (phone.active) t("الهاتف نشط", "Phone active") else t("الهاتف موقوف", "Phone disabled"), phone.active))
+                addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p,
+                    t("المعرف: ${phone.receiverId}\nاختر الصلاحيات المطلوبة لهذا الهاتف:",
+                      "ID: ${phone.receiverId}\nChoose the permissions for this phone:")))
+                addView(reports)
+                addView(messages)
+                addView(manage)
+
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("السماح بكل الصلاحيات", "Allow all permissions"), false).apply {
+                    setOnClickListener { reports.isChecked = true; messages.isChecked = true; manage.isChecked = true }
+                })
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("تقارير فقط", "Reports only"), false).apply {
+                    setOnClickListener { reports.isChecked = true; messages.isChecked = false; manage.isChecked = false }
+                })
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("إلغاء كل الصلاحيات", "Remove all permissions"), false).apply {
+                    setOnClickListener { reports.isChecked = false; messages.isChecked = false; manage.isChecked = false }
+                })
+                addView(UiKit.button(this@StoreReceiverPermissionsActivity, p, t("حفظ الصلاحيات", "Save permissions")).apply {
+                    setOnClickListener {
+                        savePermissions(phone, reports.isChecked, messages.isChecked, manage.isChecked)
+                    }
+                })
             })
         }
     }
+
+    private fun permissionCheckBox(label: String, description: String, checked: Boolean): CheckBox =
+        CheckBox(this).apply {
+            text = "$label\n$description"
+            isChecked = checked
+            textSize = 16f
+            setTextColor(p.text)
+            gravity = if (AppLanguage.isEnglish(this@StoreReceiverPermissionsActivity)) Gravity.START else Gravity.END
+            layoutDirection = if (AppLanguage.isEnglish(this@StoreReceiverPermissionsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@StoreReceiverPermissionsActivity, 6),
+                UiKit.dp(this@StoreReceiverPermissionsActivity, 10),
+                UiKit.dp(this@StoreReceiverPermissionsActivity, 6),
+                UiKit.dp(this@StoreReceiverPermissionsActivity, 10)
+            )
+        }
 
     private fun scanReceiver() {
         startActivityForResult(Intent(this, QrScannerActivity::class.java).putExtra(QrScannerActivity.EXTRA_PROMPT, t("وجّه الكاميرا إلى QR تعريف هاتف الاستلام", "Point the camera at the receiver phone identity QR")), REQ_RECEIVER_QR)
@@ -219,28 +293,71 @@ class StoreReceiverPermissionsActivity : Activity() {
         AlertDialog.Builder(this).setTitle(t("تم ربط الهاتف ✓ — QR الربط النهائي", "Phone linked ✓ — final linking QR")).setView(box).setPositiveButton(t("تم", "Done"), null).show()
     }
 
-    private fun editPermissions(phone: AuthorizedReportReceiver) {
-        val labels = arrayOf(t("استلام التقارير", "Receive reports"), t("مراسلة الموظفين", "Message employees"), t("إدارة الموظفين", "Employee management"))
-        val checked = booleanArrayOf(phone.canReceiveReports, phone.canMessageEmployees, phone.canManageStore)
-        AlertDialog.Builder(this)
-            .setTitle(t("صلاحيات: ${phone.name}", "Permissions: ${phone.name}"))
-            .setMessage(t("إدارة الموظفين لا تمنح صلاحية إعدادات المحل أو المالك أو النظام.", "Employee management does not grant Store, owner, or system settings."))
-            .setMultiChoiceItems(labels, checked) { _, which, value -> checked[which] = value }
-            .setPositiveButton(t("حفظ التغييرات", "Save changes")) { _, _ -> savePermissions(phone, checked[0], checked[1], checked[2]) }
-            .setNegativeButton(t("إلغاء", "Cancel"), null)
-            .show()
-    }
-
     private fun savePermissions(phone: AuthorizedReportReceiver, reports: Boolean, messages: Boolean, manage: Boolean) {
+        selectedReceiverId = phone.receiverId
         repo.setReportReceiverPermissions(phone.receiverId, reports, messages, manage)
         if (!repo.isCentralActivationActive() || repo.serverUrl.isBlank()) {
-            info(t("تم الحفظ محليًا", "Saved locally"), t("تم حفظ الصلاحيات محليًا، والخادم غير متاح للمزامنة الآن.", "Permissions were saved locally; the server is unavailable for sync.")); buildUi(); return
+            info(
+                t("تم الحفظ محليًا", "Saved locally"),
+                t("تم حفظ الصلاحيات على هذا الهاتف محليًا. ستتم مزامنتها مع الخادم عند توفر اتصال مركزي صالح.",
+                  "Permissions were saved locally for this phone. They will sync when central connectivity is available.")
+            )
+            buildUi()
+            return
         }
         Thread {
-            val result = CentralServerClient.setReceiverPermissions(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), phone.receiverId, reports, messages, manage)
+            val identity = DeviceIdentity(this)
+            var push = CentralServerClient.setReceiverPermissions(
+                repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
+                phone.receiverId, reports, messages, manage
+            )
+
+            fun verified(): Result<Boolean> =
+                CentralServerClient.receiverCapabilities(repo.serverUrl, phone.receiverId, phone.secret).map { remote ->
+                    remote.canReceiveReports == reports &&
+                        remote.canMessageEmployees == messages &&
+                        remote.canManageStore == manage
+                }
+
+            var verify = if (push.isSuccess && phone.active) verified() else Result.success(!phone.active)
+
+            // One controlled retry if the server accepted the update but the receiver view
+            // did not reflect it yet.
+            if (push.isSuccess && phone.active && verify.getOrNull() == false) {
+                push = CentralServerClient.setReceiverPermissions(
+                    repo.serverUrl, repo.centralAccessToken, repo.storeId, identity,
+                    phone.receiverId, reports, messages, manage
+                )
+                if (push.isSuccess) verify = verified()
+            }
+
             runOnUiThread {
-                if (result.isSuccess) info(t("تم حفظ التغييرات ✓", "Changes saved ✓"), t("تم حفظ الصلاحيات محليًا ومزامنتها مع الخادم. سيقرأ هاتف الاستلام الصلاحيات الجديدة عند التحديث.", "Permissions were saved locally and synced with the server. The receiver phone will read them on refresh."))
-                else info(t("حُفظ محليًا وفشلت مزامنة الخادم", "Saved locally; server sync failed"), result.exceptionOrNull()?.message ?: t("خطأ", "Error"))
+                when {
+                    push.isFailure -> info(
+                        t("حُفظ محليًا وتعذرت مزامنة الخادم", "Saved locally; server sync failed"),
+                        push.exceptionOrNull()?.message ?: t("خطأ غير معروف", "Unknown error")
+                    )
+                    !phone.active -> info(
+                        t("تم حفظ الصلاحيات ✓", "Permissions saved ✓"),
+                        t("تم حفظ الصلاحيات محليًا وعلى الخادم. الهاتف موقوف حاليًا؛ ستطبق عند إعادة تفعيله.",
+                          "Permissions were saved locally and on the server. The phone is disabled; they will apply when it is enabled.")
+                    )
+                    verify.isFailure -> info(
+                        t("تم الإرسال وتعذر التحقق النهائي", "Saved; final verification unavailable"),
+                        t("استلم الخادم تغيير الصلاحيات، لكن تعذر قراءة الحالة من هاتف الاستلام للتحقق النهائي: ${verify.exceptionOrNull()?.message.orEmpty()}",
+                          "The server accepted the permission change, but receiver-side verification could not be completed: ${verify.exceptionOrNull()?.message.orEmpty()}")
+                    )
+                    verify.getOrNull() == true -> info(
+                        t("تم حفظ الصلاحيات والتحقق منها ✓", "Permissions saved and verified ✓"),
+                        t("تطابقت الصلاحيات المحلية مع الصلاحيات التي يراها هاتف الاستلام على الخادم.",
+                          "Local permissions match the permissions visible to the receiver phone on the server.")
+                    )
+                    else -> info(
+                        t("لم تتطابق الصلاحيات على الخادم", "Server permissions did not match"),
+                        t("تم الحفظ محليًا، لكن هاتف الاستلام لم يقرأ نفس الصلاحيات بعد إعادة المحاولة. لم أعتبر العملية ناجحة.",
+                          "Permissions were saved locally, but the receiver phone did not read the same permissions after retry. The operation was not marked successful.")
+                    )
+                }
                 buildUi()
             }
         }.start()
