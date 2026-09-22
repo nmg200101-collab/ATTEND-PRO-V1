@@ -91,6 +91,7 @@ class MainActivity : Activity() {
                         startAutomaticActivationRecovery()
                     } else {
                         autoSyncIfReady()
+                        syncReceiverEmployeeCommandsIfDue(force = true)
                         refreshDashboard()
                     }
                 }
@@ -175,9 +176,6 @@ class MainActivity : Activity() {
             if (::counts.isInitialized || ::connectionSummaryView.isInitialized) refreshDashboard()
             ensurePresenceDiscoveryRunning()
             pollServerPresenceIfDue()
-            // Receiver phones may manage employees only through the server command queue.
-            // Pairing/BLE/GPS state and general Store settings are never modified by this path.
-            syncReceiverEmployeeCommandsIfDue()
             autoSyncIfReady()
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
@@ -189,6 +187,16 @@ class MainActivity : Activity() {
             nearbyRefreshHandler.postDelayed(this, 5_000L)
         }
     }
+    // V137: receiver employee command polling has an independent cadence and is no
+    // longer coupled to the 5-second dashboard/presence refresh loop.
+    private val receiverEmployeeSyncHandler = Handler(Looper.getMainLooper())
+    private val receiverEmployeeSyncTask = object : Runnable {
+        override fun run() {
+            syncReceiverEmployeeCommandsIfDue()
+            receiverEmployeeSyncHandler.postDelayed(this, RECEIVER_EMPLOYEE_SYNC_INTERVAL_MS)
+        }
+    }
+
     private val p by lazy { UiKit.palette(this) }
 
     private fun t(arabic: String, english: String): String = AppLanguage.text(this, arabic, english)
@@ -268,6 +276,8 @@ class MainActivity : Activity() {
         DistributionUpdateManager.resume(this)
         nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask)
         nearbyRefreshHandler.post(nearbyRefreshTask)
+        receiverEmployeeSyncHandler.removeCallbacks(receiverEmployeeSyncTask)
+        receiverEmployeeSyncHandler.postDelayed(receiverEmployeeSyncTask, RECEIVER_EMPLOYEE_SYNC_INTERVAL_MS)
         LateAlertScheduler.sync(this, repo)
         if (!repo.isCentralActivationActive()) {
             runCatching { scanner.stop() }
@@ -1203,6 +1213,7 @@ class MainActivity : Activity() {
             } finally {
                 runOnUiThread {
                     receiverEmployeeSyncInFlight = false
+                    if (isFinishing || isDestroyed) return@runOnUiThread
                     if (appliedCount > 0) {
                         if (::status.isInitialized) {
                             status.text = t(
@@ -1214,8 +1225,8 @@ class MainActivity : Activity() {
                         if (employeeManagerMode) buildEmployeeManagerUi()
                     } else if (force && lastError.isNotBlank() && ::status.isInitialized) {
                         status.text = t(
-                            "تعذر مزامنة أوامر إدارة الموظفين: $lastError",
-                            "Employee-management sync failed: $lastError"
+                            "تعذر مزامنة أوامر إدارة الموظفين عبر الشبكة الحالية",
+                            "Employee-management sync could not complete on the current network"
                         )
                     }
                 }
@@ -4042,7 +4053,21 @@ class MainActivity : Activity() {
         AlertDialog.Builder(this).setTitle(AppLanguage.legacyUiText(this, title)).setMessage(AppLanguage.legacyUiText(this, message)).setPositiveButton(t("حسنًا", "OK"), null).show()
     }
 
-    override fun onDestroy(){nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask);scanner.stop();networkListener.stop();StoreDirectLinkBridge1977.unbind(directBle);directBle.stop();voiceAnnouncer.shutdown();super.onDestroy()}
+    override fun onPause() {
+        receiverEmployeeSyncHandler.removeCallbacks(receiverEmployeeSyncTask)
+        super.onPause()
+    }
+
+    override fun onDestroy(){
+        nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask)
+        receiverEmployeeSyncHandler.removeCallbacks(receiverEmployeeSyncTask)
+        runCatching { scanner.stop() }
+        runCatching { networkListener.stop() }
+        StoreDirectLinkBridge1977.unbind(directBle)
+        runCatching { directBle.stop() }
+        runCatching { voiceAnnouncer.shutdown() }
+        super.onDestroy()
+    }
     private fun adaptiveVoiceThreshold(captureQuality: Int, enrolledQuality: Int): Float {
         // High-quality samples stay strict. Moderate/noisy samples get a small tolerance,
         // while the spoken phrase + random challenge still provide the second factor.
@@ -4056,6 +4081,7 @@ class MainActivity : Activity() {
     }
 
     companion object {
+        private const val RECEIVER_EMPLOYEE_SYNC_INTERVAL_MS = 20_000L
         private const val GPS_RECOGNITION_FRESH_MILLIS = 5 * 60_000L
         private const val GPS_RECOGNITION_CHANNEL = "attend_gps_recognition"
         const val EXTRA_EMPLOYEE_MANAGER = "open_employee_manager"
