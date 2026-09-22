@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -18,6 +19,7 @@ import com.attendpro.core.ReceiverEmployeeAdminClient
 import com.attendpro.core.ReportProtocol
 import com.attendpro.core.ReportReceiverStore
 import com.attendpro.core.ReceiverStoreBinding
+import com.attendpro.core.ReceiverOfflineReportProtocol
 import com.attendpro.core.UiKit
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,6 +61,11 @@ class ReportReceiverActivity : Activity() {
     private var employeeFilter = EmployeeFilter.ALL
     private var notice = ""
     private var lastServerRefreshAt = 0L
+    private var lanStatus = ""
+    private var bleStatus = ""
+    private var bluetoothPermissionAsked = false
+    private var lanReportServer: ReceiverReportLanServer? = null
+    private var bleReportServer: ReceiverReportBleServer? = null
 
     @Volatile private var storesInFlight = false
     @Volatile private var capabilitiesInFlight = false
@@ -108,12 +115,16 @@ class ReportReceiverActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (::receiver.isInitialized && receiver.storeBindings().isNotEmpty()) {
-            refreshStoreBindings(silent = true, refreshCurrentSection = true)
+        if (::receiver.isInitialized) {
+            startLocalReportChannels()
+            if (receiver.storeBindings().isNotEmpty()) {
+                refreshStoreBindings(silent = true, refreshCurrentSection = true)
+            }
         }
     }
 
     override fun onDestroy() {
+        stopLocalReportChannels()
         storesGeneration++
         capabilitiesGeneration++
         reportsGeneration++
@@ -408,6 +419,23 @@ class ReportReceiverActivity : Activity() {
                 ).apply {
                     isEnabled = !capabilitiesInFlight
                     setOnClickListener { refreshCapabilities(silent = false, refreshCurrentSection = false) }
+                })
+            }
+        })
+
+        content.addView(UiKit.card(this, p, 9).apply {
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الاستقبال القريب بدون إنترنت", "Nearby offline receiving")))
+            val btMissing = ReceiverReportBluetoothSupport.missingPermissions(this@ReportReceiverActivity)
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "Wi‑Fi / Hotspot / LAN: ${lanStatus.ifBlank { "جاري التجهيز…" }}\nBluetooth: ${bleStatus.ifBlank { if (btMissing.isEmpty()) "جاري التجهيز…" else "يحتاج صلاحيات Bluetooth" }}",
+                "Wi‑Fi / Hotspot / LAN: ${lanStatus.ifBlank { "Starting…" }}\nBluetooth: ${bleStatus.ifBlank { if (btMissing.isEmpty()) "Starting…" else "Bluetooth permissions required" }}"
+            )))
+            if (btMissing.isNotEmpty()) {
+                addView(UiKit.button(this@ReportReceiverActivity, p, t("منح صلاحيات Bluetooth", "Grant Bluetooth permissions"), false).apply {
+                    setOnClickListener {
+                        bluetoothPermissionAsked = true
+                        ReceiverReportBluetoothSupport.request(this@ReportReceiverActivity, REQ_BLUETOOTH_RECEIVER)
+                    }
                 })
             }
         })
@@ -771,7 +799,13 @@ class ReportReceiverActivity : Activity() {
             "${binding.storeName} link saved. Verifying with server."
         )
         render()
-        refreshCapabilities(silent = false, refreshCurrentSection = false)
+        startLocalReportChannels()
+        if (binding.serverUrl.isNotBlank()) {
+            refreshCapabilities(silent = false, refreshCurrentSection = false)
+        } else {
+            notice = t("تم ربط المحل محليًا. التقارير القريبة تعمل عبر LAN/Bluetooth.", "Store linked locally. Nearby reports work over LAN/Bluetooth.")
+            render()
+        }
     }
 
     private fun refreshStoreBindings(silent: Boolean, refreshCurrentSection: Boolean) {
@@ -1079,6 +1113,95 @@ class ReportReceiverActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
+    private fun startLocalReportChannels() {
+        if (!::receiver.isInitialized) return
+
+        if (lanReportServer?.isRunning() != true) {
+            lanReportServer?.stop()
+            lanReportServer = ReceiverReportLanServer(
+                receiver.receiverId,
+                receiver.secret,
+                ::acceptOfflineReport
+            ) { status ->
+                runOnUiThread {
+                    if (!alive()) return@runOnUiThread
+                    lanStatus = status
+                    if (section == Section.STATUS) render()
+                }
+            }.also { server ->
+                server.start()
+                lanStatus = if (server.isRunning()) t("جاهز", "Ready") else lanStatus
+            }
+        }
+
+        val missing = ReceiverReportBluetoothSupport.missingPermissions(this)
+        if (missing.isNotEmpty()) {
+            bleStatus = t("الصلاحيات غير ممنوحة", "Permissions not granted")
+            if (!bluetoothPermissionAsked && Build.VERSION.SDK_INT >= 31) {
+                bluetoothPermissionAsked = true
+                ReceiverReportBluetoothSupport.request(this, REQ_BLUETOOTH_RECEIVER)
+            }
+            return
+        }
+        if (!ReceiverReportBluetoothSupport.bluetoothEnabled(this)) {
+            bleStatus = t("Bluetooth غير مفعّل", "Bluetooth is off")
+            return
+        }
+        if (bleReportServer?.isRunning() != true) {
+            bleReportServer?.stop()
+            bleReportServer = ReceiverReportBleServer(
+                this,
+                receiver.receiverId,
+                receiver.secret,
+                ::acceptOfflineReport
+            ) { status ->
+                runOnUiThread {
+                    if (!alive()) return@runOnUiThread
+                    bleStatus = status
+                    if (section == Section.STATUS) render()
+                }
+            }.also { it.start() }
+        }
+    }
+
+    private fun stopLocalReportChannels() {
+        lanReportServer?.stop()
+        bleReportServer?.stop()
+        lanReportServer = null
+        bleReportServer = null
+    }
+
+    private fun acceptOfflineReport(envelope: ReceiverOfflineReportProtocol.Envelope): Boolean {
+        val binding = receiver.storeBindings().firstOrNull {
+            it.storeId == envelope.storeId && it.active && it.canReceiveReports
+        } ?: return false
+        val received = receiver.receive(envelope.packageText, envelope.storeId) ?: return false
+        runOnUiThread {
+            if (!alive()) return@runOnUiThread
+            if (receiver.activeBinding()?.storeId == envelope.storeId) {
+                notice = t(
+                    "تم استلام تقرير محلي من ${binding.storeName} ✓",
+                    "Local report received from ${binding.storeName} ✓"
+                )
+                selectedReportIndex = null
+                if (section == Section.REPORTS || section == Section.STATUS) render()
+            }
+        }
+        return received.transferId == envelope.transferId
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQ_BLUETOOTH_RECEIVER) {
+            bleStatus = if (ReceiverReportBluetoothSupport.hasPermissions(this))
+                t("تم منح الصلاحيات — جارٍ تشغيل BLE", "Permissions granted — starting BLE")
+            else
+                t("صلاحيات Bluetooth غير مكتملة", "Bluetooth permissions incomplete")
+            startLocalReportChannels()
+            if (alive()) render()
+        }
+    }
+
     private fun markActiveServerContact(storeId: String) {
         val current = receiver.activeBinding() ?: return
         if (current.storeId != storeId) return
@@ -1167,6 +1290,7 @@ class ReportReceiverActivity : Activity() {
 
     companion object {
         private const val REQ_GRANT = 7301
+        private const val REQ_BLUETOOTH_RECEIVER = 7302
         private const val KEY_SECTION = "receiver_section"
         private const val KEY_REPORT_INDEX = "receiver_report_index"
     }
