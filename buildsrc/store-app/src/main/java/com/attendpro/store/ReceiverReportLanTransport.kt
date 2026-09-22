@@ -26,7 +26,8 @@ data class ReceiverReportDeliveryResultWithPayload(
     val success: Boolean,
     val transport: String,
     val detail: String,
-    val payload: String
+    val payload: String,
+    val endpoint: String = ""
 )
 
 class ReceiverReportLanServer(
@@ -34,6 +35,7 @@ class ReceiverReportLanServer(
     private val secret: String,
     private val onEnvelope: (ReceiverOfflineReportProtocol.Envelope) -> Boolean,
     private val nearbyInviteProvider: () -> String? = { null },
+    private val nearbyGrantConsumer: (String) -> Boolean = { false },
     private val onStatus: (String) -> Unit
 ) {
     companion object {
@@ -150,6 +152,18 @@ class ReceiverReportLanServer(
             val bytes = ByteArray(length)
             input.readFully(bytes)
             val raw = String(bytes, Charsets.UTF_8)
+            val grant = ReceiverOfflineReportProtocol.decodeNearbyGrant(raw, receiverId, secret)
+            if (grant != null) {
+                if (!runCatching { nearbyGrantConsumer(grant) }.getOrDefault(false)) return
+                val ack = ReceiverOfflineReportProtocol.nearbyGrantAck(receiverId, secret)
+                DataOutputStream(s.getOutputStream()).use { out ->
+                    out.write((ack + "\n").toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
+                onStatus("LAN/Hotspot: اكتمل ربط محل قريب ✓")
+                return
+            }
+
             val envelope = ReceiverOfflineReportProtocol.decodeEnvelope(raw, receiverId, secret) ?: return
             val accepted = runCatching { onEnvelope(envelope) }.getOrDefault(false)
             if (!accepted) return
@@ -187,7 +201,10 @@ object ReceiverReportLanClient {
                         val raw = String(packet.data, packet.offset, packet.length, Charsets.UTF_8)
                         val invite = ReceiverOfflineReportProtocol.parseNearbyReply(raw, nonce)
                         if (!invite.isNullOrBlank()) {
-                            return ReceiverReportDeliveryResultWithPayload(true, "LAN", "تم اكتشاف هاتف قريب", invite)
+                            return ReceiverReportDeliveryResultWithPayload(
+                                true, "LAN", "تم اكتشاف هاتف قريب", invite,
+                                packet.address.hostAddress.orEmpty()
+                            )
                         }
                     } catch (_: SocketTimeoutException) {
                     }
@@ -196,6 +213,35 @@ object ReceiverReportLanClient {
             ReceiverReportDeliveryResultWithPayload(false, "LAN", "لم يظهر هاتف استلام قريب على Wi‑Fi/Hotspot", "")
         }.getOrElse {
             ReceiverReportDeliveryResultWithPayload(false, "LAN", it.message ?: "تعذر اكتشاف القرب", "")
+        }
+    }
+
+    fun sendNearbyGrant(
+        endpoint: String,
+        receiverId: String,
+        secret: String,
+        grantText: String
+    ): ReceiverReportDeliveryResult {
+        if (endpoint.isBlank()) return ReceiverReportDeliveryResult(false, "LAN", "عنوان الهاتف القريب غير متاح")
+        return runCatching {
+            val encoded = ReceiverOfflineReportProtocol.encodeNearbyGrant(receiverId, grantText, secret)
+            val bytes = encoded.toByteArray(Charsets.UTF_8)
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(InetAddress.getByName(endpoint), ReceiverReportLanServer.REPORT_PORT), 2_500)
+                socket.soTimeout = 6_000
+                DataOutputStream(socket.getOutputStream()).apply {
+                    writeInt(bytes.size)
+                    write(bytes)
+                    flush()
+                }
+                val ack = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8)).readLine().orEmpty()
+                if (!ReceiverOfflineReportProtocol.verifyNearbyGrantAck(ack, receiverId, secret)) {
+                    return ReceiverReportDeliveryResult(false, "LAN", "لم يصل تأكيد الربط من هاتف الاستلام")
+                }
+                ReceiverReportDeliveryResult(true, "LAN", "اكتمل الربط القريب عبر Wi‑Fi/Hotspot")
+            }
+        }.getOrElse {
+            ReceiverReportDeliveryResult(false, "LAN", it.message ?: "تعذر إرسال الربط القريب")
         }
     }
 
