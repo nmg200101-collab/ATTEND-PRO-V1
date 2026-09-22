@@ -385,24 +385,23 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun renderStatus() {
-        val linked = receiver.serverUrl.isNotBlank()
+        val binding = receiver.activeBinding()
+        val linked = binding != null && binding.serverUrl.isNotBlank()
         content.addView(UiKit.card(this, p, 9).apply {
-            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الحالة", "Status")))
-            addView(UiKit.title(this@ReportReceiverActivity, p, if (linked) t("✓ الهاتف مرتبط", "✓ Phone linked") else t("غير مرتبط", "Not linked"), 20f))
-            val last = if (lastServerRefreshAt > 0L) formatTime(lastServerRefreshAt) else t("لم يتم بعد", "Not yet")
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("حالة المحل الحالي", "Current store status")))
+            addView(UiKit.title(this@ReportReceiverActivity, p,
+                if (linked) t("✓ مرتبط بالخادم", "✓ Server linked") else t("غير مرتبط", "Not linked"), 20f))
+            val last = binding?.lastServerRefreshAt?.takeIf { it > 0L }?.let { formatTime(it) } ?: t("لم يتم بعد", "Not yet")
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${receiver.capabilityStoreName.ifBlank { "—" }}\nالفرع: ${receiver.capabilityBranchId.ifBlank { "—" }}\nآخر اتصال بالخادم: $last",
-                "Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${receiver.capabilityStoreName.ifBlank { "—" }}\nBranch: ${receiver.capabilityBranchId.ifBlank { "—" }}\nLast server contact: $last"
+                "اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${binding?.storeName ?: "—"}\nالفرع: ${binding?.branchId ?: "—"}\nآخر اتصال بالخادم: $last",
+                "Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${binding?.storeName ?: "—"}\nBranch: ${binding?.branchId ?: "—"}\nLast server contact: $last"
             )))
-            addView(UiKit.button(this@ReportReceiverActivity, p, t("إظهار QR تعريف الهاتف", "Show phone identity QR"), false).apply {
-                setOnClickListener { showIdentityQr = !showIdentityQr; render() }
-            })
-            addView(UiKit.button(this@ReportReceiverActivity, p, t("مسح QR الربط النهائي", "Scan final link QR"), false).apply {
-                setOnClickListener { scanGrant() }
+            addView(UiKit.button(this@ReportReceiverActivity, p, t("إدارة المحلات المرتبطة", "Manage linked stores"), false).apply {
+                setOnClickListener { section = Section.STORES; notice = ""; render() }
             })
             if (linked) {
                 addView(UiKit.button(this@ReportReceiverActivity, p,
-                    if (capabilitiesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الصلاحيات والحالة", "Refresh permissions and status"),
+                    if (capabilitiesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث صلاحيات هذا المحل", "Refresh this store permissions"),
                     false
                 ).apply {
                     isEnabled = !capabilitiesInFlight
@@ -412,7 +411,7 @@ class ReportReceiverActivity : Activity() {
         })
 
         content.addView(UiKit.card(this, p, 9).apply {
-            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الصلاحيات", "Permissions")))
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الصلاحيات لهذا المحل", "Permissions for this store")))
             addView(UiKit.subtitle(this@ReportReceiverActivity, p,
                 "${mark(receiver.canReceiveReports)} ${t("استلام التقارير", "Receive reports")}\n" +
                     "${mark(receiver.canMessageEmployees)} ${t("مراسلة الموظفين", "Message employees")}\n" +
@@ -423,32 +422,15 @@ class ReportReceiverActivity : Activity() {
                 "Employee management never grants Store, system, connection, Bluetooth, GPS, or activation settings."
             )))
         })
-
-        if (showIdentityQr) {
-            val raw = ReportProtocol.encodeInvite(receiver.newInvite())
-            val qr = runCatching { QrCodeTools.bitmap(raw, 700) }.getOrNull()
-            content.addView(UiKit.card(this, p, 8).apply {
-                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("QR تعريف الهاتف", "Phone identity QR")))
-                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                    "امسح الرمز من «إضافة هاتف» في جهاز المحل.",
-                    "Scan this code from Add phone on the Store device."
-                )))
-                if (qr != null) {
-                    addView(ImageView(this@ReportReceiverActivity).apply {
-                        setImageBitmap(qr)
-                        adjustViewBounds = true
-                        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 700)
-                    })
-                } else {
-                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("تعذر إنشاء QR.", "Could not create QR.")))
-                }
-            })
-        }
     }
 
     private fun renderReports() {
         val card = UiKit.card(this, p, 9)
-        card.addView(UiKit.sectionLabel(this, p, t("التقارير", "Reports")))
+        val binding = receiver.activeBinding()
+        card.addView(UiKit.sectionLabel(this, p, t(
+            "التقارير — ${binding?.storeName ?: "—"}",
+            "Reports — ${binding?.storeName ?: "—"}"
+        )))
         card.addView(UiKit.button(this, p,
             if (reportsInFlight) t("جاري تحديث التقارير…", "Refreshing reports…") else t("تحديث التقارير", "Refresh reports")
         ).apply {
@@ -456,7 +438,7 @@ class ReportReceiverActivity : Activity() {
             setOnClickListener { refreshReports(silent = false) }
         })
 
-        val items = receiver.receivedReports()
+        val items = receiver.receivedReports(binding?.storeId.orEmpty())
         val selected = selectedReportIndex?.let { items.getOrNull(it) }
         if (selected != null) {
             card.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
@@ -480,7 +462,11 @@ class ReportReceiverActivity : Activity() {
 
     private fun renderMessages() {
         val card = UiKit.card(this, p, 9)
-        card.addView(UiKit.sectionLabel(this, p, t("الرسائل", "Messages")))
+        val binding = receiver.activeBinding()
+        card.addView(UiKit.sectionLabel(this, p, t(
+            "الرسائل — ${binding?.storeName ?: "—"}",
+            "Messages — ${binding?.storeName ?: "—"}"
+        )))
         card.addView(UiKit.button(this, p,
             if (messagesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الموظفين والردود", "Refresh employees and replies")
         ).apply {
