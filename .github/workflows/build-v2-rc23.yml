@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V140 Receiver Delivery Reliability
+name: Build ATTEND-PRO V141 Receiver Reports Messaging Only
 on:
   push:
-    branches: [attend-pro-v140-receiver-delivery-reliability]
+    branches: [attend-pro-v141-receiver-reports-messaging-only]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V140 receiver delivery reliability
+      - name: Verify V141 receiver reports messaging only
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -51,7 +51,7 @@ jobs:
           ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
 
-          # V140 Store-side receiver center: one Phones surface, permissions inline, no duplicate Permissions tab.
+          # V141 Store-side receiver center: reports/messages permissions only, no duplicate Permissions tab.
           grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
           grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
@@ -65,7 +65,7 @@ jobs:
           grep -q 'اكتشاف هاتف قريب' "$CENTER"
           grep -q 'discoverNearbyReceiver' "$CENTER"
           grep -q 'deliverNearbyGrantAsync' "$CENTER"
-          grep -q 'pending_receiver_syncs_v140' "$CENTER"
+          grep -q 'pending_receiver_syncs_v141' "$CENTER"
           grep -q 'تم حفظ الهاتف فورًا' "$CENTER"
           test "$(grep -c 'setContentView(' "$CENTER")" -eq 1
           ! grep -q 'buildUi' "$CENTER"
@@ -75,29 +75,28 @@ jobs:
           grep -q 'capabilitiesGeneration' "$RECEIVER"
           grep -q 'reportsGeneration' "$RECEIVER"
           grep -q 'messagesGeneration' "$RECEIVER"
-          grep -q 'employeesGeneration' "$RECEIVER"
           grep -q 'capabilitiesInFlight' "$RECEIVER"
           grep -q 'reportsInFlight' "$RECEIVER"
           grep -q 'messagesInFlight' "$RECEIVER"
-          grep -q 'employeesInFlight' "$RECEIVER"
           grep -q 'isFinishing' "$RECEIVER"
           grep -q 'isDestroyed' "$RECEIVER"
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
           ! grep -q 'receiverStoreSettings' "$RECEIVER"
           ! grep -q 'store-settings' "$RECEIVER"
-          grep -q '"PENDING"' "$RECEIVER"
-          grep -q '"DISPATCHED"' "$RECEIVER"
-          grep -q '"APPLIED"' "$RECEIVER"
-          grep -q '"FAILED"' "$RECEIVER"
-          grep -q 'قيد الإرسال' "$RECEIVER"
-          grep -q 'وصل لجهاز المحل' "$RECEIVER"
-          grep -q 'تم التنفيذ' "$RECEIVER"
-          grep -q 'فشل التنفيذ' "$RECEIVER"
           grep -q 'تعذر الاتصال بالخادم عبر الشبكة الحالية' "$RECEIVER"
 
-          # V140 retains V138 multi-store isolation and stale-callback guards.
-          grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, EMPLOYEES }' "$RECEIVER"
+          # V141 retains V138 multi-store isolation but receiver phone exposes only reports + messaging.
+          grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES }' "$RECEIVER"
+          ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
+          ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
+          ! grep -q 'إدارة الموظفين' "$CENTER"
+          ! grep -q 'Employee management' "$CENTER"
+          grep -q 'savePermissions(phone, reports.isChecked, messages.isChecked)' "$CENTER"
+          grep -q 'phone.receiverId, reports, messages, false' "$CENTER"
+          grep -q '!remote.canManageStore' "$CENTER"
+          grep -q 'canManageStore = false' "$RECEIVER"
+          grep -q 'var canManageStore: Boolean get() = false' "$PROTOCOL"
           grep -q 'renderStores' "$RECEIVER"
           grep -q 'refreshStoreBindings' "$RECEIVER"
           grep -q 'queueServerUnlink' "$RECEIVER"
@@ -105,10 +104,6 @@ jobs:
           grep -q 'actionGeneration' "$RECEIVER"
           grep -q 'storeId = storeId' "$RECEIVER"
           grep -q 'receivedReports(binding?.storeId.orEmpty())' "$RECEIVER"
-          grep -q 'EmployeeFilter' "$RECEIVER"
-          grep -q 'retryEmployeeCommand' "$RECEIVER"
-          grep -q 'commandEmployeeName' "$ADMIN"
-          grep -q 'commandEnabled' "$ADMIN"
           grep -q '/api/v1/monitor/stores' "$CENTRAL"
           grep -q '/api/v1/monitor/stores/unlink' "$CENTRAL"
           grep -q 'data class ReceiverStoreBinding' "$PROTOCOL"
@@ -118,7 +113,7 @@ jobs:
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
 
-          # V140 nearby report delivery is independent from employee BLE pairing.
+          # V141 nearby report delivery remains independent from employee BLE pairing.
           test -f "$OFFLINE_PROTOCOL"
           test -f "$LAN_REPORT"
           test -f "$BLE_REPORT"
@@ -131,6 +126,10 @@ jobs:
           grep -q 'ReceiverReportBleServer' "$SERVICE"
           grep -q 'pollServerReports' "$SERVICE"
           grep -q 'confirmRemoteReport' "$SERVICE"
+          grep -q 'pollServerMessages' "$SERVICE"
+          grep -q 'cacheMessageReplies' "$SERVICE"
+          grep -q 'receivedMessageReplies' "$RECEIVER"
+          grep -q 'receiverMessageRepliesV141' "$PROTOCOL"
           grep -q 'nearbyPairingActive' "$SERVICE"
           grep -q 'acceptNearbyGrant' "$SERVICE"
           grep -q '0000f139-0000-1000-8000-00805f9b34fb' "$BLE_REPORT"
@@ -151,17 +150,10 @@ jobs:
           grep -q 'sendNearbyGrant' "$BLE_REPORT"
           grep -q 'INVITE_UUID' "$BLE_REPORT"
 
-          # Employee management uses the server queue only; no receiver-side employee_links CRUD.
-          grep -q '/api/v1/monitor/employees/manage-list' "$ADMIN"
-          grep -q '/api/v1/monitor/employees/add' "$ADMIN"
-          grep -q '/api/v1/monitor/employees/update' "$ADMIN"
-          grep -q '/api/v1/monitor/employees/status' "$ADMIN"
-          ! grep -q 'employee_links' "$ADMIN"
+          # No receiver-side employee management survives in the receiver Activity.
           ! grep -q 'employee_links' "$RECEIVER"
-          grep -q 'commandStatus' "$ADMIN"
-          grep -q 'commandError' "$ADMIN"
 
-          # Store queue: snapshot -> pull -> serial apply/ACK -> refreshed snapshot.
+          # Existing Store employee synchronization remains untouched for the main Store app.
           grep -q 'syncReceiverEmployeeSnapshot' "$CENTRAL"
           grep -q 'pullReceiverEmployeeCommands' "$CENTRAL"
           grep -q 'ackReceiverEmployeeCommand' "$CENTRAL"
@@ -199,13 +191,13 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V140 identity.
-          grep -q 'versionCode = 140' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 140' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/employee-app/build.gradle.kts
+          # V141 identity.
+          grep -q 'versionCode = 141' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 141' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY"' buildsrc/employee-app/build.gradle.kts
 
-          # RC29 field-proven pairing/direct-link files are immutable in V140.
+          # RC29 field-proven pairing/direct-link files are immutable in V141.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -234,7 +226,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V140
+      - name: Sign V141
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -247,9 +239,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V140.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V141.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V140.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V141.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -265,11 +257,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='140' versionName='2.0.0-RC29-V140-RECEIVER-DELIVERY-RELIABILITY'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='141' versionName='2.0.0-RC29-V141-RECEIVER-DELIVERY-RELIABILITY'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V140-RECEIVER-DELIVERY-RELIABILITY-SIGNED
+          name: ATTEND-PRO-V141-RECEIVER-DELIVERY-RELIABILITY-SIGNED
           path: signed/
           retention-days: 30
