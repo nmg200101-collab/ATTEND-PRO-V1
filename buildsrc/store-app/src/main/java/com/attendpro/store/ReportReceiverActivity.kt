@@ -15,7 +15,6 @@ import com.attendpro.core.AppLanguage
 import com.attendpro.core.CentralServerClient
 import com.attendpro.core.QrCodeTools
 import com.attendpro.core.QrScannerActivity
-import com.attendpro.core.ReceiverEmployeeAdminClient
 import com.attendpro.core.ReportProtocol
 import com.attendpro.core.ReportReceiverStore
 import com.attendpro.core.ReceiverStoreBinding
@@ -37,7 +36,6 @@ import java.util.Locale
  */
 class ReportReceiverActivity : Activity() {
     private enum class Section { STORES, STATUS, REPORTS, MESSAGES }
-    private enum class EmployeeFilter { ALL, ACTIVE, DISABLED, PENDING, FAILED }
 
     private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
 
@@ -53,12 +51,6 @@ class ReportReceiverActivity : Activity() {
     private var messageEmployees: List<CentralServerClient.ReceiverEmployee> = emptyList()
     private var messageReplies: List<ReplyRow> = emptyList()
     private var selectedMessageEmployeeId: String? = null
-    private var managedEmployees: List<ReceiverEmployeeAdminClient.Employee> = emptyList()
-    private var employeeEditorOpen = false
-    private var editingEmployeeId: String? = null
-    private var selectedEmployeeId: String? = null
-    private var employeeSearchQuery = ""
-    private var employeeFilter = EmployeeFilter.ALL
     private var notice = ""
     private var lastServerRefreshAt = 0L
     private var lanStatus = ""
@@ -71,15 +63,12 @@ class ReportReceiverActivity : Activity() {
     @Volatile private var capabilitiesInFlight = false
     @Volatile private var reportsInFlight = false
     @Volatile private var messagesInFlight = false
-    @Volatile private var employeesInFlight = false
-    @Volatile private var employeeCommandInFlight = false
     @Volatile private var messageSendInFlight = false
 
     @Volatile private var storesGeneration = 0L
     @Volatile private var capabilitiesGeneration = 0L
     @Volatile private var reportsGeneration = 0L
     @Volatile private var messagesGeneration = 0L
-    @Volatile private var employeesGeneration = 0L
     @Volatile private var actionGeneration = 0L
 
     private fun t(ar: String, en: String) = AppLanguage.text(this, ar, en)
@@ -129,7 +118,6 @@ class ReportReceiverActivity : Activity() {
         capabilitiesGeneration++
         reportsGeneration++
         messagesGeneration++
-        employeesGeneration++
         actionGeneration++
         super.onDestroy()
     }
@@ -225,8 +213,6 @@ class ReportReceiverActivity : Activity() {
                 section = target
                 notice = ""
                 selectedReportIndex = null
-                employeeEditorOpen = false
-                selectedEmployeeId = null
                 render()
                 refreshSelectedSection(silent = true)
             }
@@ -358,11 +344,8 @@ class ReportReceiverActivity : Activity() {
         lastServerRefreshAt = binding.lastServerRefreshAt
         selectedReportIndex = null
         selectedMessageEmployeeId = null
-        selectedEmployeeId = null
-        managedEmployees = emptyList()
         messageEmployees = emptyList()
         messageReplies = emptyList()
-        employeeEditorOpen = false
         section = Section.STATUS
         notice = t("تم اختيار ${binding.storeName}.", "${binding.storeName} selected.")
         render()
@@ -548,231 +531,6 @@ class ReportReceiverActivity : Activity() {
         content.addView(card)
     }
 
-    private fun renderEmployees() {
-        val binding = receiver.activeBinding()
-        val card = UiKit.card(this, p, 9)
-        card.addView(UiKit.sectionLabel(this, p, t(
-            "إدارة الموظفين — ${binding?.storeName ?: "—"}",
-            "Employee management — ${binding?.storeName ?: "—"}"
-        )))
-        card.addView(UiKit.subtitle(this, p, t(
-            "الإدارة خاصة بالمحل المحدد: بحث، فلترة، تفاصيل، تعديل الاسم والفرع، تفعيل/إيقاف، ومتابعة حالة تنفيذ الأوامر.",
-            "Management is scoped to the selected store: search, filters, details, name/branch editing, enable/disable, and command tracking."
-        )))
-
-        val selected = selectedEmployeeId?.let { id -> managedEmployees.firstOrNull { it.employeeId == id } }
-        if (selected != null) {
-            renderEmployeeDetails(card, selected)
-            content.addView(card)
-            return
-        }
-
-        card.addView(UiKit.button(this, p,
-            if (employeesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث قائمة الموظفين", "Refresh employee list")
-        ).apply {
-            isEnabled = !employeesInFlight
-            setOnClickListener { refreshEmployees(silent = false) }
-        })
-        card.addView(UiKit.button(this, p, t("＋ إضافة موظف", "＋ Add employee"), false).apply {
-            isEnabled = !employeeCommandInFlight
-            setOnClickListener {
-                employeeEditorOpen = true
-                editingEmployeeId = null
-                selectedEmployeeId = null
-                render()
-            }
-        })
-
-        if (employeeEditorOpen) renderEmployeeEditor(card)
-
-        val searchField = UiKit.field(this, p, t("بحث بالاسم أو الرقم أو الفرع", "Search name, ID or branch")).apply {
-            setText(employeeSearchQuery)
-        }
-        card.addView(searchField)
-        card.addView(UiKit.button(this, p, t("تطبيق البحث", "Apply search"), false).apply {
-            setOnClickListener {
-                employeeSearchQuery = searchField.text.toString().trim()
-                render()
-            }
-        })
-        card.addView(UiKit.button(this, p, t("مسح البحث", "Clear search"), false).apply {
-            isEnabled = employeeSearchQuery.isNotBlank()
-            setOnClickListener { employeeSearchQuery = ""; render() }
-        })
-
-        val filters = UiKit.card(this, p, 6)
-        addEmployeeFilter(filters, EmployeeFilter.ALL, t("الكل", "All"))
-        addEmployeeFilter(filters, EmployeeFilter.ACTIVE, t("النشطون", "Active"))
-        addEmployeeFilter(filters, EmployeeFilter.DISABLED, t("الموقوفون", "Disabled"))
-        addEmployeeFilter(filters, EmployeeFilter.PENDING, t("أوامر معلقة", "Pending"))
-        addEmployeeFilter(filters, EmployeeFilter.FAILED, t("أوامر فاشلة", "Failed"))
-        card.addView(filters)
-
-        val query = employeeSearchQuery.lowercase(Locale.getDefault())
-        val visible = managedEmployees.filter { e ->
-            val searchMatch = query.isBlank() ||
-                e.employeeName.lowercase(Locale.getDefault()).contains(query) ||
-                e.employeeId.lowercase(Locale.getDefault()).contains(query) ||
-                e.branchId.lowercase(Locale.getDefault()).contains(query)
-            val filterMatch = when (employeeFilter) {
-                EmployeeFilter.ALL -> true
-                EmployeeFilter.ACTIVE -> e.enabled
-                EmployeeFilter.DISABLED -> !e.enabled
-                EmployeeFilter.PENDING -> e.pendingCommand
-                EmployeeFilter.FAILED -> e.commandStatus.equals("FAILED", true)
-            }
-            searchMatch && filterMatch
-        }
-
-        card.addView(UiKit.subtitle(this, p, t(
-            "النتائج: ${visible.size} من ${managedEmployees.size}",
-            "Results: ${visible.size} of ${managedEmployees.size}"
-        )))
-
-        if (visible.isEmpty()) {
-            card.addView(UiKit.subtitle(this, p,
-                if (managedEmployees.isEmpty()) t("لا توجد بيانات موظفين بعد.", "No employee data yet.")
-                else t("لا توجد نتائج مطابقة.", "No matching employees.")))
-        } else {
-            visible.forEach { e ->
-                val state = if (e.enabled) t("نشط", "Active") else t("موقوف", "Disabled")
-                val command = commandStatusText(e.commandStatus)
-                val lastSeen = if (e.lastSeenAt > 0L) formatTime(e.lastSeenAt) else t("لم يظهر بعد", "Not seen yet")
-                card.addView(UiKit.button(this, p,
-                    "${e.employeeName} • ${e.employeeId}\n${t("الفرع", "Branch")}: ${e.branchId} • $state\n${t("آخر ظهور", "Last seen")}: $lastSeen" +
-                        if (command.isBlank()) "" else "\n${t("آخر أمر", "Last command")}: $command",
-                    false
-                ).apply {
-                    setOnClickListener {
-                        selectedEmployeeId = e.employeeId
-                        employeeEditorOpen = false
-                        render()
-                    }
-                })
-            }
-        }
-        content.addView(card)
-    }
-
-    private fun addEmployeeFilter(parent: LinearLayout, filter: EmployeeFilter, label: String) {
-        parent.addView(UiKit.button(this, p, label, employeeFilter == filter).apply {
-            setOnClickListener { employeeFilter = filter; render() }
-        })
-    }
-
-    private fun renderEmployeeDetails(parent: LinearLayout, e: ReceiverEmployeeAdminClient.Employee) {
-        parent.addView(UiKit.button(this, p, t("← العودة لقائمة الموظفين", "← Back to employees"), false).apply {
-            setOnClickListener { selectedEmployeeId = null; employeeEditorOpen = false; render() }
-        })
-        parent.addView(UiKit.title(this, p, "${e.employeeName} • ${e.employeeId}", 20f))
-        val state = if (e.enabled) t("نشط", "Active") else t("موقوف", "Disabled")
-        val connection = when {
-            e.lastSeenAt > 0L && !e.pendingLink -> t("مرتبط وظهر على الخادم", "Linked and seen by server")
-            e.pendingLink -> t("مسجل في المحل — بانتظار اكتمال/تحديث الربط", "Registered at Store — awaiting link/update")
-            else -> t("لا توجد قراءة حديثة", "No recent reading")
-        }
-        val lastSeen = if (e.lastSeenAt > 0L) formatTime(e.lastSeenAt) else t("لم يظهر بعد", "Not seen yet")
-        val command = commandStatusText(e.commandStatus).ifBlank { t("لا يوجد", "None") }
-        val commandAt = if (e.commandUpdatedAt > 0L) formatTime(e.commandUpdatedAt) else t("—", "—")
-        parent.addView(UiKit.subtitle(this, p, t(
-            "الفرع: ${e.branchId}\nالحالة: $state\nالاتصال: $connection\nآخر ظهور: $lastSeen\nآخر أمر: $command — ${pendingActionLabel(e.pendingAction)}\nوقت الأمر: $commandAt",
-            "Branch: ${e.branchId}\nStatus: $state\nConnection: $connection\nLast seen: $lastSeen\nLast command: $command — ${pendingActionLabel(e.pendingAction)}\nCommand time: $commandAt"
-        )))
-        if (e.commandStatus.equals("FAILED", true) && e.commandError.isNotBlank()) {
-            parent.addView(UiKit.subtitle(this, p,
-                "${t("سبب الفشل", "Failure reason")}: ${safeServerError(e.commandError)}"))
-        }
-
-        if (employeeEditorOpen && editingEmployeeId == e.employeeId) {
-            renderEmployeeEditor(parent)
-        } else {
-            parent.addView(UiKit.button(this, p, t("تعديل الاسم / الفرع", "Edit name / branch"), false).apply {
-                isEnabled = !e.pendingCommand && !employeeCommandInFlight
-                setOnClickListener {
-                    employeeEditorOpen = true
-                    editingEmployeeId = e.employeeId
-                    render()
-                }
-            })
-            parent.addView(UiKit.button(this, p,
-                if (e.enabled) t("إيقاف الموظف", "Disable employee") else t("تفعيل الموظف", "Enable employee"),
-                false
-            ).apply {
-                isEnabled = !e.pendingCommand && !employeeCommandInFlight
-                setOnClickListener {
-                    if (e.enabled) confirmDisableEmployee(e) else submitEmployeeStatus(e, true)
-                }
-            })
-            if (e.commandStatus.equals("FAILED", true) && !e.pendingCommand) {
-                parent.addView(UiKit.button(this, p, t("إعادة محاولة آخر أمر", "Retry last command"), false).apply {
-                    isEnabled = !employeeCommandInFlight
-                    setOnClickListener { retryEmployeeCommand(e) }
-                })
-            }
-        }
-    }
-
-    private fun retryEmployeeCommand(e: ReceiverEmployeeAdminClient.Employee) {
-        if (!e.commandStatus.equals("FAILED", true) || e.pendingCommand || employeeCommandInFlight) return
-        when (e.pendingAction.uppercase(Locale.US)) {
-            "ADD" -> submitEmployeeEdit(
-                null,
-                e.employeeId,
-                e.commandEmployeeName.ifBlank { e.employeeName },
-                e.commandBranchId.ifBlank { e.branchId }
-            )
-            "UPDATE" -> submitEmployeeEdit(
-                e,
-                e.employeeId,
-                e.commandEmployeeName.ifBlank { e.employeeName },
-                e.commandBranchId.ifBlank { e.branchId }
-            )
-            "STATUS" -> submitEmployeeStatus(e, e.commandEnabled ?: !e.enabled)
-            else -> showError(t("إعادة المحاولة", "Retry"), t(
-                "لا توجد تفاصيل كافية لإعادة هذا الأمر تلقائيًا.",
-                "There is not enough information to retry this command automatically."
-            ))
-        }
-    }
-
-    private fun renderEmployeeEditor(parent: LinearLayout) {
-        val existing = editingEmployeeId?.let { id -> managedEmployees.firstOrNull { it.employeeId == id } }
-        val box = UiKit.card(this, p, 7)
-        box.addView(UiKit.sectionLabel(this, p, if (existing == null) t("إضافة موظف", "Add employee") else t("تعديل موظف", "Edit employee")))
-        val id = UiKit.field(this, p, t("رقم الموظف", "Employee ID")).apply {
-            setText(existing?.employeeId.orEmpty())
-            isEnabled = existing == null
-        }
-        val name = UiKit.field(this, p, t("اسم الموظف", "Employee name")).apply { setText(existing?.employeeName.orEmpty()) }
-        val branch = UiKit.field(this, p, t("الفرع", "Branch")).apply { setText(existing?.branchId ?: "MAIN") }
-        box.addView(id)
-        box.addView(name)
-        box.addView(branch)
-        box.addView(UiKit.button(this, p,
-            if (employeeCommandInFlight) t("جاري إرسال الأمر…", "Sending command…") else t("إرسال الأمر", "Send command")
-        ).apply {
-            isEnabled = !employeeCommandInFlight
-            setOnClickListener {
-                val employeeId = id.text.toString().trim()
-                val employeeName = name.text.toString().trim()
-                val branchId = branch.text.toString().trim().ifBlank { "MAIN" }
-                if (employeeId.isBlank()) {
-                    id.error = t("مطلوب", "Required")
-                    return@setOnClickListener
-                }
-                if (employeeName.length < 2) {
-                    name.error = t("الاسم غير مكتمل", "Name is incomplete")
-                    return@setOnClickListener
-                }
-                submitEmployeeEdit(existing, employeeId, employeeName, branchId)
-            }
-        })
-        box.addView(UiKit.button(this, p, t("إلغاء", "Cancel"), false).apply {
-            isEnabled = !employeeCommandInFlight
-            setOnClickListener { employeeEditorOpen = false; editingEmployeeId = null; render() }
-        })
-        parent.addView(box)
-    }
 
     private fun scanGrant() {
         startActivityForResult(
@@ -1014,117 +772,6 @@ class ReportReceiverActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    private fun refreshEmployees(silent: Boolean) {
-        val binding = receiver.activeBinding() ?: return
-        if (!receiver.canManageStore || binding.serverUrl.isBlank() || binding.storeId.isBlank() || employeesInFlight) return
-        employeesInFlight = true
-        val generation = ++employeesGeneration
-        val storeId = binding.storeId
-        if (alive()) render()
-
-        Thread {
-            val result = ReceiverEmployeeAdminClient.list(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
-            runOnUiThread {
-                if (generation != employeesGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
-                employeesInFlight = false
-                if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    managedEmployees = result.getOrThrow()
-                    if (selectedEmployeeId !in managedEmployees.map { it.employeeId }) selectedEmployeeId = null
-                    markActiveServerContact(storeId)
-                    if (!silent) notice = t("تم تحديث موظفي المحل ✓", "Store employees refreshed ✓")
-                } else if (!silent) {
-                    showError(t("إدارة الموظفين", "Employee management"), networkMessage(result.exceptionOrNull()))
-                }
-                render()
-            }
-        }.apply { isDaemon = true }.start()
-    }
-
-    private fun submitEmployeeEdit(
-        existing: ReceiverEmployeeAdminClient.Employee?,
-        employeeId: String,
-        name: String,
-        branchId: String
-    ) {
-        val binding = receiver.activeBinding() ?: return
-        if (employeeCommandInFlight || !receiver.canManageStore || binding.storeId.isBlank()) return
-        employeeCommandInFlight = true
-        val generation = actionGeneration
-        val storeId = binding.storeId
-        render()
-        Thread {
-            val result = if (existing == null) {
-                ReceiverEmployeeAdminClient.add(
-                    binding.serverUrl, receiver.receiverId, receiver.secret,
-                    employeeId, name, branchId, storeId
-                )
-            } else {
-                ReceiverEmployeeAdminClient.update(
-                    binding.serverUrl, receiver.receiverId, receiver.secret,
-                    employeeId, name, branchId, storeId
-                )
-            }
-            runOnUiThread {
-                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
-                employeeCommandInFlight = false
-                if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    employeeEditorOpen = false
-                    editingEmployeeId = null
-                    notice = t(
-                        "تم إرسال الأمر إلى جهاز هذا المحل — قيد الإرسال حتى يؤكد التنفيذ.",
-                        "Command queued for this Store device until execution is acknowledged."
-                    )
-                    render()
-                    refreshEmployees(silent = true)
-                } else {
-                    showError(t("تعذر إرسال الأمر", "Command failed"), networkMessage(result.exceptionOrNull()))
-                    render()
-                }
-            }
-        }.apply { isDaemon = true }.start()
-    }
-
-    private fun confirmDisableEmployee(e: ReceiverEmployeeAdminClient.Employee) {
-        if (!alive()) return
-        AlertDialog.Builder(this)
-            .setTitle(t("تأكيد إيقاف الموظف", "Confirm employee disable"))
-            .setMessage(t("هل تريد إيقاف ${e.employeeName} في هذا المحل؟ سيُرسل الأمر لجهاز المحل.", "Disable ${e.employeeName} in this store? The command will be sent to the Store device."))
-            .setPositiveButton(t("إيقاف", "Disable")) { _, _ -> submitEmployeeStatus(e, false) }
-            .setNegativeButton(t("إلغاء", "Cancel"), null)
-            .show()
-    }
-
-    private fun submitEmployeeStatus(e: ReceiverEmployeeAdminClient.Employee, enabled: Boolean) {
-        val binding = receiver.activeBinding() ?: return
-        if (employeeCommandInFlight || !receiver.canManageStore || binding.storeId.isBlank()) return
-        employeeCommandInFlight = true
-        val generation = actionGeneration
-        val storeId = binding.storeId
-        render()
-        Thread {
-            val result = ReceiverEmployeeAdminClient.setEnabled(
-                binding.serverUrl, receiver.receiverId, receiver.secret, e.employeeId, enabled, storeId
-            )
-            runOnUiThread {
-                if (generation != actionGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
-                employeeCommandInFlight = false
-                if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    notice = t(
-                        "تم إرسال أمر ${if (enabled) "التفعيل" else "الإيقاف"} لهذا المحل — بانتظار تأكيد جهاز المحل.",
-                        "${if (enabled) "Enable" else "Disable"} command queued for this store until acknowledgement."
-                    )
-                    render()
-                    refreshEmployees(silent = true)
-                } else {
-                    showError(t("تعذر إرسال الأمر", "Command failed"), networkMessage(result.exceptionOrNull()))
-                    render()
-                }
-            }
-        }.apply { isDaemon = true }.start()
-    }
 
     private fun startLocalReportChannels() {
         if (!::receiver.isInitialized) return
@@ -1195,72 +842,15 @@ class ReportReceiverActivity : Activity() {
         capabilitiesGeneration++
         reportsGeneration++
         messagesGeneration++
-        employeesGeneration++
         actionGeneration++
         capabilitiesInFlight = false
         reportsInFlight = false
         messagesInFlight = false
-        employeesInFlight = false
-        employeeCommandInFlight = false
         messageSendInFlight = false
     }
 
     private fun mark(v: Boolean) = if (v) "✓" else "— ${t("غير مسموح", "Not allowed")}"
 
-    private fun commandStatusText(status: String): String = when (status.uppercase(Locale.US)) {
-        "PENDING" -> t("قيد الإرسال", "Pending")
-        "DISPATCHED" -> t("وصل لجهاز المحل", "Reached Store device")
-        "APPLIED" -> t("تم التنفيذ", "Applied")
-        "FAILED" -> t("فشل التنفيذ", "Failed")
-        else -> ""
-    }
-
-    private fun pendingActionLabel(action: String): String = when (action.uppercase(Locale.US)) {
-        "ADD" -> t("إضافة", "Add")
-        "UPDATE" -> t("تعديل", "Edit")
-        "STATUS" -> t("تغيير الحالة", "Status change")
-        else -> if (action.isBlank()) "" else t("إدارة", "Management")
-    }
-
-    private fun safeServerError(raw: String): String {
-        if (raw.contains("Failed to connect to /", true) || raw.contains("2606:", true) || raw.contains("ENETUNREACH", true)) {
-            return t("تعذر الاتصال بالخادم عبر الشبكة الحالية.", "Could not connect to the server on the current network.")
-        }
-        return raw.take(220)
-    }
-
-    private fun networkMessage(error: Throwable?): String {
-        val raw = error?.message.orEmpty()
-        return when {
-            raw.contains("Failed to connect to /", true) ||
-                raw.contains("Network is unreachable", true) ||
-                raw.contains("ENETUNREACH", true) ||
-                raw.contains("Unable to resolve host", true) ||
-                raw.contains("No address associated", true) ||
-                raw.contains("UnknownHost", true) ->
-                t(
-                    "تعذر الاتصال بالخادم عبر الشبكة الحالية، وسيتم استخدام مسار اتصال بديل تلقائيًا.",
-                    "The server could not be reached on the current network; an alternate connection path is used automatically."
-                )
-            raw.contains("timeout", true) || raw.contains("timed out", true) ->
-                t("انتهت مهلة الاتصال بالخادم. تحقق من الإنترنت وأعد المحاولة.", "The server connection timed out. Check connectivity and try again.")
-            raw.startsWith("HTTP 404", true) ->
-                t("الخدمة المطلوبة غير متاحة على إصدار الخادم الحالي.", "The requested service is unavailable on the current server version.")
-            raw.contains("صلاحية") || raw.contains("الموظف") || raw.contains("يوجد أمر") ->
-                safeServerError(raw)
-            else ->
-                t("تعذر تنفيذ الطلب عبر الشبكة الحالية. أعد المحاولة بعد التحقق من الاتصال.", "The request could not be completed on the current network. Check connectivity and try again.")
-        }
-    }
-
-    private fun showError(title: String, message: String) {
-        if (!alive()) return
-        AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message)
-            .setPositiveButton(t("حسنًا", "OK"), null)
-            .show()
-    }
 
     private fun formatTime(value: Long): String =
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(value))
