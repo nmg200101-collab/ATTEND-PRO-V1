@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V136 IPv4 Receiver Employee Sync
+name: Build ATTEND-PRO V137 Receiver Stabilization
 on:
   push:
-    branches: [attend-pro-v136-ipv4-receiver-employee-sync]
+    branches: [attend-pro-v137-receiver-stabilization]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,41 +27,86 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V136 native source
+      - name: Verify V137 receiver stabilization
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
           CENTER=buildsrc/store-app/src/main/java/com/attendpro/store/StoreReceiverPermissionsActivity.kt
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          RECEIVER=buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
+          ADMIN=buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt
+          CENTRAL=buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          DNS=buildsrc/core/src/main/java/com/attendpro/core/ResilientHttp.kt
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
           MANIFEST=buildsrc/store-app/src/main/AndroidManifest.xml
-          test -f "$CENTER"
+
+          # Single Store-side navigation path: Reports -> receiver center.
           grep -q 'هواتف الاستلام والصلاحيات' "$REPORTS"
           grep -q 'StoreReceiverPermissionsActivity::class.java' "$REPORTS"
-          grep -q 'هواتف الاستلام والصلاحيات' "$CENTER"
+          ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
+          grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
+
+          # Receiver center has exactly the four V137 sections and one installed content view.
+          grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
           grep -q 'إضافة هاتف' "$CENTER"
           grep -q 'الصلاحيات' "$CENTER"
           grep -q 'استلام التقارير' "$CENTER"
           grep -q 'مراسلة الموظفين' "$CENTER"
           grep -q 'إدارة الموظفين' "$CENTER"
-          grep -q 'setReportReceiverPermissions' "$CENTER"
-          grep -q 'setReceiverPermissions' "$CENTER"
-          grep -q 'permissionCheckBox' "$CENTER"
-          grep -q 'السماح بكل الصلاحيات' "$CENTER"
-          grep -q 'تقارير فقط' "$CENTER"
-          grep -q 'إلغاء كل الصلاحيات' "$CENTER"
-          grep -q 'حفظ الصلاحيات' "$CENTER"
-          grep -q 'receiverCapabilities' "$CENTER"
-          grep -q 'تم حفظ الصلاحيات والتحقق منها' "$CENTER"
-          ! grep -q 'حفظ التغييرات / تعديل الصلاحيات' "$CENTER"
-          grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
-          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
-          RECEIVER=buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
+          grep -q 'حفظ الصلاحيات والتحقق من الخادم' "$CENTER"
+          test "$(grep -c 'setContentView(' "$CENTER")" -eq 1
+          ! grep -q 'buildUi' "$CENTER"
+
+          # Receiver Activity: render/state/network/navigation are separated.
+          grep -q 'enum class Section' "$RECEIVER"
+          grep -q 'capabilitiesGeneration' "$RECEIVER"
+          grep -q 'reportsGeneration' "$RECEIVER"
+          grep -q 'messagesGeneration' "$RECEIVER"
+          grep -q 'employeesGeneration' "$RECEIVER"
+          grep -q 'capabilitiesInFlight' "$RECEIVER"
+          grep -q 'reportsInFlight' "$RECEIVER"
+          grep -q 'messagesInFlight' "$RECEIVER"
+          grep -q 'employeesInFlight' "$RECEIVER"
+          grep -q 'isFinishing' "$RECEIVER"
+          grep -q 'isDestroyed' "$RECEIVER"
+          test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
+          ! grep -q 'buildUi' "$RECEIVER"
+          ! grep -q 'receiverStoreSettings' "$RECEIVER"
+          ! grep -q 'store-settings' "$RECEIVER"
+          grep -q '"PENDING"' "$RECEIVER"
+          grep -q '"DISPATCHED"' "$RECEIVER"
+          grep -q '"APPLIED"' "$RECEIVER"
+          grep -q '"FAILED"' "$RECEIVER"
+          grep -q 'قيد الإرسال' "$RECEIVER"
+          grep -q 'وصل لجهاز المحل' "$RECEIVER"
+          grep -q 'تم التنفيذ' "$RECEIVER"
+          grep -q 'فشل التنفيذ' "$RECEIVER"
+          grep -q 'تعذر الاتصال بالخادم عبر الشبكة الحالية' "$RECEIVER"
+
+          # Employee management uses the server queue only; no receiver-side employee_links CRUD.
+          grep -q '/api/v1/monitor/employees/manage-list' "$ADMIN"
+          grep -q '/api/v1/monitor/employees/add' "$ADMIN"
+          grep -q '/api/v1/monitor/employees/update' "$ADMIN"
+          grep -q '/api/v1/monitor/employees/status' "$ADMIN"
+          ! grep -q 'employee_links' "$ADMIN"
+          ! grep -q 'employee_links' "$RECEIVER"
+          grep -q 'commandStatus' "$ADMIN"
+          grep -q 'commandError' "$ADMIN"
+
+          # Store queue: snapshot -> pull -> serial apply/ACK -> refreshed snapshot.
+          grep -q 'syncReceiverEmployeeSnapshot' "$CENTRAL"
+          grep -q 'pullReceiverEmployeeCommands' "$CENTRAL"
+          grep -q 'ackReceiverEmployeeCommand' "$CENTRAL"
+          grep -q 'syncReceiverEmployeeCommandsIfDue' "$MAIN"
+          grep -q 'applyReceiverEmployeeCommand' "$MAIN"
+          grep -q 'RECEIVER_EMPLOYEE_SYNC_INTERVAL_MS = 20_000L' "$MAIN"
+          test "$(grep -c 'syncReceiverEmployeeCommandsIfDue()' "$MAIN")" -eq 1
+          grep -q 'syncReceiverEmployeeCommandsIfDue(force = true)' "$MAIN"
+          ! grep -q 'syncRemoteControlIfDue()' "$MAIN"
+
+          # Activation recovery remains the established three-stage path.
           grep -q 'استعادة التفعيل تلقائيًا' "$MAIN"
-          grep -q 'تسجيل محل جديد مباشرة — تجربة 3 أيام' "$MAIN"
-          grep -q 'activationConnectionMessage' "$MAIN"
-          grep -q 'isDnsResolutionError' "$MAIN"
-          grep -q 'showDnsRecoveryDialog' "$MAIN"
-          grep -q 'android.settings.PRIVATE_DNS_SETTINGS' "$MAIN"
           grep -q 'startAutomaticActivationRecovery' "$MAIN"
           grep -q 'forceCentralActivationRecovery' "$MAIN"
           grep -q 'restoreCentralActivationSmart' "$MAIN"
@@ -71,45 +116,29 @@ jobs:
           grep -q 'CentralServerClient.validateStore' "$MAIN"
           grep -q 'CentralServerClient.activationStatus' "$MAIN"
           grep -q 'CentralServerClient.recoverActivation' "$MAIN"
-          DNS=buildsrc/core/src/main/java/com/attendpro/core/ResilientHttp.kt
+
+          # HTTPS resilient transport: system DNS, IPv4 first, encrypted fallback, TLS hostname retained.
           test -f "$DNS"
+          grep -q 'Dns.SYSTEM' "$DNS"
           grep -q 'SecureFallbackDns' "$DNS"
+          grep -q 'ipv4First' "$DNS"
+          grep -q 'Inet4Address' "$DNS"
           grep -q 'https://cloudflare-dns.com/dns-query' "$DNS"
           grep -q 'https://dns.google/resolve' "$DNS"
           grep -q '104.21.44.99' "$DNS"
           grep -q '172.67.198.135' "$DNS"
-          grep -q '2606:4700:3033::6815:2c63' "$DNS"
-          grep -q '2606:4700:3035::ac43:c687' "$DNS"
-          grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
-          grep -q 'ResilientHttp.execute' buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt
-          grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
-          grep -q 'Inet4Address' "$DNS"
-          grep -q 'ipv4First' "$DNS"
-          grep -q 'Failed to connect to /' "$DNS"
           grep -q 'isRetryableNetworkFailure' "$DNS"
-          grep -q 'syncReceiverEmployeeSnapshot' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
-          grep -q 'pullReceiverEmployeeCommands' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
-          grep -q 'ackReceiverEmployeeCommand' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
-          grep -q 'syncReceiverEmployeeCommandsIfDue' "$MAIN"
-          grep -q 'applyReceiverEmployeeCommand' "$MAIN"
-          grep -q 'pendingCommand' "$RECEIVER"
-          grep -q 'قيد التنفيذ' "$RECEIVER"
-          grep -q 'networkMessage' "$RECEIVER"
-          grep -q 'attemptId != activationRecoveryAttemptId' "$MAIN"
-          grep -q 'جاري استعادة التفعيل السابق تلقائيًا' "$MAIN"
-          ! grep -q 'syncRemoteControlIfDue()' "$MAIN"
-          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
-          grep -q 'هواتف الاستلام والصلاحيات' "$SETTINGS"
-          grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
-          grep -q 'هاتف الاستلام وإدارة الموظفين' "$RECEIVER"
-          grep -q 'الموظفون والرسائل' "$RECEIVER"
-          ! grep -q 'هاتف الاستلام وإدارة المحل' "$RECEIVER"
-          grep -q 'تعذر العثور على عنوان الخادم عبر DNS' "$MAIN"
-          ! grep -q 'إعدادات مدير المحل' "$CENTER"
-          grep -q 'versionCode = 136' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-IPV4-RECEIVER-EMPLOYEE1"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 136' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-IPV4-RECEIVER-EMPLOYEE1"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'ResilientHttp.execute' "$CENTRAL"
+          grep -q 'ResilientHttp.execute' "$ADMIN"
+          grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
+
+          # V137 identity.
+          grep -q 'versionCode = 137' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V137-RECEIVER-STABILIZATION"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 137' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V137-RECEIVER-STABILIZATION"' buildsrc/employee-app/build.gradle.kts
+
+          # RC29 field-proven pairing/direct-link files are immutable in V137.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -138,7 +167,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V136
+      - name: Sign V137
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -151,9 +180,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V136.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V137.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V136.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V137.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -169,11 +198,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='136' versionName='2.0.0-RC29-IPV4-RECEIVER-EMPLOYEE1'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='137' versionName='2.0.0-RC29-V137-RECEIVER-STABILIZATION'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V136-IPV4-RECEIVER-EMPLOYEE-SIGNED
+          name: ATTEND-PRO-V137-RECEIVER-STABILIZATION-SIGNED
           path: signed/
           retention-days: 30
