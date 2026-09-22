@@ -65,6 +65,7 @@ class ReceiverReportBleServer(
     private val secret: String,
     private val onEnvelope: (ReceiverOfflineReportProtocol.Envelope) -> Boolean,
     private val nearbyInviteProvider: () -> String? = { null },
+    private val nearbyGrantConsumer: (String) -> Boolean = { false },
     private val onStatus: (String) -> Unit
 ) {
     companion object {
@@ -271,8 +272,19 @@ class ReceiverReportBleServer(
         }
 
         if (completed != null) {
+            val raw = String(completed, Charsets.UTF_8)
+            val grant = ReceiverOfflineReportProtocol.decodeNearbyGrant(raw, receiverId, secret)
+            if (grant != null) {
+                if (!runCatching { nearbyGrantConsumer(grant) }.getOrDefault(false)) return false
+                val ack = ReceiverOfflineReportProtocol.nearbyGrantAck(receiverId, secret)
+                    .toByteArray(Charsets.UTF_8)
+                synchronized(assemblies) { ackByDevice[device.address] = ack }
+                onStatus("Bluetooth: اكتمل ربط محل قريب ✓")
+                return true
+            }
+
             val envelope = ReceiverOfflineReportProtocol.decodeEnvelope(
-                String(completed, Charsets.UTF_8), receiverId, secret
+                raw, receiverId, secret
             ) ?: return false
             if (!runCatching { onEnvelope(envelope) }.getOrDefault(false)) return false
             val ack = ReceiverOfflineReportProtocol.ack(
