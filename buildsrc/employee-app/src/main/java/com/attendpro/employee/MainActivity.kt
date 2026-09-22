@@ -99,6 +99,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         if (!enforceOfficialBuild1982()) return
         identity = EmployeeIdentityStore(this)
+        EmployeeMessageFastPoller142.start(this)
         val rc7Migration = getSharedPreferences("attend_rc7_migration", MODE_PRIVATE)
         if (identity.isConfigured && !rc7Migration.getBoolean("presence_enabled_once", false)) {
             identity.autoPresence = true
