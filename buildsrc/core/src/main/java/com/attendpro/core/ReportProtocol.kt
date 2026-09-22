@@ -121,6 +121,17 @@ data class ReceiverStoreBinding(
     val storeLastSeenAt: Long = 0L
 )
 
+data class ReceiverMessageReply(
+    val messageId: String,
+    val storeId: String,
+    val employeeId: String,
+    val title: String,
+    val body: String,
+    val priority: String,
+    val createdAt: Long,
+    val readAt: Long
+)
+
 class ReportReceiverStore(context: Context) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences("report_receiver_store", Context.MODE_PRIVATE)
@@ -146,7 +157,7 @@ class ReportReceiverStore(context: Context) {
     var remoteLastRefreshAt: Long get() = prefs.getLong("remoteLastRefreshAt", 0L); set(value) = prefs.edit().putLong("remoteLastRefreshAt", value).apply()
     var canReceiveReports: Boolean get() = prefs.getBoolean("canReceiveReports", true); set(value) = prefs.edit().putBoolean("canReceiveReports", value).apply()
     var canMessageEmployees: Boolean get() = prefs.getBoolean("canMessageEmployees", false); set(value) = prefs.edit().putBoolean("canMessageEmployees", value).apply()
-    var canManageStore: Boolean get() = prefs.getBoolean("canManageStore", false); set(value) = prefs.edit().putBoolean("canManageStore", value).apply()
+    var canManageStore: Boolean get() = false; set(_) { prefs.edit().putBoolean("canManageStore", false).apply() }
     var capabilityStoreName: String get() = prefs.getString("capabilityStoreName", "") ?: ""; set(value) = prefs.edit().putString("capabilityStoreName", value).apply()
     var capabilityBranchId: String get() = prefs.getString("capabilityBranchId", "") ?: ""; set(value) = prefs.edit().putString("capabilityBranchId", value).apply()
 
@@ -160,7 +171,7 @@ class ReportReceiverStore(context: Context) {
             branchId = prefs.getString("capabilityBranchId", "MAIN").orEmpty().ifBlank { "MAIN" },
             canReceiveReports = prefs.getBoolean("canReceiveReports", true),
             canMessageEmployees = prefs.getBoolean("canMessageEmployees", false),
-            canManageStore = prefs.getBoolean("canManageStore", false),
+            canManageStore = false,
             linkedAt = prefs.getLong("legacyLinkedAt", System.currentTimeMillis()),
             lastServerRefreshAt = prefs.getLong("remoteLastRefreshAt", 0L)
         )
@@ -179,7 +190,7 @@ class ReportReceiverStore(context: Context) {
                 active = o.optBoolean("active", true),
                 canReceiveReports = o.optBoolean("canReceiveReports", true),
                 canMessageEmployees = o.optBoolean("canMessageEmployees", false),
-                canManageStore = o.optBoolean("canManageStore", false),
+                canManageStore = false,
                 linkedAt = o.optLong("linkedAt", System.currentTimeMillis()),
                 lastServerRefreshAt = o.optLong("lastServerRefreshAt", 0L),
                 storeLastSeenAt = o.optLong("storeLastSeenAt", 0L)
@@ -204,7 +215,7 @@ class ReportReceiverStore(context: Context) {
             put("active", item.active)
             put("canReceiveReports", item.canReceiveReports)
             put("canMessageEmployees", item.canMessageEmployees)
-            put("canManageStore", item.canManageStore)
+            put("canManageStore", false)
             put("linkedAt", item.linkedAt)
             put("lastServerRefreshAt", item.lastServerRefreshAt)
             put("storeLastSeenAt", item.storeLastSeenAt)
@@ -251,7 +262,7 @@ class ReportReceiverStore(context: Context) {
             active = true,
             canReceiveReports = previous?.canReceiveReports ?: true,
             canMessageEmployees = previous?.canMessageEmployees ?: false,
-            canManageStore = previous?.canManageStore ?: false,
+            canManageStore = false,
             linkedAt = previous?.linkedAt ?: System.currentTimeMillis(),
             lastServerRefreshAt = previous?.lastServerRefreshAt ?: 0L,
             storeLastSeenAt = previous?.storeLastSeenAt ?: 0L
@@ -286,7 +297,7 @@ class ReportReceiverStore(context: Context) {
             branchId = branchId.ifBlank { current.branchId },
             canReceiveReports = canReceiveReports,
             canMessageEmployees = canMessageEmployees,
-            canManageStore = canManageStore,
+            canManageStore = false,
             lastServerRefreshAt = lastServerRefreshAt,
             storeLastSeenAt = storeLastSeenAt
         )
@@ -343,12 +354,67 @@ class ReportReceiverStore(context: Context) {
             .putString("capabilityBranchId", binding.branchId)
             .putBoolean("canReceiveReports", binding.canReceiveReports)
             .putBoolean("canMessageEmployees", binding.canMessageEmployees)
-            .putBoolean("canManageStore", binding.canManageStore)
+            .putBoolean("canManageStore", false)
             .putLong("remoteLastRefreshAt", binding.lastServerRefreshAt)
             .apply()
     }
 
     fun newInvite(): ReportProtocol.ReceiverInvite = ReportProtocol.ReceiverInvite(receiverId, receiverName, secret, System.currentTimeMillis() + 10 * 60_000L)
+
+    fun receivedMessageReplies(storeId: String = ""): List<ReceiverMessageReply> {
+        val raw = prefs.getString("receiverMessageRepliesV141", "[]") ?: "[]"
+        val a = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        val all = (0 until a.length()).mapNotNull { i -> runCatching {
+            val o = a.getJSONObject(i)
+            ReceiverMessageReply(
+                messageId = o.optString("messageId", ""),
+                storeId = o.optString("storeId", ""),
+                employeeId = o.optString("employeeId", ""),
+                title = o.optString("title", ""),
+                body = o.optString("body", ""),
+                priority = o.optString("priority", "NORMAL"),
+                createdAt = o.optLong("createdAt", 0L),
+                readAt = o.optLong("readAt", 0L)
+            )
+        }.getOrNull() }
+            .filter { it.messageId.isNotBlank() && it.body.isNotBlank() }
+            .sortedByDescending { it.createdAt }
+        return if (storeId.isBlank()) all else all.filter { it.storeId == storeId }
+    }
+
+    fun cacheMessageReplies(storeId: String, messages: List<CentralServerClient.Message1975>): Int {
+        if (storeId.isBlank() || messages.isEmpty()) return 0
+        val existing = receivedMessageReplies().associateBy { it.messageId }.toMutableMap()
+        var added = 0
+        messages.forEach { m ->
+            if (m.messageId.isBlank() || m.body.isBlank()) return@forEach
+            if (!existing.containsKey(m.messageId)) added++
+            existing[m.messageId] = ReceiverMessageReply(
+                messageId = m.messageId,
+                storeId = storeId,
+                employeeId = m.employeeId.ifBlank { m.senderId },
+                title = m.title,
+                body = m.body,
+                priority = m.priority,
+                createdAt = m.createdAt,
+                readAt = m.readAt
+            )
+        }
+        val merged = existing.values.sortedByDescending { it.createdAt }.take(300)
+        val a = JSONArray()
+        merged.forEach { m -> a.put(JSONObject().apply {
+            put("messageId", m.messageId)
+            put("storeId", m.storeId)
+            put("employeeId", m.employeeId)
+            put("title", m.title)
+            put("body", m.body)
+            put("priority", m.priority)
+            put("createdAt", m.createdAt)
+            put("readAt", m.readAt)
+        }) }
+        prefs.edit().putString("receiverMessageRepliesV141", a.toString()).apply()
+        return added
+    }
 
     fun receivedReports(storeId: String = ""): List<ReceivedReport> {
         val a = JSONArray(prefs.getString("receivedReports", "[]") ?: "[]")
