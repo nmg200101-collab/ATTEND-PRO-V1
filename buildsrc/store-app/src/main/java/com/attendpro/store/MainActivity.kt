@@ -1303,6 +1303,14 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun triggerImmediateAttendanceSync() {
+        // V144: publish a new attendance event immediately. The short retries cover the case
+        // where a previous sync is still finishing; the regular 5s loop remains a safety net.
+        autoSyncIfReady()
+        nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 850L)
+        nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 1_900L)
+    }
+
     private fun autoSyncIfReady() {
         if (!repo.reportAutoSync || syncInProgress || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
         val pending = repo.pendingEvents()
@@ -2843,6 +2851,7 @@ class MainActivity : Activity() {
         if (!ensureOperationalActivation()) return
         val action=nextAction(e.employeeId)
         repo.addEvent(AttendanceEvent(employeeId=e.employeeId,employeeName=e.displayName,branchId=e.branchId,timestampEpochMillis=System.currentTimeMillis(),action=action,method=AttendanceMethod.SUPERVISOR_OVERRIDE,deviceId=deviceId(),verified=true))
+        triggerImmediateAttendanceSync()
         status.text="✓ ${e.displayName}: ${if(action==AttendanceAction.CHECK_IN)"حضور" else "انصراف"} بإشراف";refreshDashboard()
     }
 
@@ -3061,6 +3070,7 @@ class MainActivity : Activity() {
         val now = System.currentTimeMillis()
         repo.addEvent(AttendanceEvent(employeeId = employee.employeeId, employeeName = employee.displayName, branchId = employee.branchId,
             timestampEpochMillis = now, action = action, method = method, deviceId = deviceId(), verified = true, evidence = extra))
+        triggerImmediateAttendanceSync()
         status.text = "✓ ${employee.displayName}: ${if (action == AttendanceAction.CHECK_IN) "حضور" else "انصراف"} — ${methodLabel(method)}${if (extra.isNotBlank()) " • $extra" else ""}"
         if (repo.attendanceVoiceAnnouncementEnabled) voiceAnnouncer.announceAttendance(employee.displayName, action)
         refreshDashboard()
