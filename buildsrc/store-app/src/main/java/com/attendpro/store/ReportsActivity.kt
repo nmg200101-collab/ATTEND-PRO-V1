@@ -250,7 +250,7 @@ class ReportsActivity : Activity() {
             info(t("لا توجد هواتف مصرح لها باستلام التقارير", "No phones allowed to receive reports"), t("افتح «هواتف الاستلام» وأضف هاتفًا أو فعّل صلاحية استلام التقارير.", "Open Receiver phones and add a phone or enable report-receiving permission."))
             return
         }
-        AlertDialog.Builder(this).setTitle(t("اختر هاتف الاستلام", "Choose receiver phone")).setItems(receivers.map { "${it.name} • ${it.receiverId}" }.toTypedArray()) { _, which ->
+        AlertDialog.Builder(this).setTitle(t("اختر هاتف الاستلام", "Choose receiver phone")).setItems(receivers.map { it.name.ifBlank { t("هاتف استلام", "Receiver phone") } }.toTypedArray()) { _, which ->
             shareToReceiver(events, receivers[which])
         }.setNegativeButton(t("إلغاء", "Cancel"), null).show()
     }
