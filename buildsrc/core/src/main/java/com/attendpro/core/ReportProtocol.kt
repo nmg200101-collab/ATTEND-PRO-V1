@@ -442,8 +442,7 @@ class ReportReceiverStore(context: Context) {
         val unchanged = old.size == normalized.size && old.zip(normalized).all { (a, b) ->
             a.employeeId == b.employeeId &&
                 a.employeeName == b.employeeName &&
-                a.branchId == b.branchId &&
-                a.lastSeenAt == b.lastSeenAt
+                a.branchId == b.branchId
         }
         if (unchanged) return false
 
