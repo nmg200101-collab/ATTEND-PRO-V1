@@ -26,8 +26,8 @@ class ReceiverReportService : Service() {
         private const val CHANNEL_ID = "receiver_reports_v143"
         private const val NOTIFICATION_ID = 2143
         private const val LOOP_MS = 750L
-        private const val REPORT_POLL_MS = 2_500L
-        private const val AUTO_REPORT_POLL_MS = 4_000L
+        private const val REPORT_POLL_MS = 1_500L
+        private const val AUTO_REPORT_POLL_MS = 2_000L
         private const val EMPLOYEE_POLL_MS = 2_000L
         private const val MESSAGE_POLL_MS = 2_500L
         private const val OUTBOX_POLL_MS = 750L
