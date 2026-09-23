@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V143 Receiver Auto Reports Fast Messaging
+name: Build ATTEND-PRO V144 Receiver Instant Store Context
 on:
   push:
-    branches: [attend-pro-v143-receiver-auto-reports-fast-messaging]
+    branches: [attend-pro-v144-receiver-instant-store-context]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V143 receiver auto reports fast messaging
+      - name: Verify V144 receiver instant store context
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -54,7 +54,7 @@ jobs:
           ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
 
-          # V143 keeps the simplified reports/messages-only receiver center.
+          # V144 keeps the simplified reports/messages-only receiver center.
           grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
           grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
@@ -88,7 +88,7 @@ jobs:
           ! grep -q 'receiverStoreSettings' "$RECEIVER"
           ! grep -q 'store-settings' "$RECEIVER"
 
-          # V143 keeps multi-store isolation and reports/messages-only receiver permissions.
+          # V144 keeps multi-store isolation and reports/messages-only receiver permissions.
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES }' "$RECEIVER"
           ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
           ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
@@ -114,7 +114,7 @@ jobs:
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
 
-          # V143 keeps nearby report delivery independent from employee BLE pairing.
+          # V144 keeps nearby report delivery independent from employee BLE pairing.
           test -f "$OFFLINE_PROTOCOL"
           test -f "$LAN_REPORT"
           test -f "$BLE_REPORT"
@@ -151,10 +151,10 @@ jobs:
           grep -q 'sendNearbyGrant' "$BLE_REPORT"
           grep -q 'INVITE_UUID' "$BLE_REPORT"
 
-          # V143 automatic reports and fast messaging: live UI refresh, parallel receiver lanes, durable outbox.
+          # V144 instant store context and faster automatic reports: live UI refresh, parallel receiver lanes, durable outbox.
           grep -q 'ACTION_DATA_CHANGED' "$SERVICE"
           grep -q 'ACTION_SYNC_NOW' "$SERVICE"
-          grep -q 'REPORT_POLL_MS = 2_500L' "$SERVICE"
+          grep -q 'REPORT_POLL_MS = 1_500L' "$SERVICE"
           grep -q 'MESSAGE_POLL_MS = 2_500L' "$SERVICE"
           grep -q 'OUTBOX_POLL_MS = 750L' "$SERVICE"
           grep -q 'launchReportPoll' "$SERVICE"
@@ -172,7 +172,7 @@ jobs:
           grep -q 'connectTimeoutMs = 3_500' "$CENTRAL"
           test -f "$EMP_FAST"
           grep -q 'NORMAL_POLL_MS = 2_000L' "$EMP_FAST"
-          grep -q 'AUTO_REPORT_POLL_MS = 4_000L' "$SERVICE"
+          grep -q 'AUTO_REPORT_POLL_MS = 2_000L' "$SERVICE"
           grep -q 'EMPLOYEE_POLL_MS = 2_000L' "$SERVICE"
           grep -q 'launchAutoReportPoll' "$SERVICE"
           grep -q 'pollAutomaticReports' "$SERVICE"
@@ -186,6 +186,16 @@ jobs:
           grep -q 'loadCachedEmployees' "$RECEIVER"
           grep -q 'resolvedReceiverName' "$PROTOCOL"
           grep -q 'resolvedReceiverName()' "$RECEIVER"
+          grep -q 'triggerImmediateAttendanceSync' "$MAIN"
+          grep -q 'nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 850L)' "$MAIN"
+          grep -q 'nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 1_900L)' "$MAIN"
+          grep -q 'Section.REPORTS' "$RECEIVER"
+          grep -q 'binding.canReceiveReports -> Section.REPORTS' "$RECEIVER"
+          grep -q 'binding.canMessageEmployees -> Section.MESSAGES' "$RECEIVER"
+          grep -q 'loadCachedEmployees(binding.storeId)' "$RECEIVER"
+          grep -q 'receiver.receivedMessageReplies(binding.storeId)' "$RECEIVER"
+          grep -q 'تظهر هنا موظفو هذا المحل فقط' "$RECEIVER"
+          grep -q 'فتح تقارير هذا المحل' "$RECEIVER"
           grep -q 'اسم الهاتف:' "$CENTER"
           ! grep -q '"المعرف: ${phone.receiverId}' "$CENTER"
           grep -q 'EmployeeMessageFastPoller142.start(this)' "$EMP_MAIN"
@@ -234,13 +244,13 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V143 identity.
-          grep -q 'versionCode = 143' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V143-RECEIVER-AUTO-REPORTS-FAST-MESSAGING"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 143' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V143-RECEIVER-AUTO-REPORTS-FAST-MESSAGING"' buildsrc/employee-app/build.gradle.kts
+          # V144 identity.
+          grep -q 'versionCode = 144' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V144-RECEIVER-INSTANT-STORE-CONTEXT"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 144' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V144-RECEIVER-INSTANT-STORE-CONTEXT"' buildsrc/employee-app/build.gradle.kts
 
-          # RC29 field-proven pairing/direct-link files remain immutable in V143.
+          # RC29 field-proven pairing/direct-link files remain immutable in V144.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -269,7 +279,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V143
+      - name: Sign V144
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -282,9 +292,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V143.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V144.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V143.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V144.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -300,11 +310,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='143' versionName='2.0.0-RC29-V143-RECEIVER-AUTO-REPORTS-FAST-MESSAGING'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='144' versionName='2.0.0-RC29-V144-RECEIVER-INSTANT-STORE-CONTEXT'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V143-RECEIVER-AUTO-REPORTS-FAST-MESSAGING-SIGNED
+          name: ATTEND-PRO-V144-RECEIVER-INSTANT-STORE-CONTEXT-SIGNED
           path: signed/
           retention-days: 30
