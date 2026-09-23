@@ -966,7 +966,7 @@ object CentralServerClient {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/monitor/report", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId); put("period", period)
-        })
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
         o.optString("reportText", "لا توجد بيانات")
     }
 
