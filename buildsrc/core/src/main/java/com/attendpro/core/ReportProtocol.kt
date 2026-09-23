@@ -433,11 +433,21 @@ class ReportReceiverStore(context: Context) {
     @Synchronized
     fun cacheEmployees(storeId: String, employees: List<CentralServerClient.ReceiverEmployee>): Boolean {
         if (storeId.isBlank()) return false
-        val now = System.currentTimeMillis()
         val normalized = employees
             .filter { it.employeeId.isNotBlank() }
             .distinctBy { it.employeeId }
             .sortedBy { it.employeeName.ifBlank { it.employeeId } }
+
+        val old = cachedEmployees(storeId)
+        val unchanged = old.size == normalized.size && old.zip(normalized).all { (a, b) ->
+            a.employeeId == b.employeeId &&
+                a.employeeName == b.employeeName &&
+                a.branchId == b.branchId &&
+                a.lastSeenAt == b.lastSeenAt
+        }
+        if (unchanged) return false
+
+        val now = System.currentTimeMillis()
         val a = JSONArray()
         normalized.forEach { e -> a.put(JSONObject().apply {
             put("employeeId", e.employeeId)
@@ -446,11 +456,7 @@ class ReportReceiverStore(context: Context) {
             put("lastSeenAt", e.lastSeenAt)
             put("cachedAt", now)
         }) }
-        val key = "receiverEmployeesV143:$storeId"
-        val newRaw = a.toString()
-        val oldRaw = prefs.getString(key, "[]") ?: "[]"
-        if (oldRaw == newRaw) return false
-        prefs.edit().putString(key, newRaw).commit()
+        prefs.edit().putString("receiverEmployeesV143:$storeId", a.toString()).commit()
         return true
     }
 
