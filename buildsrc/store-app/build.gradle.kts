@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 142
-        versionName = "2.0.0-RC29-V142-RECEIVER-FINAL-SPEED-STABILITY"
+        versionCode = 143
+        versionName = "2.0.0-RC29-V143-RECEIVER-AUTO-REPORTS-FAST-MESSAGING"
     }
 
     compileOptions {
