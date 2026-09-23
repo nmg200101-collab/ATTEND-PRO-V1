@@ -367,10 +367,14 @@ class ReportReceiverActivity : Activity() {
                 )))
                 if (binding.active) {
                     addView(UiKit.button(this@ReportReceiverActivity, p,
-                        if (selected) t("المحل الحالي", "Current store") else t("فتح هذا المحل", "Open this store"),
+                        when {
+                            binding.canReceiveReports -> t("فتح تقارير هذا المحل", "Open this store reports")
+                            binding.canMessageEmployees -> t("فتح رسائل هذا المحل", "Open this store messages")
+                            else -> t("فتح هذا المحل", "Open this store")
+                        },
                         selected
                     ).apply {
-                        isEnabled = !selected
+                        isEnabled = true
                         setOnClickListener { switchStore(binding) }
                     })
                 }
@@ -399,15 +403,39 @@ class ReportReceiverActivity : Activity() {
         if (!binding.active || binding.storeId.isBlank()) return
         invalidateRemoteRequests()
         if (!receiver.selectStore(binding.storeId)) return
+
         lastServerRefreshAt = binding.lastServerRefreshAt
         selectedReportIndex = null
         selectedMessageEmployeeId = null
         messageEmployees = emptyList()
-        messageReplies = emptyList()
-        section = Section.STATUS
-        notice = t("تم اختيار ${binding.storeName}.", "${binding.storeName} selected.")
+        messageReplies = receiver.receivedMessageReplies(binding.storeId)
+            .map { ReplyRow(it.employeeId, it.body, it.createdAt) }
+
+        if (binding.canMessageEmployees) {
+            loadCachedEmployees(binding.storeId)
+        }
+
+        section = when {
+            binding.canReceiveReports -> Section.REPORTS
+            binding.canMessageEmployees -> Section.MESSAGES
+            else -> Section.STATUS
+        }
+        notice = when (section) {
+            Section.REPORTS -> t(
+                "تم فتح تقارير ${binding.storeName} ✓",
+                "${binding.storeName} reports opened ✓"
+            )
+            Section.MESSAGES -> t(
+                "تم فتح رسائل ${binding.storeName} ✓",
+                "${binding.storeName} messages opened ✓"
+            )
+            else -> t("تم اختيار ${binding.storeName}.", "${binding.storeName} selected.")
+        }
+
         render()
+        ReceiverReportService.requestImmediateSync(this)
         refreshCapabilities(silent = true, refreshCurrentSection = false)
+        refreshSelectedSection(silent = true)
     }
 
     private fun confirmUnlinkStore(binding: ReceiverStoreBinding) {
@@ -555,8 +583,12 @@ class ReportReceiverActivity : Activity() {
         val binding = receiver.activeBinding()
         binding?.storeId?.let { loadCachedEmployees(it) }
         card.addView(UiKit.sectionLabel(this, p, t(
-            "الرسائل — ${binding?.storeName ?: "—"}",
-            "Messages — ${binding?.storeName ?: "—"}"
+            "رسائل موظفي ${binding?.storeName ?: "—"}",
+            "${binding?.storeName ?: "—"} employee messages"
+        )))
+        card.addView(UiKit.subtitle(this, p, t(
+            "تظهر هنا موظفو هذا المحل فقط، ورسائلهم وردودهم مستقلة عن بقية المحلات.",
+            "Only this store's employees appear here; its messages and replies are isolated from other stores."
         )))
         card.addView(UiKit.button(this, p,
             if (messagesInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الرسائل والردود", "Refresh messages and replies")
