@@ -7,15 +7,15 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
 object EmployeeMessageFastPoller142 {
-    private const val NORMAL_POLL_MS = 4_000L
-    private const val MAX_BACKOFF_MS = 30_000L
+    private const val NORMAL_POLL_MS = 2_000L
+    private const val MAX_BACKOFF_MS = 20_000L
     private val running = AtomicBoolean(false)
     @Volatile private var worker: Thread? = null
 
     fun start(context: Context) {
         if (!running.compareAndSet(false, true)) return
         val app = context.applicationContext
-        worker = thread(name = "employee-message-fast-v142", isDaemon = true) {
+        worker = thread(name = "employee-message-fast-v143", isDaemon = true) {
             var failures = 0
             while (running.get()) {
                 val identity = EmployeeIdentityStore(app)
@@ -35,9 +35,9 @@ object EmployeeMessageFastPoller142 {
                     } else {
                         failures++
                         sleepMs = when {
-                            failures <= 1 -> 5_000L
-                            failures == 2 -> 8_000L
-                            failures == 3 -> 15_000L
+                            failures <= 1 -> 3_000L
+                            failures == 2 -> 5_000L
+                            failures == 3 -> 10_000L
                             else -> MAX_BACKOFF_MS
                         }
                     }
