@@ -499,7 +499,6 @@ class ReportReceiverActivity : Activity() {
     private fun renderReports() {
         val card = UiKit.card(this, p, 9)
         val binding = receiver.activeBinding()
-        binding?.storeId?.let { loadCachedEmployees(it) }
         card.addView(UiKit.sectionLabel(this, p, t(
             "التقارير — ${binding?.storeName ?: "—"}",
             "Reports — ${binding?.storeName ?: "—"}"
@@ -554,6 +553,7 @@ class ReportReceiverActivity : Activity() {
     private fun renderMessages() {
         val card = UiKit.card(this, p, 9)
         val binding = receiver.activeBinding()
+        binding?.storeId?.let { loadCachedEmployees(it) }
         card.addView(UiKit.sectionLabel(this, p, t(
             "الرسائل — ${binding?.storeName ?: "—"}",
             "Messages — ${binding?.storeName ?: "—"}"
