@@ -231,14 +231,14 @@ class StoreReceiverPermissionsActivity : Activity() {
                 addView(UiKit.statusBadge(this@StoreReceiverPermissionsActivity, p,
                     if (phone.active) t("نشط", "Active") else t("موقوف", "Disabled"), phone.active))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
-                    "المعرف: ${phone.receiverId}\nحالة الربط: ${if (phone.active) "مرتبط ونشط" else "مرتبط وموقوف"}\nآخر اتصال بالخادم: ${metaTime(phone.receiverId, META_SERVER_SYNC)}\nآخر تحديث للصلاحيات: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}",
-                    "ID: ${phone.receiverId}\nLink: ${if (phone.active) "linked and active" else "linked and disabled"}\nLast server contact: ${metaTime(phone.receiverId, META_SERVER_SYNC)}\nLast permission update: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}"
+                    "اسم الهاتف: ${phone.name.ifBlank { "هاتف استلام" }}\nحالة الربط: ${if (phone.active) "مرتبط ونشط" else "مرتبط وموقوف"}\nآخر اتصال بالخادم: ${metaTime(phone.receiverId, META_SERVER_SYNC)}\nآخر تحديث للصلاحيات: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}",
+                    "Phone name: ${phone.name.ifBlank { "Receiver phone" }}\nLink: ${if (phone.active) "linked and active" else "linked and disabled"}\nLast server contact: ${metaTime(phone.receiverId, META_SERVER_SYNC)}\nLast permission update: ${metaTime(phone.receiverId, META_PERMISSION_UPDATE)}"
                 )))
                 addView(UiKit.sectionLabel(this@StoreReceiverPermissionsActivity, p, t("الصلاحيات الحالية", "Current permissions")))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, permissionsText(phone)))
                 addView(UiKit.subtitle(this@StoreReceiverPermissionsActivity, p, t(
-                    "النوع: هاتف استلام التقارير / الإدارة",
-                    "Type: report receiver / administration phone"
+                    "النوع: هاتف استلام التقارير والرسائل",
+                    "Type: reports and messages receiver phone"
                 )))
                 addView(UiKit.button(this@StoreReceiverPermissionsActivity, p,
                     if (selectedReceiverId == phone.receiverId) t("إغلاق تعديل الصلاحيات", "Close permission editor")
@@ -308,7 +308,10 @@ class StoreReceiverPermissionsActivity : Activity() {
 
         pendingInvite?.let { invite ->
             card.addView(UiKit.title(this, p, invite.name.ifBlank { t("هاتف استلام", "Receiver phone") }, 18f))
-            card.addView(UiKit.subtitle(this, p, t("المعرف: ${invite.receiverId}", "ID: ${invite.receiverId}")))
+            card.addView(UiKit.subtitle(this, p, t(
+                "اسم الهاتف: ${invite.name.ifBlank { "هاتف استلام" }}",
+                "Phone name: ${invite.name.ifBlank { "Receiver phone" }}"
+            )))
             val reports = permissionCheckBox(t("استلام التقارير", "Receive reports"), t("استلام تقارير الحضور.", "Receive attendance reports."), true)
             val messages = permissionCheckBox(t("مراسلة الموظفين", "Message employees"), t("إرسال الرسائل واستلام الردود.", "Send messages and receive replies."), false)
             card.addView(reports)
