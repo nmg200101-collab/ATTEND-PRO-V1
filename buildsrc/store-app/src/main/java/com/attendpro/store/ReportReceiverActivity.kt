@@ -561,20 +561,22 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun loadCachedEmployees(storeId: String) {
-        if (storeId.isBlank()) return
+        if (storeId.isBlank()) {
+            messageEmployees = emptyList()
+            selectedMessageEmployeeId = null
+            return
+        }
         val cached = receiver.cachedEmployees(storeId)
-        if (cached.isNotEmpty()) {
-            messageEmployees = cached.map {
-                CentralServerClient.ReceiverEmployee(
-                    it.employeeId,
-                    it.employeeName,
-                    it.branchId,
-                    it.lastSeenAt
-                )
-            }
-            if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) {
-                selectedMessageEmployeeId = null
-            }
+        messageEmployees = cached.map {
+            CentralServerClient.ReceiverEmployee(
+                it.employeeId,
+                it.employeeName,
+                it.branchId,
+                it.lastSeenAt
+            )
+        }
+        if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) {
+            selectedMessageEmployeeId = null
         }
     }
 
