@@ -23,12 +23,14 @@ import kotlin.concurrent.thread
  */
 class ReceiverReportService : Service() {
     companion object {
-        private const val CHANNEL_ID = "receiver_reports_v142"
-        private const val NOTIFICATION_ID = 2142
+        private const val CHANNEL_ID = "receiver_reports_v143"
+        private const val NOTIFICATION_ID = 2143
         private const val LOOP_MS = 750L
-        private const val REPORT_POLL_MS = 3_500L
-        private const val MESSAGE_POLL_MS = 4_000L
-        private const val OUTBOX_POLL_MS = 1_250L
+        private const val REPORT_POLL_MS = 2_500L
+        private const val AUTO_REPORT_POLL_MS = 4_000L
+        private const val EMPLOYEE_POLL_MS = 2_000L
+        private const val MESSAGE_POLL_MS = 2_500L
+        private const val OUTBOX_POLL_MS = 750L
         private const val MAINTENANCE_MS = 10_000L
         const val PREFS = "receiver_report_service_v140"
         const val KEY_NEAR_PAIRING_UNTIL = "near_pairing_until"
@@ -40,6 +42,7 @@ class ReceiverReportService : Service() {
         const val EXTRA_STORE_ID = "storeId"
         const val KIND_REPORTS = "reports"
         const val KIND_MESSAGES = "messages"
+        const val KIND_EMPLOYEES = "employees"
         const val KIND_OUTBOX = "outbox"
         const val KIND_BINDINGS = "bindings"
 
@@ -84,6 +87,8 @@ class ReceiverReportService : Service() {
     private lateinit var receiver: ReportReceiverStore
     private val running = AtomicBoolean(false)
     private val reportsInFlight = AtomicBoolean(false)
+    private val autoReportsInFlight = AtomicBoolean(false)
+    private val employeesInFlight = AtomicBoolean(false)
     private val messagesInFlight = AtomicBoolean(false)
     private val outboxInFlight = AtomicBoolean(false)
     private val maintenanceInFlight = AtomicBoolean(false)
@@ -91,6 +96,8 @@ class ReceiverReportService : Service() {
     private var lanServer: ReceiverReportLanServer? = null
     private var bleServer: ReceiverReportBleServer? = null
     @Volatile private var nextReportPollAt = 0L
+    @Volatile private var nextAutoReportPollAt = 0L
+    @Volatile private var nextEmployeePollAt = 0L
     @Volatile private var nextMessagePollAt = 0L
     @Volatile private var nextOutboxPollAt = 0L
     @Volatile private var nextMaintenanceAt = 0L
@@ -101,13 +108,15 @@ class ReceiverReportService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("جاهز لاستلام التقارير والرسائل"))
         running.set(true)
         startTransports()
-        worker = thread(name = "receiver-sync-v142", isDaemon = true) { loop() }
+        worker = thread(name = "receiver-sync-v143", isDaemon = true) { loop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startTransports()
         if (intent?.action == ACTION_SYNC_NOW) {
             nextReportPollAt = 0L
+            nextAutoReportPollAt = 0L
+            nextEmployeePollAt = 0L
             nextMessagePollAt = 0L
             nextOutboxPollAt = 0L
         }
@@ -164,6 +173,11 @@ class ReceiverReportService : Service() {
         val grant = com.attendpro.core.ReportProtocol.decodeRemoteGrant(rawGrant, receiver.receiverId) ?: return false
         receiver.upsertBinding(grant)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, 0L).apply()
+        nextReportPollAt = 0L
+        nextAutoReportPollAt = 0L
+        nextEmployeePollAt = 0L
+        nextMessagePollAt = 0L
+        nextOutboxPollAt = 0L
         updateStatus("اكتمل ربط ${grant.storeName} عبر القرب ✓")
         broadcastChanged(KIND_BINDINGS, grant.storeId)
         return true
@@ -185,6 +199,8 @@ class ReceiverReportService : Service() {
             runCatching {
                 if (now >= nextMaintenanceAt) launchMaintenance(now)
                 if (now >= nextReportPollAt) launchReportPoll(now)
+                if (now >= nextAutoReportPollAt) launchAutoReportPoll(now)
+                if (now >= nextEmployeePollAt) launchEmployeePoll(now)
                 if (now >= nextMessagePollAt) launchMessagePoll(now)
                 if (now >= nextOutboxPollAt) launchOutbox(now)
 
@@ -207,7 +223,7 @@ class ReceiverReportService : Service() {
     private fun launchMaintenance(now: Long) {
         nextMaintenanceAt = now + MAINTENANCE_MS
         if (!maintenanceInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-maintenance-v142", isDaemon = true) {
+        thread(name = "receiver-maintenance-v143", isDaemon = true) {
             try {
                 startTransports()
                 flushPendingUnlinks()
@@ -220,15 +236,31 @@ class ReceiverReportService : Service() {
     private fun launchReportPoll(now: Long) {
         nextReportPollAt = now + REPORT_POLL_MS
         if (!reportsInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-reports-v142", isDaemon = true) {
+        thread(name = "receiver-reports-v143", isDaemon = true) {
             try { pollServerReports() } finally { reportsInFlight.set(false) }
+        }
+    }
+
+    private fun launchAutoReportPoll(now: Long) {
+        nextAutoReportPollAt = now + AUTO_REPORT_POLL_MS
+        if (!autoReportsInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-auto-reports-v143", isDaemon = true) {
+            try { pollAutomaticReports() } finally { autoReportsInFlight.set(false) }
+        }
+    }
+
+    private fun launchEmployeePoll(now: Long) {
+        nextEmployeePollAt = now + EMPLOYEE_POLL_MS
+        if (!employeesInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-employees-v143", isDaemon = true) {
+            try { pollServerEmployees() } finally { employeesInFlight.set(false) }
         }
     }
 
     private fun launchMessagePoll(now: Long) {
         nextMessagePollAt = now + MESSAGE_POLL_MS
         if (!messagesInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-messages-v142", isDaemon = true) {
+        thread(name = "receiver-messages-v143", isDaemon = true) {
             try { pollServerMessages() } finally { messagesInFlight.set(false) }
         }
     }
@@ -236,7 +268,7 @@ class ReceiverReportService : Service() {
     private fun launchOutbox(now: Long) {
         nextOutboxPollAt = now + OUTBOX_POLL_MS
         if (!outboxInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-outbox-v142", isDaemon = true) {
+        thread(name = "receiver-outbox-v143", isDaemon = true) {
             try { flushOutgoingMessages() } finally { outboxInFlight.set(false) }
         }
     }
@@ -287,6 +319,50 @@ class ReceiverReportService : Service() {
                 if (receivedCount > 0) {
                     updateStatus("وصل $receivedCount تقرير عبر الخادم ✓")
                     broadcastChanged(KIND_REPORTS, binding.storeId)
+                }
+            }
+    }
+
+    private fun pollAutomaticReports() {
+        receiver.storeBindings()
+            .filter { it.active && it.canReceiveReports && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
+            .forEach { binding ->
+                val result = CentralServerClient.remoteReport(
+                    binding.serverUrl,
+                    receiver.receiverId,
+                    receiver.secret,
+                    "TODAY",
+                    binding.storeId
+                )
+                if (result.isFailure) return@forEach
+                val changed = receiver.cacheAutomaticReport(
+                    binding.storeId,
+                    binding.storeName,
+                    binding.branchId,
+                    "تقرير اليوم — تلقائي",
+                    result.getOrThrow()
+                )
+                if (changed) {
+                    updateStatus("تم تحديث تقرير اليوم تلقائيًا ✓")
+                    broadcastChanged(KIND_REPORTS, binding.storeId)
+                }
+            }
+    }
+
+    private fun pollServerEmployees() {
+        receiver.storeBindings()
+            .filter { it.active && it.canMessageEmployees && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
+            .forEach { binding ->
+                val result = CentralServerClient.receiverEmployees(
+                    binding.serverUrl,
+                    receiver.receiverId,
+                    receiver.secret,
+                    binding.storeId
+                )
+                if (result.isFailure) return@forEach
+                val changed = receiver.cacheEmployees(binding.storeId, result.getOrThrow())
+                if (changed) {
+                    broadcastChanged(KIND_EMPLOYEES, binding.storeId)
                 }
             }
     }
