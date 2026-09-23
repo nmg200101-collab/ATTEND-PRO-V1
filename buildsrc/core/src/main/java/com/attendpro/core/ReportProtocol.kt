@@ -132,6 +132,15 @@ data class ReceiverMessageReply(
     val readAt: Long
 )
 
+data class ReceiverCachedEmployee(
+    val storeId: String,
+    val employeeId: String,
+    val employeeName: String,
+    val branchId: String,
+    val lastSeenAt: Long,
+    val cachedAt: Long
+)
+
 data class ReceiverOutgoingMessage(
     val localId: String,
     val storeId: String,
@@ -379,7 +388,71 @@ class ReportReceiverStore(context: Context) {
             .apply()
     }
 
-    fun newInvite(): ReportProtocol.ReceiverInvite = ReportProtocol.ReceiverInvite(receiverId, receiverName, secret, System.currentTimeMillis() + 10 * 60_000L)
+    private fun deviceReceiverName(): String {
+        val manufacturer = android.os.Build.MANUFACTURER.orEmpty().trim()
+        val model = android.os.Build.MODEL.orEmpty().trim()
+        val combined = listOf(manufacturer, model)
+            .filter { it.isNotBlank() }
+            .joinToString(" ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        return if (combined.isBlank()) "هاتف الاستلام" else "هاتف $combined"
+    }
+
+    fun resolvedReceiverName(): String {
+        val current = receiverName.trim()
+        val generic = current.isBlank() || current == "هاتف صاحب المحل" || current == "هاتف مراقبة" || current == "هاتف الاستلام"
+        if (!generic) return current
+        val resolved = deviceReceiverName()
+        receiverName = resolved
+        return resolved
+    }
+
+    fun newInvite(): ReportProtocol.ReceiverInvite =
+        ReportProtocol.ReceiverInvite(receiverId, resolvedReceiverName(), secret, System.currentTimeMillis() + 10 * 60_000L)
+
+    fun cachedEmployees(storeId: String): List<ReceiverCachedEmployee> {
+        if (storeId.isBlank()) return emptyList()
+        val raw = prefs.getString("receiverEmployeesV143:$storeId", "[]") ?: "[]"
+        val a = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
+        return (0 until a.length()).mapNotNull { i -> runCatching {
+            val o = a.getJSONObject(i)
+            ReceiverCachedEmployee(
+                storeId = storeId,
+                employeeId = o.optString("employeeId", ""),
+                employeeName = o.optString("employeeName", ""),
+                branchId = o.optString("branchId", "MAIN"),
+                lastSeenAt = o.optLong("lastSeenAt", 0L),
+                cachedAt = o.optLong("cachedAt", 0L)
+            )
+        }.getOrNull() }
+            .filter { it.employeeId.isNotBlank() }
+            .sortedBy { it.employeeName.ifBlank { it.employeeId } }
+    }
+
+    @Synchronized
+    fun cacheEmployees(storeId: String, employees: List<CentralServerClient.ReceiverEmployee>): Boolean {
+        if (storeId.isBlank()) return false
+        val now = System.currentTimeMillis()
+        val normalized = employees
+            .filter { it.employeeId.isNotBlank() }
+            .distinctBy { it.employeeId }
+            .sortedBy { it.employeeName.ifBlank { it.employeeId } }
+        val a = JSONArray()
+        normalized.forEach { e -> a.put(JSONObject().apply {
+            put("employeeId", e.employeeId)
+            put("employeeName", e.employeeName)
+            put("branchId", e.branchId)
+            put("lastSeenAt", e.lastSeenAt)
+            put("cachedAt", now)
+        }) }
+        val key = "receiverEmployeesV143:$storeId"
+        val newRaw = a.toString()
+        val oldRaw = prefs.getString(key, "[]") ?: "[]"
+        if (oldRaw == newRaw) return false
+        prefs.edit().putString(key, newRaw).commit()
+        return true
+    }
 
     fun receivedMessageReplies(storeId: String = ""): List<ReceiverMessageReply> {
         val raw = prefs.getString("receiverMessageRepliesV141", "[]") ?: "[]"
@@ -546,6 +619,48 @@ class ReportReceiverStore(context: Context) {
             put("lastError", m.lastError)
         }) }
         prefs.edit().putString("receiverOutgoingMessagesV142", a.toString()).commit()
+    }
+
+    @Synchronized
+    fun cacheAutomaticReport(
+        storeId: String,
+        storeName: String,
+        branchId: String,
+        periodLabel: String,
+        reportText: String
+    ): Boolean {
+        if (storeId.isBlank() || reportText.isBlank()) return false
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(reportText.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+        val markerPrefix = "AUTO:$storeId:$periodLabel:"
+        val transferId = markerPrefix + digest.take(20)
+        val current = receivedReports()
+        if (current.any { it.transferId == transferId }) return false
+
+        val now = System.currentTimeMillis()
+        val item = ReceivedReport(
+            transferId = transferId,
+            storeName = storeName.ifBlank { "ATTEND PRO" },
+            branchId = branchId.ifBlank { "MAIN" },
+            periodLabel = periodLabel,
+            createdAt = now,
+            receivedAt = now,
+            reportText = reportText,
+            confirmationCode = "",
+            storeId = storeId
+        )
+        val kept = current.filterNot {
+            it.storeId == storeId && it.transferId.startsWith(markerPrefix)
+        }
+        val a = JSONArray()
+        (listOf(item) + kept).take(100).forEach { r -> a.put(JSONObject().apply {
+            put("transferId", r.transferId); put("storeName", r.storeName); put("branchId", r.branchId)
+            put("periodLabel", r.periodLabel); put("createdAt", r.createdAt); put("receivedAt", r.receivedAt)
+            put("reportText", r.reportText); put("confirmationCode", r.confirmationCode); put("storeId", r.storeId)
+        }) }
+        prefs.edit().putString("receivedReports", a.toString()).commit()
+        return true
     }
 
     fun receivedReports(storeId: String = ""): List<ReceivedReport> {
