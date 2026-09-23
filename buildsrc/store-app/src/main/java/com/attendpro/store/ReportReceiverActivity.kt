@@ -73,7 +73,11 @@ class ReportReceiverActivity : Activity() {
                 }
                 ReceiverReportService.KIND_MESSAGES -> {
                     notice = t("وصل رد جديد من موظف ✓", "A new employee reply arrived ✓")
-                    render()
+                    if (section == Section.MESSAGES) render()
+                }
+                ReceiverReportService.KIND_EMPLOYEES -> {
+                    loadCachedEmployees(storeId.ifBlank { activeId })
+                    if (section == Section.MESSAGES) render()
                 }
                 ReceiverReportService.KIND_OUTBOX -> {
                     if (section == Section.MESSAGES) render()
@@ -104,6 +108,7 @@ class ReportReceiverActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         receiver = ReportReceiverStore(this)
+        receiver.resolvedReceiverName()
         if (receiver.storeBindings().any { it.active }) ReceiverReportService.ensureStarted(this)
         section = savedInstanceState?.getString(KEY_SECTION)
             ?.let { runCatching { Section.valueOf(it) }.getOrNull() }
@@ -236,8 +241,8 @@ class ReportReceiverActivity : Activity() {
                 setTextColor(android.graphics.Color.WHITE)
             })
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "${active?.storeName ?: "غير مرتبط"} • ${active?.branchId ?: "—"}\n${receiver.receiverName} • المحلات المرتبطة: $storeCount",
-                "${active?.storeName ?: "Not linked"} • ${active?.branchId ?: "—"}\n${receiver.receiverName} • Linked stores: $storeCount"
+                "${active?.storeName ?: "غير مرتبط"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • المحلات المرتبطة: $storeCount",
+                "${active?.storeName ?: "Not linked"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • Linked stores: $storeCount"
             )).apply {
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
@@ -264,6 +269,9 @@ class ReportReceiverActivity : Activity() {
                 notice = ""
                 selectedReportIndex = null
                 render()
+                if (target == Section.MESSAGES || target == Section.REPORTS) {
+                    ReceiverReportService.requestImmediateSync(this@ReportReceiverActivity)
+                }
                 refreshSelectedSection(silent = true)
             }
         })
@@ -491,6 +499,7 @@ class ReportReceiverActivity : Activity() {
     private fun renderReports() {
         val card = UiKit.card(this, p, 9)
         val binding = receiver.activeBinding()
+        binding?.storeId?.let { loadCachedEmployees(it) }
         card.addView(UiKit.sectionLabel(this, p, t(
             "التقارير — ${binding?.storeName ?: "—"}",
             "Reports — ${binding?.storeName ?: "—"}"
@@ -524,6 +533,24 @@ class ReportReceiverActivity : Activity() {
         content.addView(card)
     }
 
+    private fun loadCachedEmployees(storeId: String) {
+        if (storeId.isBlank()) return
+        val cached = receiver.cachedEmployees(storeId)
+        if (cached.isNotEmpty()) {
+            messageEmployees = cached.map {
+                CentralServerClient.ReceiverEmployee(
+                    it.employeeId,
+                    it.employeeName,
+                    it.branchId,
+                    it.lastSeenAt
+                )
+            }
+            if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) {
+                selectedMessageEmployeeId = null
+            }
+        }
+    }
+
     private fun renderMessages() {
         val card = UiKit.card(this, p, 9)
         val binding = receiver.activeBinding()
@@ -539,7 +566,10 @@ class ReportReceiverActivity : Activity() {
         })
 
         if (messageEmployees.isEmpty()) {
-            card.addView(UiKit.subtitle(this, p, t("لا يوجد موظفون متاحون للمراسلة.", "No employees are available for messaging.")))
+            card.addView(UiKit.subtitle(this, p, t(
+                "جاري جلب قائمة الموظفين… ستظهر تلقائيًا عند وصولها.",
+                "Loading employees… They will appear automatically."
+            )))
         } else {
             card.addView(UiKit.subtitle(this, p, t("اختر موظفًا:", "Choose an employee:")))
             messageEmployees.forEach { employee ->
@@ -798,34 +828,50 @@ class ReportReceiverActivity : Activity() {
 
     private fun refreshMessages(silent: Boolean) {
         val binding = receiver.activeBinding() ?: return
-        if (!receiver.canMessageEmployees || binding.serverUrl.isBlank() || binding.storeId.isBlank() || messagesInFlight) return
-        messagesInFlight = true
-        val generation = ++messagesGeneration
+        if (!receiver.canMessageEmployees || binding.serverUrl.isBlank() || binding.storeId.isBlank()) return
         val storeId = binding.storeId
+
+        loadCachedEmployees(storeId)
+        messageReplies = receiver.receivedMessageReplies(storeId)
+            .map { ReplyRow(it.employeeId, it.body, it.createdAt) }
         if (alive()) render()
 
+        ReceiverReportService.requestImmediateSync(this)
+
+        if (messagesInFlight) return
+        messagesInFlight = true
+        val generation = ++messagesGeneration
+
         Thread {
-            val employees = CentralServerClient.receiverEmployees(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
-            val replies = if (employees.isSuccess) {
-                CentralServerClient.receiverMessagesInbox(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
-            } else Result.failure(employees.exceptionOrNull() ?: IllegalStateException("messages unavailable"))
+            val employees = CentralServerClient.receiverEmployees(
+                binding.serverUrl, receiver.receiverId, receiver.secret, storeId
+            )
+            if (employees.isSuccess) {
+                receiver.cacheEmployees(storeId, employees.getOrThrow())
+            }
+
+            val replies = CentralServerClient.receiverMessagesInbox(
+                binding.serverUrl, receiver.receiverId, receiver.secret, storeId
+            )
+            if (replies.isSuccess) {
+                receiver.cacheMessageReplies(storeId, replies.getOrThrow())
+            }
 
             runOnUiThread {
                 if (generation != messagesGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 messagesInFlight = false
                 if (!alive()) return@runOnUiThread
-                if (employees.isSuccess && replies.isSuccess) {
-                    messageEmployees = employees.getOrThrow()
-                    val remoteReplies = replies.getOrThrow()
-                    receiver.cacheMessageReplies(storeId, remoteReplies)
-                    messageReplies = receiver.receivedMessageReplies(storeId)
-                        .map { ReplyRow(it.employeeId, it.body, it.createdAt) }
-                    if (selectedMessageEmployeeId !in messageEmployees.map { it.employeeId }) selectedMessageEmployeeId = null
+                loadCachedEmployees(storeId)
+                messageReplies = receiver.receivedMessageReplies(storeId)
+                    .map { ReplyRow(it.employeeId, it.body, it.createdAt) }
+                if (employees.isSuccess || replies.isSuccess) {
                     markActiveServerContact(storeId)
-                    if (!silent) notice = t("تم تحديث رسائل المحل ✓", "Store messages refreshed ✓")
+                    if (!silent) notice = t("تم تحديث الموظفين والرسائل ✓", "Employees and messages refreshed ✓")
                 } else if (!silent) {
-                    showError(t("تعذر تحديث الرسائل", "Could not refresh messages"),
-                        networkMessage(employees.exceptionOrNull() ?: replies.exceptionOrNull()))
+                    showError(
+                        t("تعذر تحديث الرسائل", "Could not refresh messages"),
+                        networkMessage(employees.exceptionOrNull() ?: replies.exceptionOrNull())
+                    )
                 }
                 render()
             }
