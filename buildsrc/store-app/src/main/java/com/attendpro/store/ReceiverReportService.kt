@@ -343,6 +343,22 @@ class ReceiverReportService : Service() {
         val binding = receiver.activeBinding()
             ?.takeIf { it.active && it.canReceiveReports && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
             ?: return
+
+        val probe = CentralServerClient.remoteDashboardRevision(
+            binding.serverUrl,
+            receiver.receiverId,
+            receiver.secret,
+            binding.storeId
+        )
+        if (probe.isFailure) return
+
+        val probeValue = probe.getOrThrow()
+        val cached = receiver.cachedLiveDashboard(binding.storeId)
+        val previousToken = receiver.liveDashboardProbeToken(binding.storeId)
+        if (cached != null && previousToken.isNotBlank() && previousToken == probeValue.token) {
+            return
+        }
+
         val result = CentralServerClient.remoteDashboard(
             binding.serverUrl,
             receiver.receiverId,
@@ -350,7 +366,9 @@ class ReceiverReportService : Service() {
             binding.storeId
         )
         if (result.isFailure) return
+
         val changed = receiver.cacheLiveDashboard(binding.storeId, result.getOrThrow())
+        receiver.setLiveDashboardProbeToken(binding.storeId, probeValue.token)
         if (changed) {
             updateStatus("تم تحديث شاشة المحل المباشرة ✓")
             broadcastChanged(KIND_LIVE_DASHBOARD, binding.storeId)
