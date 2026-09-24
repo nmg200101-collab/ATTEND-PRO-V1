@@ -349,13 +349,8 @@ object ReceiverReportBleClient {
             }
         }
 
-        val device = scanWindow(
-            listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
-            if (fast) 850L else 2_000L
-        ) ?: scanWindow(
-            emptyList(),
-            if (fast) 1_100L else 2_500L
-        )
+        val device = scanWindow(listOf(ScanFilter.Builder().setServiceUuid(parcel).build()), 2_000L)
+            ?: scanWindow(emptyList(), 2_500L)
             ?: return ReceiverReportDeliveryResultWithPayload(
                 false, "BLE",
                 "لم يظهر هاتف في وضع الارتباط القريب بعد المسح المفلتر والاحتياطي",
@@ -369,7 +364,7 @@ object ReceiverReportBleClient {
                 return ReceiverReportDeliveryResultWithPayload(false, "BLE", "تعذر اكتشاف خدمة الربط القريب", "")
             }
             gatt.requestMtu(DESIRED_MTU)
-            sync.awaitMtu(if (fast) 700L else 1_500L)
+            sync.awaitMtu(1_500)
             val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
                 ?: return ReceiverReportDeliveryResultWithPayload(false, "BLE", "خدمة الربط القريب غير موجودة", "")
             val inviteChar = service.getCharacteristic(ReceiverReportBleServer.INVITE_UUID)
@@ -496,9 +491,13 @@ object ReceiverReportBleClient {
             }
         }
 
-        val device = scanWindow(listOf(ScanFilter.Builder().setServiceUuid(parcel).build()), 2_000L)
-            ?: scanWindow(emptyList(), 2_500L)
-            ?: return RawSendResult(false, detail = "لم يظهر هاتف الاستلام عبر BLE")
+        val device = scanWindow(
+            listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
+            if (fast) 850L else 2_000L
+        ) ?: scanWindow(
+            emptyList(),
+            if (fast) 1_100L else 2_500L
+        ) ?: return RawSendResult(false, detail = "لم يظهر هاتف الاستلام عبر BLE")
 
         val sync = SyncGattCallback()
         val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
@@ -508,7 +507,7 @@ object ReceiverReportBleClient {
                 return RawSendResult(false, detail = "تعذر اكتشاف خدمة Bluetooth")
             }
             gatt.requestMtu(DESIRED_MTU)
-            sync.awaitMtu(1_500)
+            sync.awaitMtu(if (fast) 700L else 1_500L)
 
             val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
                 ?: return RawSendResult(false, detail = "خدمة الاستلام غير موجودة")
