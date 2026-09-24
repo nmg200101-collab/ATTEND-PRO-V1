@@ -687,6 +687,24 @@ class ReportReceiverStore(context: Context) {
         prefs.edit().putString("receiverLiveDashboardProbeV146:$storeId", token).apply()
     }
 
+    fun markLiveTransport(storeId: String, transport: String, detail: String = "") {
+        if (storeId.isBlank() || transport.isBlank()) return
+        prefs.edit()
+            .putString("receiverLiveTransportV147:$storeId", transport.uppercase(Locale.US))
+            .putString("receiverLiveTransportDetailV147:$storeId", detail.take(160))
+            .putLong("receiverLiveTransportAtV147:$storeId", System.currentTimeMillis())
+            .apply()
+    }
+
+    fun liveTransport(storeId: String): String =
+        if (storeId.isBlank()) "" else prefs.getString("receiverLiveTransportV147:$storeId", "").orEmpty()
+
+    fun liveTransportDetail(storeId: String): String =
+        if (storeId.isBlank()) "" else prefs.getString("receiverLiveTransportDetailV147:$storeId", "").orEmpty()
+
+    fun liveTransportAt(storeId: String): Long =
+        if (storeId.isBlank()) 0L else prefs.getLong("receiverLiveTransportAtV147:$storeId", 0L)
+
     @Synchronized
     fun cacheLiveDashboard(storeId: String, dashboard: CentralServerClient.RemoteDashboard): Boolean {
         if (storeId.isBlank()) return false
