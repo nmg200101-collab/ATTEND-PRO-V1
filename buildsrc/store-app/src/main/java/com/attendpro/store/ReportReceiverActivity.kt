@@ -421,6 +421,7 @@ class ReportReceiverActivity : Activity() {
 
         lastServerRefreshAt = binding.lastServerRefreshAt
         selectedReportIndex = null
+        selectedLivePanel = null
         selectedMessageEmployeeId = null
         messageEmployees = emptyList()
         messageReplies = receiver.receivedMessageReplies(binding.storeId)
@@ -491,9 +492,12 @@ class ReportReceiverActivity : Activity() {
             addView(UiKit.title(this@ReportReceiverActivity, p,
                 if (linked) t("✓ مرتبط بالخادم", "✓ Server linked") else t("غير مرتبط", "Not linked"), 20f))
             val last = binding?.lastServerRefreshAt?.takeIf { it > 0L }?.let { formatTime(it) } ?: t("لم يتم بعد", "Not yet")
+            val activeStoreId = binding?.storeId.orEmpty()
+            val livePath = liveTransportLabel(receiver.liveTransport(activeStoreId))
+            val livePathAt = receiver.liveTransportAt(activeStoreId).takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${binding?.storeName ?: "—"}\nالفرع: ${binding?.branchId ?: "—"}\nآخر اتصال بالخادم: $last",
-                "Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${binding?.storeName ?: "—"}\nBranch: ${binding?.branchId ?: "—"}\nLast server contact: $last"
+                "اسم الهاتف: ${receiver.receiverName}\nالمعرف: ${receiver.receiverId}\nالمحل: ${binding?.storeName ?: "—"}\nالفرع: ${binding?.branchId ?: "—"}\nآخر اتصال بالخادم: $last\nآخر مسار مباشر: $livePath • $livePathAt",
+                "Phone: ${receiver.receiverName}\nID: ${receiver.receiverId}\nStore: ${binding?.storeName ?: "—"}\nBranch: ${binding?.branchId ?: "—"}\nLast server contact: $last\nLast live path: $livePath • $livePathAt"
             )))
             addView(UiKit.button(this@ReportReceiverActivity, p, t("إدارة المحلات المرتبطة", "Manage linked stores"), false).apply {
                 setOnClickListener { section = Section.STORES; notice = ""; render() }
