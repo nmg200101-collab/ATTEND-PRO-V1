@@ -89,7 +89,7 @@ jobs:
           ! grep -q 'store-settings' "$RECEIVER"
 
           # V146 keeps multi-store isolation and reports/messages-only receiver permissions.
-          grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES }' "$RECEIVER"
+          grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }' "$RECEIVER"
           ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
           ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
           ! grep -q 'إدارة الموظفين' "$CENTER"
@@ -186,7 +186,7 @@ jobs:
           grep -q 'المراقبة المباشرة' "$RECEIVER"
           grep -q 'الحاضرون الآن' "$RECEIVER"
           grep -q 'الأجهزة المتصلة' "$RECEIVER"
-          grep -q 'التقارير المرسلة يدويًا' "$RECEIVER"
+          grep -q 'أرشيف التقارير اليدوية' "$RECEIVER"
           grep -q 'Section.ARCHIVE' "$RECEIVER"
           grep -q 'private fun renderArchive()' "$RECEIVER"
           grep -q 'أرشيف التقارير اليدوية' "$RECEIVER"
