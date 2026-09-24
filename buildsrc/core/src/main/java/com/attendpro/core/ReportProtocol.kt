@@ -739,6 +739,79 @@ class ReportReceiverStore(context: Context) {
             .commit()
         return true
     }
+    @Synchronized
+    fun applyNearbyLiveEvent(
+        storeId: String,
+        storeName: String,
+        branchId: String,
+        payload: String
+    ): Boolean {
+        if (storeId.isBlank() || !payload.startsWith("APLIVE1:")) return false
+        val event = runCatching {
+            AttendanceEvent.fromJson(JSONObject(payload.removePrefix("APLIVE1:")))
+        }.getOrNull() ?: return false
+
+        val idsKey = "receiverLiveEventIdsV146:$storeId"
+        val idsRaw = prefs.getString(idsKey, "[]") ?: "[]"
+        val idsArray = runCatching { JSONArray(idsRaw) }.getOrDefault(JSONArray())
+        val seen = (0 until idsArray.length()).mapNotNull { idsArray.optString(it).takeIf(String::isNotBlank) }
+        if (event.eventId in seen) return true
+
+        val old = cachedLiveDashboard(storeId)
+        val previousPresent = old?.present.orEmpty().toMutableList()
+        val index = previousPresent.indexOfFirst { it.employeeId.equals(event.employeeId, true) }
+        if (event.action == AttendanceAction.CHECK_IN) {
+            val person = CentralServerClient.RemoteDashboardPerson(
+                employeeId = event.employeeId,
+                employeeName = event.employeeName.ifBlank { event.employeeId },
+                branchId = event.branchId,
+                lastSeenAt = System.currentTimeMillis(),
+                method = event.method.name,
+                timeEpochMillis = event.timestampEpochMillis
+            )
+            if (index >= 0) previousPresent[index] = person else previousPresent.add(0, person)
+        } else if (event.action == AttendanceAction.CHECK_OUT && index >= 0) {
+            previousPresent.removeAt(index)
+        }
+
+        val recent = buildList {
+            add(CentralServerClient.RemoteDashboardEvent(
+                employeeId = event.employeeId,
+                employeeName = event.employeeName.ifBlank { event.employeeId },
+                action = if (event.action == AttendanceAction.CHECK_IN) "حضور" else "انصراف",
+                method = event.method.name,
+                timeEpochMillis = event.timestampEpochMillis
+            ))
+            old?.recent.orEmpty()
+                .filterNot { it.employeeId.equals(event.employeeId, true) && it.timeEpochMillis == event.timestampEpochMillis }
+                .take(29)
+                .forEach(::add)
+        }
+
+        val dashboard = CentralServerClient.RemoteDashboard(
+            storeId = storeId,
+            storeName = storeName.ifBlank { old?.storeName ?: "ATTEND PRO" },
+            branchId = branchId.ifBlank { old?.branchId ?: "MAIN" },
+            revision = maxOf(old?.revision ?: 0L, event.timestampEpochMillis),
+            serverNow = System.currentTimeMillis(),
+            checkIns = (old?.checkIns ?: 0) + if (event.action == AttendanceAction.CHECK_IN) 1 else 0,
+            checkOuts = (old?.checkOuts ?: 0) + if (event.action == AttendanceAction.CHECK_OUT) 1 else 0,
+            todayEvents = (old?.todayEvents ?: 0) + 1,
+            presentCount = previousPresent.size,
+            connectedCount = old?.connectedCount ?: 0,
+            lastSeen = old?.lastSeen.orEmpty(),
+            present = previousPresent.sortedBy { it.employeeName.ifBlank { it.employeeId } },
+            connected = old?.connected.orEmpty(),
+            recent = recent
+        )
+
+        cacheLiveDashboard(storeId, dashboard)
+        val nextIds = JSONArray()
+        (listOf(event.eventId) + seen).distinct().take(300).forEach(nextIds::put)
+        prefs.edit().putString(idsKey, nextIds.toString()).commit()
+        return true
+    }
+
 
     @Synchronized
     fun cacheAutomaticReport(
