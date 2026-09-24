@@ -679,6 +679,14 @@ class ReportReceiverStore(context: Context) {
     fun liveDashboardCachedAt(storeId: String): Long =
         if (storeId.isBlank()) 0L else prefs.getLong("receiverLiveDashboardCachedAtV145:$storeId", 0L)
 
+    fun liveDashboardProbeToken(storeId: String): String =
+        if (storeId.isBlank()) "" else prefs.getString("receiverLiveDashboardProbeV146:$storeId", "").orEmpty()
+
+    fun setLiveDashboardProbeToken(storeId: String, token: String) {
+        if (storeId.isBlank() || token.isBlank()) return
+        prefs.edit().putString("receiverLiveDashboardProbeV146:$storeId", token).apply()
+    }
+
     @Synchronized
     fun cacheLiveDashboard(storeId: String, dashboard: CentralServerClient.RemoteDashboard): Boolean {
         if (storeId.isBlank()) return false
