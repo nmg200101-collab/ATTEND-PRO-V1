@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.employee"
         minSdk = 26
         targetSdk = 36
-        versionCode = 144
-        versionName = "2.0.0-RC29-V144-RECEIVER-INSTANT-STORE-CONTEXT"
+        versionCode = 145
+        versionName = "2.0.0-RC29-V145-RECEIVER-LIVE-MIRROR-FINAL"
     }
 
     compileOptions {
