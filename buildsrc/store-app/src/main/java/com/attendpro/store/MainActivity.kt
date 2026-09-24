@@ -1307,7 +1307,7 @@ class MainActivity : Activity() {
     private fun triggerImmediateAttendanceSync(event: AttendanceEvent) {
         deliverAttendanceEventToReceiversNearby(event)
 
-        if (!repo.reportAutoSync || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
+        if (repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
         Thread {
             val identity = DeviceIdentity(this)
             val result = CentralServerClient.syncAttendanceEventImmediate(
@@ -1358,9 +1358,9 @@ class MainActivity : Activity() {
                     repo.storeId,
                     transferId,
                     envelope,
-                    discoveryWindowMs = 700L,
-                    connectTimeoutMs = 1_200,
-                    socketTimeoutMs = 2_500
+                    discoveryWindowMs = 1_350L,
+                    connectTimeoutMs = 1_800,
+                    socketTimeoutMs = 3_500
                 )
                 if (lan.success) repo.markReportReceiverUsed(receiver.receiverId)
             }.apply { isDaemon = true; start() }
