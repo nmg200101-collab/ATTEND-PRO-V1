@@ -184,7 +184,7 @@ jobs:
           grep -q 'KIND_LIVE_DASHBOARD' "$SERVICE"
           grep -q 'KIND_LIVE_DASHBOARD' "$RECEIVER"
           grep -q 'المراقبة المباشرة' "$RECEIVER"
-          grep -q 'الحاضرون الآن' "$RECEIVER"
+          grep -q 'الموظفون الحاضرون' "$RECEIVER"
           grep -q 'الأجهزة المتصلة' "$RECEIVER"
           grep -q 'أرشيف التقارير اليدوية' "$RECEIVER"
           grep -q 'Section.ARCHIVE' "$RECEIVER"
