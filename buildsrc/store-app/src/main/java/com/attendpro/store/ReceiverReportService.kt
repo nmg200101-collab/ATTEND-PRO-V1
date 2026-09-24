@@ -23,7 +23,7 @@ import kotlin.concurrent.thread
  */
 class ReceiverReportService : Service() {
     companion object {
-        private const val CHANNEL_ID = "receiver_reports_v143"
+        private const val CHANNEL_ID = "receiver_reports_v145"
         private const val NOTIFICATION_ID = 2143
         private const val LOOP_MS = 750L
         private const val REPORT_POLL_MS = 1_500L
@@ -36,8 +36,8 @@ class ReceiverReportService : Service() {
         const val KEY_NEAR_PAIRING_UNTIL = "near_pairing_until"
         private const val KEY_PENDING_UNLINKS = "pending_unlinks"
 
-        const val ACTION_SYNC_NOW = "com.attendpro.store.RECEIVER_SYNC_NOW_V142"
-        const val ACTION_DATA_CHANGED = "com.attendpro.store.RECEIVER_DATA_CHANGED_V142"
+        const val ACTION_SYNC_NOW = "com.attendpro.store.RECEIVER_SYNC_NOW_V145"
+        const val ACTION_DATA_CHANGED = "com.attendpro.store.RECEIVER_DATA_CHANGED_V145"
         const val EXTRA_KIND = "kind"
         const val EXTRA_STORE_ID = "storeId"
         const val KIND_REPORTS = "reports"
@@ -109,7 +109,7 @@ class ReceiverReportService : Service() {
         startForeground(NOTIFICATION_ID, buildNotification("جاهز لاستلام التقارير والرسائل"))
         running.set(true)
         startTransports()
-        worker = thread(name = "receiver-sync-v143", isDaemon = true) { loop() }
+        worker = thread(name = "receiver-sync-v145", isDaemon = true) { loop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -224,7 +224,7 @@ class ReceiverReportService : Service() {
     private fun launchMaintenance(now: Long) {
         nextMaintenanceAt = now + MAINTENANCE_MS
         if (!maintenanceInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-maintenance-v143", isDaemon = true) {
+        thread(name = "receiver-maintenance-v145", isDaemon = true) {
             try {
                 startTransports()
                 flushPendingUnlinks()
@@ -237,7 +237,7 @@ class ReceiverReportService : Service() {
     private fun launchReportPoll(now: Long) {
         nextReportPollAt = now + REPORT_POLL_MS
         if (!reportsInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-reports-v143", isDaemon = true) {
+        thread(name = "receiver-reports-v145", isDaemon = true) {
             try { pollServerReports() } finally { reportsInFlight.set(false) }
         }
     }
@@ -253,7 +253,7 @@ class ReceiverReportService : Service() {
     private fun launchEmployeePoll(now: Long) {
         nextEmployeePollAt = now + EMPLOYEE_POLL_MS
         if (!employeesInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-employees-v143", isDaemon = true) {
+        thread(name = "receiver-employees-v145", isDaemon = true) {
             try { pollServerEmployees() } finally { employeesInFlight.set(false) }
         }
     }
@@ -261,7 +261,7 @@ class ReceiverReportService : Service() {
     private fun launchMessagePoll(now: Long) {
         nextMessagePollAt = now + MESSAGE_POLL_MS
         if (!messagesInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-messages-v143", isDaemon = true) {
+        thread(name = "receiver-messages-v145", isDaemon = true) {
             try { pollServerMessages() } finally { messagesInFlight.set(false) }
         }
     }
@@ -269,7 +269,7 @@ class ReceiverReportService : Service() {
     private fun launchOutbox(now: Long) {
         nextOutboxPollAt = now + OUTBOX_POLL_MS
         if (!outboxInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-outbox-v143", isDaemon = true) {
+        thread(name = "receiver-outbox-v145", isDaemon = true) {
             try { flushOutgoingMessages() } finally { outboxInFlight.set(false) }
         }
     }
