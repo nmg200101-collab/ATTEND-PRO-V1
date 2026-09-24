@@ -67,9 +67,12 @@ class ReportReceiverActivity : Activity() {
             val activeId = receiver.activeBinding()?.storeId.orEmpty()
             if (storeId.isNotBlank() && activeId.isNotBlank() && storeId != activeId) return
             when (intent.getStringExtra(ReceiverReportService.EXTRA_KIND).orEmpty()) {
+                ReceiverReportService.KIND_LIVE_DASHBOARD -> {
+                    if (section == Section.REPORTS && selectedReportIndex == null) render()
+                }
                 ReceiverReportService.KIND_REPORTS -> {
-                    notice = t("وصل تقرير جديد تلقائيًا ✓", "A new report arrived automatically ✓")
-                    if (selectedReportIndex == null) render()
+                    notice = t("وصل تقرير يدوي جديد ✓", "A new manual report arrived ✓")
+                    if (section == Section.REPORTS && selectedReportIndex == null) render()
                 }
                 ReceiverReportService.KIND_MESSAGES -> {
                     notice = t("وصل رد جديد من موظف ✓", "A new employee reply arrived ✓")
@@ -525,39 +528,139 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun renderReports() {
-        val card = UiKit.card(this, p, 9)
         val binding = receiver.activeBinding()
-        card.addView(UiKit.sectionLabel(this, p, t(
-            "التقارير — ${binding?.storeName ?: "—"}",
-            "Reports — ${binding?.storeName ?: "—"}"
-        )))
-        card.addView(UiKit.button(this, p,
-            if (reportsInFlight) t("جاري تحديث التقارير…", "Refreshing reports…") else t("تحديث التقارير", "Refresh reports")
-        ).apply {
-            isEnabled = !reportsInFlight
-            setOnClickListener { refreshReports(silent = false) }
+        val storeId = binding?.storeId.orEmpty()
+        val live = receiver.cachedLiveDashboard(storeId)
+        val cachedAt = receiver.liveDashboardCachedAt(storeId)
+
+        content.addView(UiKit.card(this, p, 10).apply {
+            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t(
+                "المراقبة المباشرة — ${binding?.storeName ?: "—"}",
+                "Live monitor — ${binding?.storeName ?: "—"}"
+            )))
+            addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                "هذه الشاشة تقرأ بيانات المحل مباشرة من الخادم، ولا تحتاج إرسال تقرير يدوي.",
+                "This screen reads the store directly from the server; no manual report send is required."
+            )))
+            addView(UiKit.button(this@ReportReceiverActivity, p,
+                if (reportsInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الآن", "Refresh now")
+            ).apply {
+                isEnabled = !reportsInFlight
+                setOnClickListener { refreshReports(silent = false) }
+            })
+
+            if (live == null) {
+                addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                    "جاري تحميل شاشة المحل المباشرة…",
+                    "Loading the live store screen…"
+                ), 18f))
+            } else {
+                val last = if (cachedAt > 0L) formatTime(cachedAt) else t("الآن", "Now")
+                addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                    "✓ متصل بالخادم",
+                    "✓ Connected to server"
+                ), 19f))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "آخر تحديث: $last\nالفرع: ${live.branchId}",
+                    "Last update: $last\nBranch: ${live.branchId}"
+                )))
+                addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                    "الحاضرون الآن: ${live.presentCount}    •    الأجهزة المتصلة: ${live.connectedCount}",
+                    "Present now: ${live.presentCount}    •    Connected devices: ${live.connectedCount}"
+                ), 18f))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "حضور اليوم: ${live.checkIns}  •  انصراف اليوم: ${live.checkOuts}  •  إجمالي الحركات: ${live.todayEvents}",
+                    "Check-ins: ${live.checkIns}  •  Check-outs: ${live.checkOuts}  •  Total events: ${live.todayEvents}"
+                )))
+            }
         })
 
-        val items = receiver.receivedReports(binding?.storeId.orEmpty())
+        if (live != null) {
+            content.addView(UiKit.card(this, p, 9).apply {
+                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الحاضرون الآن", "Present now")))
+                if (live.present.isEmpty()) {
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                        "لا يوجد موظفون مسجلون كحاضرين حاليًا.",
+                        "No employees are currently marked present."
+                    )))
+                } else {
+                    live.present.forEach { employee ->
+                        val time = employee.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                            "✓ ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
+                                t(
+                                    "منذ: $time • الطريقة: ${receiverMethodLabel(employee.method)}",
+                                    "Since: $time • Method: ${receiverMethodLabel(employee.method)}"
+                                )
+                        ))
+                    }
+                }
+            })
+
+            content.addView(UiKit.card(this, p, 9).apply {
+                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الأجهزة المتصلة", "Connected devices")))
+                if (live.connected.isEmpty()) {
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                        "لا توجد أجهزة موظفين متصلة حديثًا.",
+                        "No employee devices were seen recently."
+                    )))
+                } else {
+                    live.connected.forEach { employee ->
+                        val seen = employee.lastSeenAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                            "● ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
+                                t("آخر اتصال: $seen", "Last seen: $seen")
+                        ))
+                    }
+                }
+            })
+
+            content.addView(UiKit.card(this, p, 9).apply {
+                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("آخر الحركات", "Recent activity")))
+                if (live.recent.isEmpty()) {
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                        "لا توجد حركات حضور اليوم.",
+                        "No attendance events today."
+                    )))
+                } else {
+                    live.recent.take(20).forEach { event ->
+                        val time = event.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                            "${event.employeeName.ifBlank { event.employeeId }} — ${event.action}\n" +
+                                "$time • ${receiverMethodLabel(event.method)}"
+                        ))
+                    }
+                }
+            })
+        }
+
+        val archive = UiKit.card(this, p, 9)
+        archive.addView(UiKit.sectionLabel(this, p, t(
+            "التقارير المرسلة يدويًا — أرشيف إضافي",
+            "Manually sent reports — optional archive"
+        )))
+        val items = receiver.receivedReports(storeId)
         val selected = selectedReportIndex?.let { items.getOrNull(it) }
         if (selected != null) {
-            card.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
-            card.addView(UiKit.subtitle(this, p, selected.reportText))
-            card.addView(UiKit.button(this, p, t("العودة لقائمة التقارير", "Back to reports"), false).apply {
+            archive.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
+            archive.addView(UiKit.subtitle(this, p, selected.reportText))
+            archive.addView(UiKit.button(this, p, t("العودة للأرشيف", "Back to archive"), false).apply {
                 setOnClickListener { selectedReportIndex = null; render() }
             })
+        } else if (items.isEmpty()) {
+            archive.addView(UiKit.subtitle(this, p, t(
+                "لا توجد تقارير يدوية، وهذا لا يؤثر على المراقبة المباشرة أعلاه.",
+                "No manual reports. This does not affect the live monitor above."
+            )))
         } else {
-            card.addView(UiKit.subtitle(this, p, if (items.isEmpty())
-                t("لا توجد تقارير مستلمة بعد.", "No reports received yet.")
-            else t("التقارير المستلمة: ${items.size}", "Received reports: ${items.size}")))
             items.take(30).forEachIndexed { index, x ->
                 val d = formatTime(x.receivedAt)
-                card.addView(UiKit.button(this, p, "${x.storeName} • ${x.branchId}\n${x.periodLabel} • $d", false).apply {
+                archive.addView(UiKit.button(this, p, "${x.periodLabel} • $d", false).apply {
                     setOnClickListener { selectedReportIndex = index; render() }
                 })
             }
         }
-        content.addView(card)
+        content.addView(archive)
     }
 
     private fun loadCachedEmployees(storeId: String) {
@@ -831,29 +934,44 @@ class ReportReceiverActivity : Activity() {
         if (alive()) render()
 
         Thread {
-            val result = CentralServerClient.receiverInbox(binding.serverUrl, receiver.receiverId, receiver.secret, storeId)
+            val dashboard = CentralServerClient.remoteDashboard(
+                binding.serverUrl, receiver.receiverId, receiver.secret, storeId
+            )
+            if (dashboard.isSuccess) {
+                receiver.cacheLiveDashboard(storeId, dashboard.getOrThrow())
+            }
+
+            val inbox = CentralServerClient.receiverInbox(
+                binding.serverUrl, receiver.receiverId, receiver.secret, storeId
+            )
+            if (inbox.isSuccess) {
+                inbox.getOrThrow().forEach { remote ->
+                    val item = receiver.receive(remote.packageText, storeId)
+                    if (item != null) {
+                        CentralServerClient.confirmRemoteReport(
+                            binding.serverUrl,
+                            receiver.receiverId,
+                            receiver.secret,
+                            item.transferId,
+                            item.confirmationCode,
+                            storeId
+                        )
+                    }
+                }
+            }
+
             runOnUiThread {
                 if (generation != reportsGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 reportsInFlight = false
                 if (!alive()) return@runOnUiThread
-                if (result.isSuccess) {
-                    result.getOrThrow().forEach { remote ->
-                        val item = receiver.receive(remote.packageText, storeId)
-                        if (item != null) {
-                            CentralServerClient.confirmRemoteReport(
-                                binding.serverUrl,
-                                receiver.receiverId,
-                                receiver.secret,
-                                item.transferId,
-                                item.confirmationCode,
-                                storeId
-                            )
-                        }
-                    }
+                if (dashboard.isSuccess || inbox.isSuccess) {
                     markActiveServerContact(storeId)
-                    if (!silent) notice = t("تم تحديث تقارير المحل ✓", "Store reports refreshed ✓")
+                    if (!silent) notice = t("تم تحديث شاشة المحل المباشرة ✓", "Live store screen refreshed ✓")
                 } else if (!silent) {
-                    showError(t("تعذر تحديث التقارير", "Could not refresh reports"), networkMessage(result.exceptionOrNull()))
+                    showError(
+                        t("تعذر تحديث شاشة المحل", "Could not refresh live store screen"),
+                        networkMessage(dashboard.exceptionOrNull() ?: inbox.exceptionOrNull())
+                    )
                 }
                 render()
             }
@@ -1052,6 +1170,23 @@ class ReportReceiverActivity : Activity() {
             .show()
     }
 
+
+    private fun receiverMethodLabel(raw: String): String {
+        val value = raw.trim().uppercase(Locale.US)
+        return when {
+            value.isBlank() -> t("غير محددة", "Unknown")
+            "BIOMETRIC" in value || "FINGER" in value -> t("بصمة الهاتف", "Device biometric")
+            "FACE" in value -> t("الوجه", "Face")
+            "VOICE" in value -> t("الصوت", "Voice")
+            "QR" in value -> "QR"
+            "BLE" in value || "BLUETOOTH" in value -> "Bluetooth"
+            "WIFI" in value || "LAN" in value -> "Wi‑Fi/LAN"
+            "GPS" in value -> "GPS"
+            "SUPERVISOR" in value -> t("إشراف", "Supervisor")
+            "PASSWORD" in value -> t("كلمة المرور", "Password")
+            else -> raw
+        }
+    }
 
     private fun formatTime(value: Long): String =
         SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(value))
