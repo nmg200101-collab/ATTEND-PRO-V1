@@ -188,6 +188,21 @@ class ReceiverReportService : Service() {
         val binding = receiver.storeBindings().firstOrNull {
             it.storeId == envelope.storeId && it.active && it.canReceiveReports
         } ?: return false
+
+        if (envelope.packageText.startsWith("APLIVE1:")) {
+            val applied = receiver.applyNearbyLiveEvent(
+                envelope.storeId,
+                binding.storeName,
+                binding.branchId,
+                envelope.packageText
+            )
+            if (applied) {
+                updateStatus("تم تحديث حركة ${binding.storeName} مباشرة عبر القرب ✓")
+                broadcastChanged(KIND_LIVE_DASHBOARD, envelope.storeId)
+            }
+            return applied
+        }
+
         val item = receiver.receive(envelope.packageText, envelope.storeId) ?: return false
         updateStatus("تم استلام تقرير من ${binding.storeName} عبر القرب ✓")
         broadcastChanged(KIND_REPORTS, envelope.storeId)
