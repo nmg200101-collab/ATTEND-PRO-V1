@@ -159,8 +159,8 @@ class ReceiverReportBleServer(
         advertiser.startAdvertising(
             AdvertiseSettings.Builder()
                 .setConnectable(true)
-                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
-                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
+                .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+                .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
                 .build(),
             AdvertiseData.Builder()
                 .setIncludeDeviceName(false)
