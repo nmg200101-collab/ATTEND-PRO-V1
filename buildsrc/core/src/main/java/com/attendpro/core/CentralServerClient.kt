@@ -118,6 +118,12 @@ object CentralServerClient {
         val connected: List<RemoteDashboardPerson>,
         val recent: List<RemoteDashboardEvent>
     )
+    data class RemoteDashboardRevision(
+        val token: String,
+        val attendanceRevision: Long,
+        val connectedCount: Int,
+        val serverNow: Long
+    )
     data class ReceiverCapabilities(
         val canReceiveReports: Boolean,
         val canMessageEmployees: Boolean,
@@ -998,6 +1004,26 @@ object CentralServerClient {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId); put("period", period)
         }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
         o.optString("reportText", "لا توجد بيانات")
+    }
+
+    fun remoteDashboardRevision(
+        serverUrl: String,
+        receiverId: String,
+        secret: String,
+        storeId: String = ""
+    ): Result<RemoteDashboardRevision> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/live-revision", "POST", JSONObject().apply {
+            put("receiverId", receiverId)
+            put("secret", secret)
+            if (storeId.isNotBlank()) put("storeId", storeId)
+        }, connectTimeoutMs = 2_000, readTimeoutMs = 2_500)
+        RemoteDashboardRevision(
+            token = o.optString("token", ""),
+            attendanceRevision = o.optLong("attendanceRevision", 0L),
+            connectedCount = o.optInt("connectedCount", 0),
+            serverNow = o.optLong("serverNow", 0L)
+        )
     }
 
     fun remoteDashboard(serverUrl: String, receiverId: String, secret: String, storeId: String = ""): Result<RemoteDashboard> = runCatching {
