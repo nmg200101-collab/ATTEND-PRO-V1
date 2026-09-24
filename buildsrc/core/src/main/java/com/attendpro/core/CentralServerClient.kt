@@ -87,7 +87,37 @@ object CentralServerClient {
     )
     data class AuditRecord(val id: Long, val action: String, val storeId: String, val details: String, val createdAt: Long)
     data class RemoteInboxItem(val transferId: String, val packageText: String)
-    data class RemoteDashboard(val storeName: String, val branchId: String, val text: String)
+    data class RemoteDashboardPerson(
+        val employeeId: String,
+        val employeeName: String,
+        val branchId: String = "",
+        val lastSeenAt: Long = 0L,
+        val method: String = "",
+        val timeEpochMillis: Long = 0L
+    )
+    data class RemoteDashboardEvent(
+        val employeeId: String,
+        val employeeName: String,
+        val action: String,
+        val method: String,
+        val timeEpochMillis: Long
+    )
+    data class RemoteDashboard(
+        val storeId: String,
+        val storeName: String,
+        val branchId: String,
+        val revision: Long,
+        val serverNow: Long,
+        val checkIns: Int,
+        val checkOuts: Int,
+        val todayEvents: Int,
+        val presentCount: Int,
+        val connectedCount: Int,
+        val lastSeen: String,
+        val present: List<RemoteDashboardPerson>,
+        val connected: List<RemoteDashboardPerson>,
+        val recent: List<RemoteDashboardEvent>
+    )
     data class ReceiverCapabilities(
         val canReceiveReports: Boolean,
         val canMessageEmployees: Boolean,
@@ -974,16 +1004,51 @@ object CentralServerClient {
         requireHttps(serverUrl)
         val o = request(serverUrl, "/api/v1/monitor/summary", "POST", JSONObject().apply {
             put("receiverId", receiverId); put("secret", secret); if (storeId.isNotBlank()) put("storeId", storeId)
-        })
-        val recent = o.optJSONArray("recent") ?: JSONArray()
-        val lines = mutableListOf<String>()
-        lines += "الحضور اليوم: ${o.optInt("checkIns", 0)} • الانصراف: ${o.optInt("checkOuts", 0)}"
-        lines += "حركات اليوم: ${o.optInt("todayEvents", 0)} • آخر اتصال: ${o.optString("lastSeen", "-")}"
-        if (recent.length() > 0) {
-            lines += ""; lines += "آخر الحركات:"
-            for (i in 0 until minOf(recent.length(), 10)) { val e = recent.getJSONObject(i); lines += "• ${e.optString("employeeName", e.optString("employeeId", ""))} — ${e.optString("action", "")} — ${e.optString("time", "")}" }
+        }, connectTimeoutMs = 3_000, readTimeoutMs = 4_000)
+
+        fun people(key: String): List<RemoteDashboardPerson> {
+            val a = o.optJSONArray(key) ?: JSONArray()
+            return (0 until a.length()).mapNotNull { i -> runCatching {
+                val x = a.getJSONObject(i)
+                RemoteDashboardPerson(
+                    employeeId = x.optString("employeeId", ""),
+                    employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                    branchId = x.optString("branchId", ""),
+                    lastSeenAt = x.optLong("lastSeenAt", 0L),
+                    method = x.optString("method", ""),
+                    timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+                )
+            }.getOrNull() }.filter { it.employeeId.isNotBlank() }
         }
-        RemoteDashboard(o.optString("storeName", "ATTEND PRO"), o.optString("branchId", "MAIN"), lines.joinToString("\n"))
+
+        val recentJson = o.optJSONArray("recent") ?: JSONArray()
+        val recent = (0 until recentJson.length()).mapNotNull { i -> runCatching {
+            val x = recentJson.getJSONObject(i)
+            RemoteDashboardEvent(
+                employeeId = x.optString("employeeId", ""),
+                employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                action = x.optString("action", ""),
+                method = x.optString("method", ""),
+                timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+            )
+        }.getOrNull() }
+
+        RemoteDashboard(
+            storeId = o.optString("storeId", storeId),
+            storeName = o.optString("storeName", "ATTEND PRO"),
+            branchId = o.optString("branchId", "MAIN"),
+            revision = o.optLong("revision", 0L),
+            serverNow = o.optLong("serverNow", 0L),
+            checkIns = o.optInt("checkIns", 0),
+            checkOuts = o.optInt("checkOuts", 0),
+            todayEvents = o.optInt("todayEvents", 0),
+            presentCount = o.optInt("presentCount", 0),
+            connectedCount = o.optInt("connectedCount", 0),
+            lastSeen = o.optString("lastSeen", ""),
+            present = people("present"),
+            connected = people("connected"),
+            recent = recent
+        )
     }
 
     fun syncEventsCentral(serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, events: List<AttendanceEvent>): Result<Set<String>> = runCatching {
