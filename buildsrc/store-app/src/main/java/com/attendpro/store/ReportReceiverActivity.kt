@@ -39,6 +39,7 @@ import java.util.Locale
  */
 class ReportReceiverActivity : Activity() {
     private enum class Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }
+    private enum class LivePanel { PRESENT, CONNECTED, DAILY, RECENT }
 
     private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
 
@@ -51,6 +52,7 @@ class ReportReceiverActivity : Activity() {
     private var section = Section.STORES
     private var showIdentityQr = false
     private var selectedReportIndex: Int? = null
+    private var selectedLivePanel: LivePanel? = null
     private var messageEmployees: List<CentralServerClient.ReceiverEmployee> = emptyList()
     private var messageReplies: List<ReplyRow> = emptyList()
     private var selectedMessageEmployeeId: String? = null
@@ -120,6 +122,8 @@ class ReportReceiverActivity : Activity() {
             ?: if (receiver.storeBindings().size > 1) Section.STORES else Section.STATUS
         selectedReportIndex = savedInstanceState?.takeIf { it.containsKey(KEY_REPORT_INDEX) }
             ?.getInt(KEY_REPORT_INDEX)
+        selectedLivePanel = savedInstanceState?.getString(KEY_LIVE_PANEL)
+            ?.let { runCatching { LivePanel.valueOf(it) }.getOrNull() }
         handleIncoming(intent)
         installUiOnce()
         render()
@@ -128,6 +132,7 @@ class ReportReceiverActivity : Activity() {
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_SECTION, section.name)
         selectedReportIndex?.let { outState.putInt(KEY_REPORT_INDEX, it) }
+        selectedLivePanel?.let { outState.putString(KEY_LIVE_PANEL, it.name) }
         super.onSaveInstanceState(outState)
     }
 
@@ -274,6 +279,7 @@ class ReportReceiverActivity : Activity() {
                 section = target
                 notice = ""
                 selectedReportIndex = null
+                selectedLivePanel = null
                 render()
                 if (target == Section.MESSAGES || target == Section.REPORTS) {
                     ReceiverReportService.requestImmediateSync(this@ReportReceiverActivity)
@@ -538,106 +544,195 @@ class ReportReceiverActivity : Activity() {
         val storeId = binding?.storeId.orEmpty()
         val live = receiver.cachedLiveDashboard(storeId)
         val cachedAt = receiver.liveDashboardCachedAt(storeId)
+        val transport = receiver.liveTransport(storeId)
+        val transportAt = receiver.liveTransportAt(storeId)
+        val transportText = liveTransportLabel(transport)
 
         content.addView(UiKit.card(this, p, 10).apply {
             addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t(
                 "المراقبة المباشرة — ${binding?.storeName ?: "—"}",
                 "Live monitor — ${binding?.storeName ?: "—"}"
             )))
+            val last = cachedAt.takeIf { it > 0L }?.let { formatTime(it) } ?: t("لم تصل بيانات بعد", "No data yet")
+            val pathTime = transportAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+            addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                "مسار البيانات: $transportText",
+                "Data path: $transportText"
+            ), 19f))
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "هذه الشاشة تقرأ بيانات المحل مباشرة من الخادم، ولا تحتاج إرسال تقرير يدوي.",
-                "This screen reads the store directly from the server; no manual report send is required."
+                "آخر تحديث: $last • آخر وصول عبر هذا المسار: $pathTime\nتظل آخر بيانات محفوظة ظاهرة حتى عند ضعف الإنترنت.",
+                "Last update: $last • Last arrival on this path: $pathTime\nThe last cached data stays visible when connectivity is weak."
             )))
             addView(UiKit.button(this@ReportReceiverActivity, p,
-                if (reportsInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث الآن", "Refresh now")
+                if (reportsInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث من الخادم الآن", "Refresh from server now"),
+                false
             ).apply {
                 isEnabled = !reportsInFlight
                 setOnClickListener { refreshReports(silent = false) }
             })
-
-            if (live == null) {
-                addView(UiKit.title(this@ReportReceiverActivity, p, t(
-                    "جاري تحميل شاشة المحل المباشرة…",
-                    "Loading the live store screen…"
-                ), 18f))
-            } else {
-                val last = if (cachedAt > 0L) formatTime(cachedAt) else t("الآن", "Now")
-                addView(UiKit.title(this@ReportReceiverActivity, p, t(
-                    "✓ متصل بالخادم",
-                    "✓ Connected to server"
-                ), 19f))
-                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                    "آخر تحديث: $last\nالفرع: ${live.branchId}",
-                    "Last update: $last\nBranch: ${live.branchId}"
-                )))
-                addView(UiKit.title(this@ReportReceiverActivity, p, t(
-                    "الحاضرون الآن: ${live.presentCount}    •    الأجهزة المتصلة: ${live.connectedCount}",
-                    "Present now: ${live.presentCount}    •    Connected devices: ${live.connectedCount}"
-                ), 18f))
-                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                    "حضور اليوم: ${live.checkIns}  •  انصراف اليوم: ${live.checkOuts}  •  إجمالي الحركات: ${live.todayEvents}",
-                    "Check-ins: ${live.checkIns}  •  Check-outs: ${live.checkOuts}  •  Total events: ${live.todayEvents}"
-                )))
-            }
         })
 
-        if (live != null) {
+        if (live == null) {
             content.addView(UiKit.card(this, p, 9).apply {
-                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الحاضرون الآن", "Present now")))
-                if (live.present.isEmpty()) {
-                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                        "لا يوجد موظفون مسجلون كحاضرين حاليًا.",
-                        "No employees are currently marked present."
-                    )))
-                } else {
-                    live.present.forEach { employee ->
-                        val time = employee.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
-                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
-                            "✓ ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
-                                t(
-                                    "منذ: $time • الطريقة: ${receiverMethodLabel(employee.method)}",
-                                    "Since: $time • Method: ${receiverMethodLabel(employee.method)}"
-                                )
-                        ))
-                    }
-                }
+                addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                    "جاري انتظار أول تحديث مباشر…",
+                    "Waiting for the first live update…"
+                ), 18f))
+                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
+                    "لا تحتاج إلى «إرسال لهاتف مصرح». ستظهر الحركة تلقائيًا عبر Bluetooth أو Wi‑Fi/نقطة بث أو الخادم.",
+                    "You do not need a manual report send. Activity will arrive automatically over Bluetooth, Wi‑Fi/hotspot, or the server."
+                )))
             })
+        } else {
+            fun row(): LinearLayout = LinearLayout(this@ReportReceiverActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                weightSum = 2f
+                layoutDirection = if (AppLanguage.isEnglish(this@ReportReceiverActivity))
+                    View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            }
 
-            content.addView(UiKit.card(this, p, 9).apply {
-                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("الأجهزة المتصلة", "Connected devices")))
-                if (live.connected.isEmpty()) {
-                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                        "لا توجد أجهزة موظفين متصلة حديثًا.",
-                        "No employee devices were seen recently."
-                    )))
-                } else {
-                    live.connected.forEach { employee ->
-                        val seen = employee.lastSeenAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
-                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
-                            "● ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
-                                t("آخر اتصال: $seen", "Last seen: $seen")
-                        ))
+            fun addTile(
+                parent: LinearLayout,
+                panel: LivePanel,
+                titleText: String,
+                valueText: String,
+                subtitleText: String
+            ) {
+                val tile = UiKit.card(this@ReportReceiverActivity, p, 9).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                        marginStart = UiKit.dp(this@ReportReceiverActivity, 5)
+                        marginEnd = UiKit.dp(this@ReportReceiverActivity, 5)
+                    }
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, titleText).apply { gravity = Gravity.CENTER })
+                    addView(UiKit.title(this@ReportReceiverActivity, p, valueText, 23f).apply { gravity = Gravity.CENTER })
+                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, subtitleText).apply {
+                        gravity = Gravity.CENTER
+                        maxLines = 2
+                    })
+                    UiKit.makeInteractive(this, this@ReportReceiverActivity, p)
+                    setOnClickListener {
+                        selectedLivePanel = panel
+                        render()
                     }
                 }
-            })
+                parent.addView(tile)
+            }
 
-            content.addView(UiKit.card(this, p, 9).apply {
-                addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("آخر الحركات", "Recent activity")))
-                if (live.recent.isEmpty()) {
-                    addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                        "لا توجد حركات حضور اليوم.",
-                        "No attendance events today."
-                    )))
-                } else {
-                    live.recent.take(20).forEach { event ->
-                        val time = event.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
-                        addView(UiKit.subtitle(this@ReportReceiverActivity, p,
-                            "${event.employeeName.ifBlank { event.employeeId }} — ${event.action}\n" +
-                                "$time • ${receiverMethodLabel(event.method)}"
-                        ))
+            val firstRow = row()
+            addTile(
+                firstRow,
+                LivePanel.PRESENT,
+                t("الموظفون الحاضرون", "Present employees"),
+                live.presentCount.toString(),
+                t("اضغط لعرض الأسماء ووقت الحضور", "Tap for names and check-in times")
+            )
+            addTile(
+                firstRow,
+                LivePanel.CONNECTED,
+                t("الأجهزة المتصلة", "Connected devices"),
+                live.connectedCount.toString(),
+                t("اضغط لعرض الأجهزة وآخر اتصال", "Tap for devices and last seen")
+            )
+            content.addView(firstRow)
+
+            val latest = live.recent.firstOrNull()
+            val latestValue = latest?.let {
+                "${it.employeeName.ifBlank { it.employeeId }} • ${it.action}"
+            } ?: t("لا توجد حركة", "No activity")
+            val secondRow = row()
+            addTile(
+                secondRow,
+                LivePanel.DAILY,
+                t("التقرير اليومي", "Daily report"),
+                "${live.todayEvents}",
+                t(
+                    "${live.checkIns} حضور • ${live.checkOuts} انصراف",
+                    "${live.checkIns} check-ins • ${live.checkOuts} check-outs"
+                )
+            )
+            addTile(
+                secondRow,
+                LivePanel.RECENT,
+                t("آخر حركة", "Latest activity"),
+                latestValue,
+                latest?.timeEpochMillis?.takeIf { it > 0L }?.let { formatTime(it) } ?: t("لا توجد حركة اليوم", "No activity today")
+            )
+            content.addView(secondRow)
+
+            selectedLivePanel?.let { panel ->
+                content.addView(UiKit.card(this, p, 10).apply {
+                    when (panel) {
+                        LivePanel.PRESENT -> {
+                            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("تفاصيل الموظفين الحاضرين", "Present employee details")))
+                            if (live.present.isEmpty()) {
+                                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("لا يوجد موظفون حاضرون الآن.", "No employees are present now.")))
+                            } else {
+                                live.present.forEach { employee ->
+                                    val time = employee.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                                    addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                                        "✓ ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
+                                            t("الحضور: $time • الطريقة: ${receiverMethodLabel(employee.method)}",
+                                                "Check-in: $time • Method: ${receiverMethodLabel(employee.method)}")
+                                    ))
+                                }
+                            }
+                        }
+                        LivePanel.CONNECTED -> {
+                            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("تفاصيل الأجهزة المتصلة", "Connected device details")))
+                            if (live.connected.isEmpty()) {
+                                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("لا توجد أجهزة موظفين متصلة حديثًا.", "No employee devices were seen recently.")))
+                            } else {
+                                live.connected.forEach { employee ->
+                                    val seen = employee.lastSeenAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                                    addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                                        "● ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
+                                            t("الفرع: ${employee.branchId.ifBlank { "—" }} • آخر اتصال: $seen",
+                                                "Branch: ${employee.branchId.ifBlank { "—" }} • Last seen: $seen")
+                                    ))
+                                }
+                            }
+                        }
+                        LivePanel.DAILY -> {
+                            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("تفاصيل التقرير اليومي", "Daily report details")))
+                            addView(UiKit.title(this@ReportReceiverActivity, p, t(
+                                "الحضور: ${live.checkIns} • الانصراف: ${live.checkOuts} • الإجمالي: ${live.todayEvents}",
+                                "Check-ins: ${live.checkIns} • Check-outs: ${live.checkOuts} • Total: ${live.todayEvents}"
+                            ), 18f))
+                            if (live.recent.isEmpty()) {
+                                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("لا توجد حركات اليوم.", "No activity today.")))
+                            } else {
+                                live.recent.take(30).forEach { event ->
+                                    val time = event.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                                    addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                                        "${event.employeeName.ifBlank { event.employeeId }} — ${event.action}\n$time • ${receiverMethodLabel(event.method)}"
+                                    ))
+                                }
+                            }
+                        }
+                        LivePanel.RECENT -> {
+                            addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t("آخر الحركات", "Recent activity")))
+                            if (live.recent.isEmpty()) {
+                                addView(UiKit.subtitle(this@ReportReceiverActivity, p, t("لا توجد حركات اليوم.", "No activity today.")))
+                            } else {
+                                live.recent.take(30).forEach { event ->
+                                    val time = event.timeEpochMillis.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
+                                    addView(UiKit.subtitle(this@ReportReceiverActivity, p,
+                                        "${event.employeeName.ifBlank { event.employeeId }} — ${event.action}\n$time • ${receiverMethodLabel(event.method)}"
+                                    ))
+                                }
+                            }
+                        }
                     }
-                }
-            })
+                    addView(UiKit.button(this@ReportReceiverActivity, p, t("إغلاق التفاصيل", "Close details"), false).apply {
+                        setOnClickListener {
+                            selectedLivePanel = null
+                            render()
+                        }
+                    })
+                })
+            }
         }
 
         content.addView(UiKit.card(this, p, 8).apply {
@@ -647,6 +742,7 @@ class ReportReceiverActivity : Activity() {
             ), false).apply {
                 setOnClickListener {
                     selectedReportIndex = null
+                    selectedLivePanel = null
                     section = Section.ARCHIVE
                     notice = ""
                     render()
@@ -995,6 +1091,7 @@ class ReportReceiverActivity : Activity() {
                 if (!alive()) return@runOnUiThread
                 if (dashboard.isSuccess) {
                     markActiveServerContact(storeId)
+                    receiver.markLiveTransport(storeId, "SERVER", "الخادم")
                     if (!silent) notice = t("تم تحديث المراقبة المباشرة ✓", "Live monitor refreshed ✓")
                 } else if (!silent) {
                     showError(
@@ -1043,9 +1140,9 @@ class ReportReceiverActivity : Activity() {
                     markActiveServerContact(storeId)
                     if (!silent) notice = t("تم تحديث الأرشيف ✓", "Archive refreshed ✓")
                 } else if (!silent) {
-                    showError(
-                        t("تعذر تحديث الأرشيف", "Could not refresh archive"),
-                        networkMessage(inbox.exceptionOrNull())
+                    notice = t(
+                        "تعذر تحديث الأرشيف الآن — آخر أرشيف محفوظ ما زال متاحًا. " + networkMessage(inbox.exceptionOrNull()),
+                        "Archive refresh is unavailable right now — the last saved archive remains available. " + networkMessage(inbox.exceptionOrNull())
                     )
                 }
                 render()
@@ -1246,6 +1343,13 @@ class ReportReceiverActivity : Activity() {
     }
 
 
+    private fun liveTransportLabel(raw: String): String = when (raw.trim().uppercase(Locale.US)) {
+        "BLE" -> "Bluetooth"
+        "LAN" -> t("Wi‑Fi / نقطة بث (LAN)", "Wi‑Fi / hotspot (LAN)")
+        "SERVER" -> t("الخادم", "Server")
+        else -> t("ذاكرة الهاتف / لم يحدد بعد", "Phone cache / not determined yet")
+    }
+
     private fun receiverMethodLabel(raw: String): String {
         val value = raw.trim().uppercase(Locale.US)
         return when {
@@ -1271,5 +1375,6 @@ class ReportReceiverActivity : Activity() {
         private const val REQ_BLUETOOTH_RECEIVER = 7302
         private const val KEY_SECTION = "receiver_section"
         private const val KEY_REPORT_INDEX = "receiver_report_index"
+        private const val KEY_LIVE_PANEL = "receiver_live_panel_v147"
     }
 }
