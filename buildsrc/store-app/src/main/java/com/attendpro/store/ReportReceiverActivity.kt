@@ -290,6 +290,9 @@ class ReportReceiverActivity : Activity() {
     }
 
     private fun renderStores() {
+        if (!ReceiverReportService.nearbyPairingActive(this)) {
+            ReceiverReportService.enableNearbyPairing(this, 180_000L)
+        }
         val bindings = receiver.storeBindings()
         val activeId = receiver.activeBinding()?.storeId.orEmpty()
         content.addView(UiKit.card(this, p, 9).apply {
