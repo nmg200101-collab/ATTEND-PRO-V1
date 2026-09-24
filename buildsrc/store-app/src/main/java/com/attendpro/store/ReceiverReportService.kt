@@ -27,7 +27,7 @@ class ReceiverReportService : Service() {
         private const val NOTIFICATION_ID = 2143
         private const val LOOP_MS = 750L
         private const val REPORT_POLL_MS = 1_500L
-        private const val AUTO_REPORT_POLL_MS = 2_000L
+        private const val LIVE_DASHBOARD_POLL_MS = 1_250L
         private const val EMPLOYEE_POLL_MS = 2_000L
         private const val MESSAGE_POLL_MS = 2_500L
         private const val OUTBOX_POLL_MS = 750L
@@ -41,6 +41,7 @@ class ReceiverReportService : Service() {
         const val EXTRA_KIND = "kind"
         const val EXTRA_STORE_ID = "storeId"
         const val KIND_REPORTS = "reports"
+        const val KIND_LIVE_DASHBOARD = "live_dashboard"
         const val KIND_MESSAGES = "messages"
         const val KIND_EMPLOYEES = "employees"
         const val KIND_OUTBOX = "outbox"
@@ -87,7 +88,7 @@ class ReceiverReportService : Service() {
     private lateinit var receiver: ReportReceiverStore
     private val running = AtomicBoolean(false)
     private val reportsInFlight = AtomicBoolean(false)
-    private val autoReportsInFlight = AtomicBoolean(false)
+    private val liveDashboardInFlight = AtomicBoolean(false)
     private val employeesInFlight = AtomicBoolean(false)
     private val messagesInFlight = AtomicBoolean(false)
     private val outboxInFlight = AtomicBoolean(false)
@@ -96,7 +97,7 @@ class ReceiverReportService : Service() {
     private var lanServer: ReceiverReportLanServer? = null
     private var bleServer: ReceiverReportBleServer? = null
     @Volatile private var nextReportPollAt = 0L
-    @Volatile private var nextAutoReportPollAt = 0L
+    @Volatile private var nextLiveDashboardPollAt = 0L
     @Volatile private var nextEmployeePollAt = 0L
     @Volatile private var nextMessagePollAt = 0L
     @Volatile private var nextOutboxPollAt = 0L
@@ -115,7 +116,7 @@ class ReceiverReportService : Service() {
         startTransports()
         if (intent?.action == ACTION_SYNC_NOW) {
             nextReportPollAt = 0L
-            nextAutoReportPollAt = 0L
+            nextLiveDashboardPollAt = 0L
             nextEmployeePollAt = 0L
             nextMessagePollAt = 0L
             nextOutboxPollAt = 0L
@@ -174,7 +175,7 @@ class ReceiverReportService : Service() {
         receiver.upsertBinding(grant)
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, 0L).apply()
         nextReportPollAt = 0L
-        nextAutoReportPollAt = 0L
+        nextLiveDashboardPollAt = 0L
         nextEmployeePollAt = 0L
         nextMessagePollAt = 0L
         nextOutboxPollAt = 0L
@@ -199,7 +200,7 @@ class ReceiverReportService : Service() {
             runCatching {
                 if (now >= nextMaintenanceAt) launchMaintenance(now)
                 if (now >= nextReportPollAt) launchReportPoll(now)
-                if (now >= nextAutoReportPollAt) launchAutoReportPoll(now)
+                if (now >= nextLiveDashboardPollAt) launchLiveDashboardPoll(now)
                 if (now >= nextEmployeePollAt) launchEmployeePoll(now)
                 if (now >= nextMessagePollAt) launchMessagePoll(now)
                 if (now >= nextOutboxPollAt) launchOutbox(now)
@@ -241,11 +242,11 @@ class ReceiverReportService : Service() {
         }
     }
 
-    private fun launchAutoReportPoll(now: Long) {
-        nextAutoReportPollAt = now + AUTO_REPORT_POLL_MS
-        if (!autoReportsInFlight.compareAndSet(false, true)) return
-        thread(name = "receiver-auto-reports-v143", isDaemon = true) {
-            try { pollAutomaticReports() } finally { autoReportsInFlight.set(false) }
+    private fun launchLiveDashboardPoll(now: Long) {
+        nextLiveDashboardPollAt = now + LIVE_DASHBOARD_POLL_MS
+        if (!liveDashboardInFlight.compareAndSet(false, true)) return
+        thread(name = "receiver-live-dashboard-v145", isDaemon = true) {
+            try { pollLiveDashboard() } finally { liveDashboardInFlight.set(false) }
         }
     }
 
@@ -323,30 +324,22 @@ class ReceiverReportService : Service() {
             }
     }
 
-    private fun pollAutomaticReports() {
-        receiver.storeBindings()
-            .filter { it.active && it.canReceiveReports && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
-            .forEach { binding ->
-                val result = CentralServerClient.remoteReport(
-                    binding.serverUrl,
-                    receiver.receiverId,
-                    receiver.secret,
-                    "TODAY",
-                    binding.storeId
-                )
-                if (result.isFailure) return@forEach
-                val changed = receiver.cacheAutomaticReport(
-                    binding.storeId,
-                    binding.storeName,
-                    binding.branchId,
-                    "تقرير اليوم — تلقائي",
-                    result.getOrThrow()
-                )
-                if (changed) {
-                    updateStatus("تم تحديث تقرير اليوم تلقائيًا ✓")
-                    broadcastChanged(KIND_REPORTS, binding.storeId)
-                }
-            }
+    private fun pollLiveDashboard() {
+        val binding = receiver.activeBinding()
+            ?.takeIf { it.active && it.canReceiveReports && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
+            ?: return
+        val result = CentralServerClient.remoteDashboard(
+            binding.serverUrl,
+            receiver.receiverId,
+            receiver.secret,
+            binding.storeId
+        )
+        if (result.isFailure) return
+        val changed = receiver.cacheLiveDashboard(binding.storeId, result.getOrThrow())
+        if (changed) {
+            updateStatus("تم تحديث شاشة المحل المباشرة ✓")
+            broadcastChanged(KIND_LIVE_DASHBOARD, binding.storeId)
+        }
     }
 
     private fun pollServerEmployees() {
