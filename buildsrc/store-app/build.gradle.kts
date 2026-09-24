@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 146
-        versionName = "2.0.0-RC29-V146-RECEIVER-LIVE-DASHBOARD-HARD-CUTOVER"
+        versionName = "2.0.0-RC29-V146-RECEIVER-FINAL-PERFORMANCE-LOCK"
     }
 
     compileOptions {
