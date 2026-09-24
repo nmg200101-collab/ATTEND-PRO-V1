@@ -626,6 +626,120 @@ class ReportReceiverStore(context: Context) {
         prefs.edit().putString("receiverOutgoingMessagesV142", a.toString()).commit()
     }
 
+    fun cachedLiveDashboard(storeId: String): CentralServerClient.RemoteDashboard? {
+        if (storeId.isBlank()) return null
+        val raw = prefs.getString("receiverLiveDashboardV145:$storeId", "").orEmpty()
+        if (raw.isBlank()) return null
+        return runCatching {
+            val o = JSONObject(raw)
+            fun people(key: String): List<CentralServerClient.RemoteDashboardPerson> {
+                val a = o.optJSONArray(key) ?: JSONArray()
+                return (0 until a.length()).mapNotNull { i -> runCatching {
+                    val x = a.getJSONObject(i)
+                    CentralServerClient.RemoteDashboardPerson(
+                        employeeId = x.optString("employeeId", ""),
+                        employeeName = x.optString("employeeName", ""),
+                        branchId = x.optString("branchId", ""),
+                        lastSeenAt = x.optLong("lastSeenAt", 0L),
+                        method = x.optString("method", ""),
+                        timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+                    )
+                }.getOrNull() }.filter { it.employeeId.isNotBlank() }
+            }
+            val recentArray = o.optJSONArray("recent") ?: JSONArray()
+            val recent = (0 until recentArray.length()).mapNotNull { i -> runCatching {
+                val x = recentArray.getJSONObject(i)
+                CentralServerClient.RemoteDashboardEvent(
+                    employeeId = x.optString("employeeId", ""),
+                    employeeName = x.optString("employeeName", ""),
+                    action = x.optString("action", ""),
+                    method = x.optString("method", ""),
+                    timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+                )
+            }.getOrNull() }
+            CentralServerClient.RemoteDashboard(
+                storeId = o.optString("storeId", storeId),
+                storeName = o.optString("storeName", "ATTEND PRO"),
+                branchId = o.optString("branchId", "MAIN"),
+                revision = o.optLong("revision", 0L),
+                serverNow = o.optLong("serverNow", 0L),
+                checkIns = o.optInt("checkIns", 0),
+                checkOuts = o.optInt("checkOuts", 0),
+                todayEvents = o.optInt("todayEvents", 0),
+                presentCount = o.optInt("presentCount", 0),
+                connectedCount = o.optInt("connectedCount", 0),
+                lastSeen = o.optString("lastSeen", ""),
+                present = people("present"),
+                connected = people("connected"),
+                recent = recent
+            )
+        }.getOrNull()
+    }
+
+    fun liveDashboardCachedAt(storeId: String): Long =
+        if (storeId.isBlank()) 0L else prefs.getLong("receiverLiveDashboardCachedAtV145:$storeId", 0L)
+
+    @Synchronized
+    fun cacheLiveDashboard(storeId: String, dashboard: CentralServerClient.RemoteDashboard): Boolean {
+        if (storeId.isBlank()) return false
+        val old = cachedLiveDashboard(storeId)
+        val unchanged = old != null &&
+            old.revision == dashboard.revision &&
+            old.checkIns == dashboard.checkIns &&
+            old.checkOuts == dashboard.checkOuts &&
+            old.todayEvents == dashboard.todayEvents &&
+            old.presentCount == dashboard.presentCount &&
+            old.connectedCount == dashboard.connectedCount
+        if (unchanged) {
+            prefs.edit().putLong("receiverLiveDashboardCachedAtV145:$storeId", System.currentTimeMillis()).apply()
+            return false
+        }
+
+        fun people(items: List<CentralServerClient.RemoteDashboardPerson>): JSONArray = JSONArray().apply {
+            items.forEach { p -> put(JSONObject().apply {
+                put("employeeId", p.employeeId)
+                put("employeeName", p.employeeName)
+                put("branchId", p.branchId)
+                put("lastSeenAt", p.lastSeenAt)
+                put("method", p.method)
+                put("timeEpochMillis", p.timeEpochMillis)
+            }) }
+        }
+
+        val recent = JSONArray().apply {
+            dashboard.recent.forEach { e -> put(JSONObject().apply {
+                put("employeeId", e.employeeId)
+                put("employeeName", e.employeeName)
+                put("action", e.action)
+                put("method", e.method)
+                put("timeEpochMillis", e.timeEpochMillis)
+            }) }
+        }
+
+        val raw = JSONObject().apply {
+            put("storeId", dashboard.storeId.ifBlank { storeId })
+            put("storeName", dashboard.storeName)
+            put("branchId", dashboard.branchId)
+            put("revision", dashboard.revision)
+            put("serverNow", dashboard.serverNow)
+            put("checkIns", dashboard.checkIns)
+            put("checkOuts", dashboard.checkOuts)
+            put("todayEvents", dashboard.todayEvents)
+            put("presentCount", dashboard.presentCount)
+            put("connectedCount", dashboard.connectedCount)
+            put("lastSeen", dashboard.lastSeen)
+            put("present", people(dashboard.present))
+            put("connected", people(dashboard.connected))
+            put("recent", recent)
+        }.toString()
+
+        prefs.edit()
+            .putString("receiverLiveDashboardV145:$storeId", raw)
+            .putLong("receiverLiveDashboardCachedAtV145:$storeId", System.currentTimeMillis())
+            .commit()
+        return true
+    }
+
     @Synchronized
     fun cacheAutomaticReport(
         storeId: String,
