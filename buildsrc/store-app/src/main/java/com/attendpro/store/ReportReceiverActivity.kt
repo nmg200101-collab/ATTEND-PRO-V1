@@ -38,7 +38,7 @@ import java.util.Locale
  * cannot replace newer state.
  */
 class ReportReceiverActivity : Activity() {
-    private enum class Section { STORES, STATUS, REPORTS, MESSAGES }
+    private enum class Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }
 
     private data class ReplyRow(val employeeId: String, val body: String, val createdAt: Long)
 
@@ -71,8 +71,10 @@ class ReportReceiverActivity : Activity() {
                     if (section == Section.REPORTS && selectedReportIndex == null) render()
                 }
                 ReceiverReportService.KIND_REPORTS -> {
-                    notice = t("وصل تقرير يدوي جديد ✓", "A new manual report arrived ✓")
-                    if (section == Section.REPORTS && selectedReportIndex == null) render()
+                    if (section == Section.ARCHIVE && selectedReportIndex == null) {
+                        notice = t("وصل تقرير يدوي جديد إلى الأرشيف ✓", "A new manual report arrived in the archive ✓")
+                        render()
+                    }
                 }
                 ReceiverReportService.KIND_MESSAGES -> {
                     notice = t("وصل رد جديد من موظف ✓", "A new employee reply arrived ✓")
@@ -231,6 +233,7 @@ class ReportReceiverActivity : Activity() {
             Section.STATUS -> renderStatus()
             Section.REPORTS -> renderReports()
             Section.MESSAGES -> renderMessages()
+            Section.ARCHIVE -> renderArchive()
         }
     }
 
@@ -244,8 +247,8 @@ class ReportReceiverActivity : Activity() {
                 setTextColor(android.graphics.Color.WHITE)
             })
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "${active?.storeName ?: "غير مرتبط"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • المحلات المرتبطة: $storeCount",
-                "${active?.storeName ?: "Not linked"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • Linked stores: $storeCount"
+                "${active?.storeName ?: "غير مرتبط"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • المحلات المرتبطة: $storeCount\nV${BuildConfig.VERSION_CODE} LIVE",
+                "${active?.storeName ?: "Not linked"} • ${active?.branchId ?: "—"}\n${receiver.resolvedReceiverName()} • Linked stores: $storeCount\nV${BuildConfig.VERSION_CODE} LIVE"
             )).apply {
                 gravity = Gravity.CENTER
                 setTextColor(android.graphics.Color.WHITE)
@@ -285,7 +288,7 @@ class ReportReceiverActivity : Activity() {
             section = Section.STORES
             return
         }
-        if (section == Section.REPORTS && !receiver.canReceiveReports) section = Section.STATUS
+        if ((section == Section.REPORTS || section == Section.ARCHIVE) && !receiver.canReceiveReports) section = Section.STATUS
         if (section == Section.MESSAGES && !receiver.canMessageEmployees) section = Section.STATUS
     }
 
@@ -637,33 +640,76 @@ class ReportReceiverActivity : Activity() {
             })
         }
 
-        val archive = UiKit.card(this, p, 9)
-        archive.addView(UiKit.sectionLabel(this, p, t(
-            "التقارير المرسلة يدويًا — أرشيف إضافي",
-            "Manually sent reports — optional archive"
+        content.addView(UiKit.card(this, p, 8).apply {
+            addView(UiKit.button(this@ReportReceiverActivity, p, t(
+                "أرشيف التقارير اليدوية",
+                "Manual report archive"
+            ), false).apply {
+                setOnClickListener {
+                    selectedReportIndex = null
+                    section = Section.ARCHIVE
+                    notice = ""
+                    render()
+                    refreshArchive(silent = true)
+                }
+            })
+        })
+    }
+
+    private fun renderArchive() {
+        val binding = receiver.activeBinding()
+        val storeId = binding?.storeId.orEmpty()
+        val card = UiKit.card(this, p, 9)
+        card.addView(UiKit.sectionLabel(this, p, t(
+            "أرشيف التقارير اليدوية — ${binding?.storeName ?: "—"}",
+            "Manual report archive — ${binding?.storeName ?: "—"}"
         )))
+        card.addView(UiKit.subtitle(this, p, t(
+            "هذا الأرشيف اختياري ولا يتحكم في شاشة المراقبة المباشرة.",
+            "This archive is optional and does not control the live monitor."
+        )))
+        card.addView(UiKit.button(this, p,
+            if (reportsInFlight) t("جاري تحديث الأرشيف…", "Refreshing archive…")
+            else t("تحديث الأرشيف", "Refresh archive")
+        ).apply {
+            isEnabled = !reportsInFlight
+            setOnClickListener { refreshArchive(silent = false) }
+        })
+
         val items = receiver.receivedReports(storeId)
         val selected = selectedReportIndex?.let { items.getOrNull(it) }
         if (selected != null) {
-            archive.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
-            archive.addView(UiKit.subtitle(this, p, selected.reportText))
-            archive.addView(UiKit.button(this, p, t("العودة للأرشيف", "Back to archive"), false).apply {
+            card.addView(UiKit.title(this, p, "${selected.storeName} — ${selected.periodLabel}", 18f))
+            card.addView(UiKit.subtitle(this, p, selected.reportText))
+            card.addView(UiKit.button(this, p, t("العودة للأرشيف", "Back to archive"), false).apply {
                 setOnClickListener { selectedReportIndex = null; render() }
             })
         } else if (items.isEmpty()) {
-            archive.addView(UiKit.subtitle(this, p, t(
-                "لا توجد تقارير يدوية، وهذا لا يؤثر على المراقبة المباشرة أعلاه.",
-                "No manual reports. This does not affect the live monitor above."
+            card.addView(UiKit.subtitle(this, p, t(
+                "لا توجد تقارير يدوية محفوظة.",
+                "No manual reports are stored."
             )))
         } else {
             items.take(30).forEachIndexed { index, x ->
                 val d = formatTime(x.receivedAt)
-                archive.addView(UiKit.button(this, p, "${x.periodLabel} • $d", false).apply {
+                card.addView(UiKit.button(this, p, "${x.periodLabel} • $d", false).apply {
                     setOnClickListener { selectedReportIndex = index; render() }
                 })
             }
         }
-        content.addView(archive)
+        card.addView(UiKit.button(this, p, t(
+            "العودة للمراقبة المباشرة",
+            "Back to live monitor"
+        ), false).apply {
+            setOnClickListener {
+                selectedReportIndex = null
+                section = Section.REPORTS
+                notice = ""
+                render()
+                ReceiverReportService.requestImmediateSync(this@ReportReceiverActivity)
+            }
+        })
+        content.addView(card)
     }
 
     private fun loadCachedEmployees(storeId: String) {
@@ -925,6 +971,7 @@ class ReportReceiverActivity : Activity() {
             Section.STATUS -> Unit
             Section.REPORTS -> if (receiver.canReceiveReports) refreshReports(silent)
             Section.MESSAGES -> if (receiver.canMessageEmployees) refreshMessages(silent)
+            Section.ARCHIVE -> if (receiver.canReceiveReports) refreshArchive(silent)
         }
     }
 
@@ -940,10 +987,35 @@ class ReportReceiverActivity : Activity() {
             val dashboard = CentralServerClient.remoteDashboard(
                 binding.serverUrl, receiver.receiverId, receiver.secret, storeId
             )
-            if (dashboard.isSuccess) {
-                receiver.cacheLiveDashboard(storeId, dashboard.getOrThrow())
-            }
+            if (dashboard.isSuccess) receiver.cacheLiveDashboard(storeId, dashboard.getOrThrow())
 
+            runOnUiThread {
+                if (generation != reportsGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
+                reportsInFlight = false
+                if (!alive()) return@runOnUiThread
+                if (dashboard.isSuccess) {
+                    markActiveServerContact(storeId)
+                    if (!silent) notice = t("تم تحديث المراقبة المباشرة ✓", "Live monitor refreshed ✓")
+                } else if (!silent) {
+                    showError(
+                        t("تعذر تحديث المراقبة المباشرة", "Could not refresh live monitor"),
+                        networkMessage(dashboard.exceptionOrNull())
+                    )
+                }
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun refreshArchive(silent: Boolean) {
+        val binding = receiver.activeBinding() ?: return
+        if (!receiver.canReceiveReports || binding.serverUrl.isBlank() || binding.storeId.isBlank() || reportsInFlight) return
+        reportsInFlight = true
+        val generation = ++reportsGeneration
+        val storeId = binding.storeId
+        if (alive()) render()
+
+        Thread {
             val inbox = CentralServerClient.receiverInbox(
                 binding.serverUrl, receiver.receiverId, receiver.secret, storeId
             )
@@ -967,13 +1039,13 @@ class ReportReceiverActivity : Activity() {
                 if (generation != reportsGeneration || receiver.activeBinding()?.storeId != storeId) return@runOnUiThread
                 reportsInFlight = false
                 if (!alive()) return@runOnUiThread
-                if (dashboard.isSuccess || inbox.isSuccess) {
+                if (inbox.isSuccess) {
                     markActiveServerContact(storeId)
-                    if (!silent) notice = t("تم تحديث شاشة المحل المباشرة ✓", "Live store screen refreshed ✓")
+                    if (!silent) notice = t("تم تحديث الأرشيف ✓", "Archive refreshed ✓")
                 } else if (!silent) {
                     showError(
-                        t("تعذر تحديث شاشة المحل", "Could not refresh live store screen"),
-                        networkMessage(dashboard.exceptionOrNull() ?: inbox.exceptionOrNull())
+                        t("تعذر تحديث الأرشيف", "Could not refresh archive"),
+                        networkMessage(inbox.exceptionOrNull())
                     )
                 }
                 render()
@@ -1091,7 +1163,7 @@ class ReportReceiverActivity : Activity() {
                     "Local report received from ${binding.storeName} ✓"
                 )
                 selectedReportIndex = null
-                if (section == Section.REPORTS || section == Section.STATUS) render()
+                if (section == Section.ARCHIVE || section == Section.STATUS) render()
             }
         }
         return received.transferId == envelope.transferId
