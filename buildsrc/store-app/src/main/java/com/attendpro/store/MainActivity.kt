@@ -60,6 +60,7 @@ import com.attendpro.core.PairedEmployee
 import com.attendpro.core.PairingProtocol
 import com.attendpro.core.PresenceEvent
 import com.attendpro.core.QrCodeTools
+import com.attendpro.core.ReceiverOfflineReportProtocol
 import com.attendpro.core.SecretCodec
 import com.attendpro.core.ShiftWindow
 import com.attendpro.core.ShiftTimeCodec
@@ -1304,6 +1305,8 @@ class MainActivity : Activity() {
     }
 
     private fun triggerImmediateAttendanceSync(event: AttendanceEvent) {
+        deliverAttendanceEventToReceiversNearby(event)
+
         if (!repo.reportAutoSync || repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
         Thread {
             val identity = DeviceIdentity(this)
@@ -1326,6 +1329,58 @@ class MainActivity : Activity() {
                 refreshDashboard()
             }
         }.apply { isDaemon = true }.start()
+    }
+
+    private fun deliverAttendanceEventToReceiversNearby(event: AttendanceEvent) {
+        val targets = repo.authorizedReportReceivers()
+            .filter { it.active && it.canReceiveReports && it.receiverId.isNotBlank() && it.secret.isNotBlank() }
+            .take(8)
+        if (targets.isEmpty()) return
+
+        val packageText = "APLIVE1:" + event.toJson().toString()
+        targets.forEach { receiver ->
+            val transferId = "LIVE-${event.eventId}"
+            val envelope = runCatching {
+                ReceiverOfflineReportProtocol.encodeEnvelope(
+                    receiver.receiverId,
+                    repo.storeId,
+                    transferId,
+                    packageText,
+                    receiver.secret,
+                    event.timestampEpochMillis
+                )
+            }.getOrNull() ?: return@forEach
+
+            Thread {
+                val lan = ReceiverReportLanClient.send(
+                    receiver.receiverId,
+                    receiver.secret,
+                    repo.storeId,
+                    transferId,
+                    envelope,
+                    discoveryWindowMs = 700L,
+                    connectTimeoutMs = 1_200,
+                    socketTimeoutMs = 2_500
+                )
+                if (lan.success) repo.markReportReceiverUsed(receiver.receiverId)
+            }.apply { isDaemon = true; start() }
+
+            if (ReceiverReportBluetoothSupport.hasPermissions(this) &&
+                ReceiverReportBluetoothSupport.bluetoothEnabled(this)
+            ) {
+                Thread {
+                    val ble = ReceiverReportBleClient.sendFastEvent(
+                        this,
+                        receiver.receiverId,
+                        receiver.secret,
+                        repo.storeId,
+                        transferId,
+                        envelope
+                    )
+                    if (ble.success) repo.markReportReceiverUsed(receiver.receiverId)
+                }.apply { isDaemon = true; start() }
+            }
+        }
     }
 
     private fun autoSyncIfReady() {
