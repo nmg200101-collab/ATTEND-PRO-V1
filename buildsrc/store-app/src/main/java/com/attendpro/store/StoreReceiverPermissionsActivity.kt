@@ -23,6 +23,8 @@ import com.attendpro.core.UiKit
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 /**
  * V137 single Store-side receiver center:
@@ -433,23 +435,49 @@ class StoreReceiverPermissionsActivity : Activity() {
     private fun discoverNearbyReceiver() {
         if (nearDiscoveryInFlight) return
         nearDiscoveryInFlight = true
-        linkProgress = t("جاري البحث عبر Wi‑Fi/Hotspot…", "Searching over Wi‑Fi/Hotspot…")
+        linkProgress = t(
+            "جاري البحث تلقائيًا عبر Wi‑Fi وBluetooth…",
+            "Searching automatically over Wi‑Fi and Bluetooth…"
+        )
         render()
+
         Thread {
-            val lan = ReceiverReportLanClient.discoverNearbyInvite()
-            var result = lan
-            if (!lan.success) {
-                if (ReceiverReportBluetoothSupport.missingPermissions(this).isNotEmpty()) {
-                    runOnUiThread {
-                        nearDiscoveryInFlight = false
-                        linkProgress = t("يحتاج Bluetooth إلى الصلاحيات لإكمال اكتشاف القرب.", "Bluetooth permissions are required to continue nearby discovery.")
-                        ReceiverReportBluetoothSupport.request(this, REQ_NEAR_BLUETOOTH)
-                        render()
+            val bluetoothReady = ReceiverReportBluetoothSupport.missingPermissions(this).isEmpty() &&
+                ReceiverReportBluetoothSupport.bluetoothEnabled(this)
+
+            val result = if (!bluetoothReady) {
+                ReceiverReportLanClient.discoverNearbyInvite(timeoutMs = 2_200L)
+            } else {
+                val queue = LinkedBlockingQueue<ReceiverReportDeliveryResultWithPayload>(2)
+                Thread {
+                    queue.offer(ReceiverReportLanClient.discoverNearbyInvite(timeoutMs = 2_200L))
+                }.apply { isDaemon = true; start() }
+                Thread {
+                    queue.offer(ReceiverReportBleClient.discoverNearbyInvite(this))
+                }.apply { isDaemon = true; start() }
+
+                val first = queue.poll(4_000L, TimeUnit.MILLISECONDS)
+                    ?: ReceiverReportDeliveryResultWithPayload(false, "AUTO", "لم تصل نتيجة اكتشاف أولية", "")
+                if (first.success) {
+                    first
+                } else {
+                    val second = queue.poll(14_000L, TimeUnit.MILLISECONDS)
+                    if (second?.success == true) second
+                    else {
+                        val detail = listOfNotNull(
+                            first.detail.takeIf { it.isNotBlank() },
+                            second?.detail?.takeIf { it.isNotBlank() }
+                        ).joinToString("\n")
+                        ReceiverReportDeliveryResultWithPayload(
+                            false,
+                            "AUTO",
+                            detail.ifBlank { "لم يظهر هاتف استلام قريب" },
+                            ""
+                        )
                     }
-                    return@Thread
                 }
-                result = ReceiverReportBleClient.discoverNearbyInvite(this)
             }
+
             val invite = if (result.success) ReportProtocol.decodeInvite(result.payload) else null
             runOnUiThread {
                 nearDiscoveryInFlight = false
@@ -460,16 +488,27 @@ class StoreReceiverPermissionsActivity : Activity() {
                     pendingNearTransport = result.transport
                     pendingNearEndpoint = result.endpoint
                     linkProgress = t(
-                        "تم اكتشاف هاتف الاستلام عبر ${result.transport} ✓",
-                        "Receiver phone discovered over ${result.transport} ✓"
+                        "تم اكتشاف ${invite.name} عبر ${result.transport} ✓",
+                        "${invite.name} discovered over ${result.transport} ✓"
                     )
-                    notice = t("حدد الصلاحيات ثم اضغط حفظ وربط الهاتف.", "Choose permissions, then tap Save and link phone.")
+                    notice = t(
+                        "حدد الصلاحيات ثم اضغط حفظ وربط الهاتف.",
+                        "Choose permissions, then tap Save and link phone."
+                    )
+                } else if (!bluetoothReady &&
+                    ReceiverReportBluetoothSupport.missingPermissions(this).isNotEmpty()
+                ) {
+                    linkProgress = t(
+                        "لم يظهر الهاتف عبر Wi‑Fi. يمكنك منح Bluetooth لإكمال الاكتشاف التلقائي.",
+                        "Phone not found over Wi‑Fi. Grant Bluetooth to continue automatic discovery."
+                    )
+                    ReceiverReportBluetoothSupport.request(this, REQ_NEAR_BLUETOOTH)
                 } else {
                     showError(
                         t("لم يتم العثور على هاتف قريب", "No nearby phone found"),
                         t(
-                            "فعّل «الارتباط القريب لمدة دقيقتين» في هاتف الاستلام، ثم أعد المحاولة.\n${result.detail}",
-                            "Enable “Nearby linking for 2 minutes” on the receiver phone, then try again.\n${result.detail}"
+                            "افتح صفحة «المحلات» في هاتف الاستلام وأعد المحاولة.\n${result.detail}",
+                            "Open the Stores page on the receiver phone and try again.\n${result.detail}"
                         )
                     )
                 }
