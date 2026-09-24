@@ -98,6 +98,7 @@ class ReceiverReportService : Service() {
     private var bleServer: ReceiverReportBleServer? = null
     @Volatile private var nextReportPollAt = 0L
     @Volatile private var nextLiveDashboardPollAt = 0L
+    @Volatile private var nextFullDashboardFallbackAt = 0L
     @Volatile private var nextEmployeePollAt = 0L
     @Volatile private var nextMessagePollAt = 0L
     @Volatile private var nextOutboxPollAt = 0L
@@ -143,7 +144,7 @@ class ReceiverReportService : Service() {
             lanServer = ReceiverReportLanServer(
                 receiver.receiverId,
                 receiver.secret,
-                ::acceptOfflineReport,
+                { envelope -> acceptOfflineReport(envelope, "LAN") },
                 ::nearbyInvite,
                 ::acceptNearbyGrant
             ) { updateStatus(it) }.also { it.start() }
@@ -158,7 +159,7 @@ class ReceiverReportService : Service() {
                 this,
                 receiver.receiverId,
                 receiver.secret,
-                ::acceptOfflineReport,
+                { envelope -> acceptOfflineReport(envelope, "BLE") },
                 ::nearbyInvite,
                 ::acceptNearbyGrant
             ) { updateStatus(it) }.also { it.start() }
@@ -184,7 +185,10 @@ class ReceiverReportService : Service() {
         return true
     }
 
-    private fun acceptOfflineReport(envelope: ReceiverOfflineReportProtocol.Envelope): Boolean {
+    private fun acceptOfflineReport(
+        envelope: ReceiverOfflineReportProtocol.Envelope,
+        transport: String
+    ): Boolean {
         val binding = receiver.storeBindings().firstOrNull {
             it.storeId == envelope.storeId && it.active && it.canReceiveReports
         } ?: return false
@@ -197,7 +201,9 @@ class ReceiverReportService : Service() {
                 envelope.packageText
             )
             if (applied) {
-                updateStatus("تم تحديث حركة ${binding.storeName} مباشرة عبر القرب ✓")
+                val detail = if (transport == "BLE") "Bluetooth" else "Wi‑Fi / Hotspot / LAN"
+                receiver.markLiveTransport(envelope.storeId, transport, detail)
+                updateStatus("تم تحديث حركة ${binding.storeName} مباشرة عبر $detail ✓")
                 broadcastChanged(KIND_LIVE_DASHBOARD, envelope.storeId)
             }
             return applied
@@ -344,34 +350,50 @@ class ReceiverReportService : Service() {
             ?.takeIf { it.active && it.canReceiveReports && it.storeId.isNotBlank() && it.serverUrl.isNotBlank() }
             ?: return
 
+        val storeId = binding.storeId
+        val cached = receiver.cachedLiveDashboard(storeId)
         val probe = CentralServerClient.remoteDashboardRevision(
             binding.serverUrl,
             receiver.receiverId,
             receiver.secret,
-            binding.storeId
+            storeId
         )
-        if (probe.isFailure) return
 
-        val probeValue = probe.getOrThrow()
-        val cached = receiver.cachedLiveDashboard(binding.storeId)
-        val previousToken = receiver.liveDashboardProbeToken(binding.storeId)
-        if (cached != null && previousToken.isNotBlank() && previousToken == probeValue.token) {
-            return
+        var probeToken = ""
+        val shouldFetchFull = if (probe.isSuccess) {
+            val probeValue = probe.getOrThrow()
+            probeToken = probeValue.token
+            val previousToken = receiver.liveDashboardProbeToken(storeId)
+            cached == null || previousToken.isBlank() || previousToken != probeToken
+        } else {
+            val now = System.currentTimeMillis()
+            val stale = cached == null || receiver.liveDashboardCachedAt(storeId) < now - 8_000L
+            stale && now >= nextFullDashboardFallbackAt.also {
+                if (stale && now >= it) nextFullDashboardFallbackAt = now + 6_000L
+            }
         }
+
+        if (!shouldFetchFull) return
 
         val result = CentralServerClient.remoteDashboard(
             binding.serverUrl,
             receiver.receiverId,
             receiver.secret,
-            binding.storeId
+            storeId
         )
         if (result.isFailure) return
 
-        val changed = receiver.cacheLiveDashboard(binding.storeId, result.getOrThrow())
-        receiver.setLiveDashboardProbeToken(binding.storeId, probeValue.token)
+        val changed = receiver.cacheLiveDashboard(storeId, result.getOrThrow())
+        if (probeToken.isNotBlank()) receiver.setLiveDashboardProbeToken(storeId, probeToken)
+
         if (changed) {
+            val recentNearby = System.currentTimeMillis() - receiver.liveTransportAt(storeId) <= 10_000L &&
+                receiver.liveTransport(storeId) in setOf("LAN", "BLE")
+            if (!recentNearby) {
+                receiver.markLiveTransport(storeId, "SERVER", "الخادم")
+            }
             updateStatus("تم تحديث شاشة المحل المباشرة ✓")
-            broadcastChanged(KIND_LIVE_DASHBOARD, binding.storeId)
+            broadcastChanged(KIND_LIVE_DASHBOARD, storeId)
         }
     }
 
