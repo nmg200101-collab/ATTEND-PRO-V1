@@ -250,7 +250,10 @@ object ReceiverReportLanClient {
         secret: String,
         storeId: String,
         transferId: String,
-        envelope: String
+        envelope: String,
+        discoveryWindowMs: Long = 1_600L,
+        connectTimeoutMs: Int = 2_500,
+        socketTimeoutMs: Int = 8_000
     ): ReceiverReportDeliveryResult {
         if (receiverId.isBlank() || secret.isBlank() || storeId.isBlank()) {
             return ReceiverReportDeliveryResult(false, "LAN", "بيانات الربط المحلي غير مكتملة")
@@ -274,7 +277,7 @@ object ReceiverReportLanClient {
                     }
                 }
 
-                val until = System.currentTimeMillis() + 1_600L
+                val until = System.currentTimeMillis() + discoveryWindowMs.coerceIn(450L, 5_000L)
                 val buffer = ByteArray(1024)
                 while (System.currentTimeMillis() < until && targetAddress == null) {
                     try {
@@ -296,8 +299,8 @@ object ReceiverReportLanClient {
                 ?: return ReceiverReportDeliveryResult(false, "LAN", "لم يظهر هاتف الاستلام على الشبكة المحلية")
             val bytes = envelope.toByteArray(Charsets.UTF_8)
             Socket().use { socket ->
-                socket.connect(InetSocketAddress(address, targetPort), 2_500)
-                socket.soTimeout = 8_000
+                socket.connect(InetSocketAddress(address, targetPort), connectTimeoutMs.coerceIn(700, 5_000))
+                socket.soTimeout = socketTimeoutMs.coerceIn(1_500, 10_000)
                 val output = DataOutputStream(socket.getOutputStream())
                 output.writeInt(bytes.size)
                 output.write(bytes)
