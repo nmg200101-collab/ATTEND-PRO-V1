@@ -493,21 +493,21 @@ object ReceiverReportBleClient {
 
         val device = scanWindow(
             listOf(ScanFilter.Builder().setServiceUuid(parcel).build()),
-            if (fast) 850L else 2_000L
+            if (fast) 1_400L else 2_000L
         ) ?: scanWindow(
             emptyList(),
-            if (fast) 1_100L else 2_500L
+            if (fast) 1_800L else 2_500L
         ) ?: return RawSendResult(false, detail = "لم يظهر هاتف الاستلام عبر BLE")
 
         val sync = SyncGattCallback()
         val gatt = device.connectGatt(context, false, sync, BluetoothDevice.TRANSPORT_LE)
         try {
-            if (!sync.awaitConnected(if (fast) 3_000L else 6_000L)) return RawSendResult(false, detail = "تعذر الاتصال بهاتف الاستلام")
+            if (!sync.awaitConnected(if (fast) 4_000L else 6_000L)) return RawSendResult(false, detail = "تعذر الاتصال بهاتف الاستلام")
             if (!gatt.discoverServices() || !sync.awaitServices(if (fast) 3_000L else 6_000L)) {
                 return RawSendResult(false, detail = "تعذر اكتشاف خدمة Bluetooth")
             }
             gatt.requestMtu(DESIRED_MTU)
-            sync.awaitMtu(if (fast) 700L else 1_500L)
+            sync.awaitMtu(if (fast) 900L else 1_500L)
 
             val service = gatt.getService(ReceiverReportBleServer.SERVICE_UUID)
                 ?: return RawSendResult(false, detail = "خدمة الاستلام غير موجودة")
@@ -534,12 +534,12 @@ object ReceiverReportBleClient {
                     putShort(index.toShort()); putShort(total.toShort())
                     put(payload.size.toByte()); put(payload)
                 }.array()
-                if (!sync.write(gatt, write, frame, if (fast) 1_300L else 2_500L)) {
+                if (!sync.write(gatt, write, frame, if (fast) 1_800L else 2_500L)) {
                     return RawSendResult(false, detail = "انقطع إرسال BLE عند الجزء ${index + 1} من $total")
                 }
             }
 
-            val ackBytes = sync.read(gatt, ack, if (fast) 2_000L else 4_000L)
+            val ackBytes = sync.read(gatt, ack, if (fast) 2_800L else 4_000L)
                 ?: return RawSendResult(false, detail = "لم يصل ACK من هاتف الاستلام")
             return RawSendResult(true, String(ackBytes, Charsets.UTF_8), "")
         } catch (t: Throwable) {
