@@ -118,6 +118,7 @@ class ReceiverReportService : Service() {
         if (intent?.action == ACTION_SYNC_NOW) {
             nextReportPollAt = 0L
             nextLiveDashboardPollAt = 0L
+            nextFullDashboardFallbackAt = 0L
             nextEmployeePollAt = 0L
             nextMessagePollAt = 0L
             nextOutboxPollAt = 0L
@@ -177,6 +178,7 @@ class ReceiverReportService : Service() {
         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putLong(KEY_NEAR_PAIRING_UNTIL, 0L).apply()
         nextReportPollAt = 0L
         nextLiveDashboardPollAt = 0L
+        nextFullDashboardFallbackAt = 0L
         nextEmployeePollAt = 0L
         nextMessagePollAt = 0L
         nextOutboxPollAt = 0L
@@ -368,8 +370,11 @@ class ReceiverReportService : Service() {
         } else {
             val now = System.currentTimeMillis()
             val stale = cached == null || receiver.liveDashboardCachedAt(storeId) < now - 8_000L
-            stale && now >= nextFullDashboardFallbackAt.also {
-                if (stale && now >= it) nextFullDashboardFallbackAt = now + 6_000L
+            if (!stale || now < nextFullDashboardFallbackAt) {
+                false
+            } else {
+                nextFullDashboardFallbackAt = now + 6_000L
+                true
             }
         }
 
