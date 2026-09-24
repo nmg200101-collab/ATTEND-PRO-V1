@@ -1051,6 +1051,33 @@ object CentralServerClient {
         )
     }
 
+    fun syncAttendanceEventImmediate(
+        serverUrl: String,
+        storeToken: String,
+        storeId: String,
+        identity: DeviceIdentity,
+        event: AttendanceEvent
+    ): Result<Set<String>> = runCatching {
+        requireHttps(serverUrl)
+        val body = JSONObject().apply {
+            put("events", JSONArray().apply { put(event.toJson()) })
+        }
+        val o = request(
+            serverUrl,
+            "/api/v1/attendance/events/batch",
+            "POST",
+            body,
+            bearer = storeToken,
+            deviceIdentity = identity,
+            storeId = storeId,
+            connectTimeoutMs = 2_500,
+            readTimeoutMs = 3_500
+        )
+        val a = o.optJSONArray("acceptedIds")
+            ?: throw IllegalStateException("استجابة المزامنة الفورية غير مكتملة")
+        (0 until a.length()).map { a.getString(it) }.toSet()
+    }
+
     fun syncEventsCentral(serverUrl: String, storeToken: String, storeId: String, identity: DeviceIdentity, events: List<AttendanceEvent>): Result<Set<String>> = runCatching {
         requireHttps(serverUrl)
         if (events.isEmpty()) return@runCatching emptySet()
