@@ -47,6 +47,12 @@ jobs:
           test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
           test -f RELEASE-NOTES-V157.md
           test -f V157-BLUETOOTH-DUAL-PATH-STABILITY.md
+          cp .source_patches/v157/lint-fix.patch.xz.b64 /tmp/v157-lint-fix.patch.xz.b64
+          test "$(sha256sum /tmp/v157-lint-fix.patch.xz.b64 | awk '{print $1}')" = "4e58ac6c6a97aa07bfa5cfabaa674710e08fb5d5333655598da92a73e35951ba"
+          base64 -d /tmp/v157-lint-fix.patch.xz.b64 | xz -d > /tmp/v157-lint-fix.patch
+          test "$(sha256sum /tmp/v157-lint-fix.patch | awk '{print $1}')" = "92913195cb2a7fcfcb88ce04a4ad0c9968e36524e1a2d0fca665ada88743a926"
+          patch -p1 --forward --batch < /tmp/v157-lint-fix.patch
+          grep -q 'val canConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
