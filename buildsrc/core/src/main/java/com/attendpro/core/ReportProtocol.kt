@@ -716,7 +716,10 @@ class ReportReceiverStore(context: Context) {
             old.checkOuts == dashboard.checkOuts &&
             old.todayEvents == dashboard.todayEvents &&
             old.presentCount == dashboard.presentCount &&
-            old.connectedCount == dashboard.connectedCount
+            old.connectedCount == dashboard.connectedCount &&
+            old.present == dashboard.present &&
+            old.connected == dashboard.connected &&
+            old.recent == dashboard.recent
         if (unchanged) {
             prefs.edit().putLong("receiverLiveDashboardCachedAtV145:$storeId", System.currentTimeMillis()).apply()
             return false
