@@ -315,7 +315,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-            setPadding(UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 13), UiKit.dp(this@MainActivity, 28))
+            setPadding(
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 9 else 12),
+                UiKit.dp(this@MainActivity, 10),
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 9 else 12),
+                UiKit.dp(this@MainActivity, 24)
+            )
             setBackgroundColor(p.bg)
         }
 
@@ -363,29 +368,56 @@ class MainActivity : Activity() {
             root.addView(box)
         }
 
-        val header = UiKit.heroCard(this, p, 14)
-        header.addView(TextView(this).apply {
+        val header = UiKit.heroCard(this, p, 11).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 100 else 112)
+        }
+        val headerTools = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        headerTools.addView(TextView(this).apply {
             text = "⋮"
-            textSize = 28f
+            textSize = 26f
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
             contentDescription = t("القائمة", "Menu")
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 48), UiKit.dp(this@MainActivity, 44)).apply { gravity = Gravity.END }
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 44), UiKit.dp(this@MainActivity, 38))
             setOnClickListener { showEmployeeMainMenu1976() }
         })
-        header.addView(employeeTemplateChip1978().apply { layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { gravity = Gravity.START } })
-        header.addView(ImageView(this).apply {
+        headerTools.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
+        headerTools.addView(employeeTemplateChip1978().apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UiKit.dp(this@MainActivity, 36))
+        })
+        header.addView(headerTools)
+
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+        }
+        brandRow.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_attend_pro)
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 48), UiKit.dp(this@MainActivity, 48))
+            adjustViewBounds = true
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 44), UiKit.dp(this@MainActivity, 44)).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 8)
+            }
         })
-        header.addView(UiKit.title(this, p, "ATTEND PRO", 23f).apply {
-            gravity = Gravity.CENTER
-            setTextColor(android.graphics.Color.WHITE)
+        brandRow.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(UiKit.title(this@MainActivity, p, "ATTEND PRO", 20.5f).apply {
+                setTextColor(android.graphics.Color.WHITE)
+            })
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "تطبيق الموظف • حضور واتصال ورسائل",
+                "Employee app • attendance, connection and messages"
+            )).apply {
+                textSize = 11.5f
+                setTextColor(android.graphics.Color.argb(225, 255, 255, 255))
+            })
         })
-        header.addView(UiKit.subtitle(this, p, t("تطبيق الموظف • الإصدار ${attendProVersionName()}", "Employee app • version ${attendProVersionName()}")).apply {
-            gravity = Gravity.CENTER
-            setTextColor(android.graphics.Color.argb(225, 255, 255, 255))
-        })
+        header.addView(brandRow)
         root.addView(header)
         addEmployeeTabs1978(root)
 
@@ -404,21 +436,25 @@ class MainActivity : Activity() {
         }
 
         val quick = UiKit.card(this, p, 10)
-        quick.addView(UiKit.sectionLabel(this, p, t("حالتي", "My status")))
-        val profileTile = detailTile(t("بياناتي وجدولي", "My profile and schedule"), t("المحل المرتبط ووقت الدوام", "Linked store and working hours"), profile) { showEmployeeProfile() }
+        quick.addView(UiKit.sectionLabel(this, p, t("حسابي واتصالي", "My account & connection")))
+        val profileTile = detailTile(t("بياناتي والدوام", "Profile & shift"), t("المحل المرتبط ووقت الدوام", "Linked store and shift time"), profile) { showEmployeeProfile() }
         connectionSummary = TextView(this).apply {
             textSize = 12.8f
             setTextColor(p.text)
             gravity = Gravity.CENTER
             maxLines = 4
         }
-        val connectionTile = detailTile(t("حالة اتصالي", "My connection"), t("القناة الفعلية وGPS", "Active channel and GPS"), connectionSummary) { showConnectionStatus() }
+        val connectionTile = detailTile(t("الاتصال بالمحل", "Store connection"), t("Bluetooth / Wi‑Fi / الخادم / GPS", "Bluetooth / Wi‑Fi / server / GPS"), connectionSummary) { showConnectionStatus() }
         addPair(quick, profileTile, connectionTile)
         root.addView(quick)
 
-        val attendance = UiKit.card(this, p, 14).apply { gravity = Gravity.CENTER_HORIZONTAL }
-        attendance.addView(UiKit.title(this, p, t("الحضور والانصراف", "Check-in and check-out"), 19f).apply { gravity = Gravity.CENTER })
-        attendance.addView(UiKit.subtitle(this, p, t("اختر الحركة وسيظهر فقط التحقق المسموح لك به", "Choose an action; only your allowed verification methods will appear")).apply { gravity = Gravity.CENTER })
+        val attendance = UiKit.card(this, p, 16).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        attendance.addView(UiKit.sectionLabel(this, p, t("الإجراء الرئيسي", "Primary action")).apply { gravity = Gravity.CENTER })
+        attendance.addView(UiKit.title(this, p, t("تسجيل الدوام", "Attendance"), 20f).apply { gravity = Gravity.CENTER })
+        attendance.addView(UiKit.subtitle(this, p, t(
+            "اختر حضورًا أو انصرافًا؛ سيعرض التطبيق فقط طرق التحقق المسموحة لك.",
+            "Choose check-in or check-out; only your allowed verification methods will be shown."
+        )).apply { gravity = Gravity.CENTER })
         val finger = TextView(this).apply {
             text = t("◎\nحضور", "◎\nAttend")
             textSize = 18f
@@ -429,7 +465,10 @@ class MainActivity : Activity() {
                 shape = GradientDrawable.OVAL
                 setStroke(UiKit.dp(this@MainActivity, 3), android.graphics.Color.argb(120, 255, 255, 255))
             }
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 132), UiKit.dp(this@MainActivity, 132)).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 126 else 142),
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 126 else 142)
+            ).apply {
                 gravity = Gravity.CENTER_HORIZONTAL
                 topMargin = UiKit.dp(this@MainActivity, 10)
                 bottomMargin = UiKit.dp(this@MainActivity, 10)
@@ -454,9 +493,9 @@ class MainActivity : Activity() {
         root.addView(attendance)
 
         val automatic = UiKit.card(this, p, 10)
-        automatic.addView(UiKit.sectionLabel(this, p, t("الاتصال التلقائي", "Automatic connection")))
+        automatic.addView(UiKit.sectionLabel(this, p, t("الاتصال في الخلفية", "Background connection")))
         presenceSwitch = Switch(this).apply {
-            text = t("الظهور التلقائي لجهاز المحل", "Automatic Store visibility")
+            text = t("البقاء متصلًا بجهاز المحل تلقائيًا", "Stay connected to the Store automatically")
             textSize = 14.5f
             setTextColor(p.text)
             isChecked = identity.autoPresence
@@ -470,7 +509,7 @@ class MainActivity : Activity() {
             }
         }
         automatic.addView(presenceSwitch)
-        automatic.addView(UiKit.subtitle(this, p, t("يعمل عبر Bluetooth أو شبكة المحل حسب القناة المتاحة، ولا يسجل حضورًا بدون إثبات.", "Uses Bluetooth or the Store network when available and never records attendance without verification.")))
+        automatic.addView(UiKit.subtitle(this, p, t("يستخدم Bluetooth أو شبكة المحل تلقائيًا، ولا يسجل أي حضور بدون تحقق معتمد.", "Uses Bluetooth or the Store network automatically and never records attendance without approved verification.")))
         automatic.addView(UiKit.button(this, p, t("إدارة الاتصال", "Connection management"), false).apply { setOnClickListener { showEmployeeConnectionControl1977() } })
         root.addView(automatic)
 
@@ -482,7 +521,9 @@ class MainActivity : Activity() {
             )
             addPair(
                 box,
-                tile(t("حالة الاتصال", "Connection status"), t("معرفة القناة الفعالة مع جهاز المحل", "See the active channel to the Store device")) { showConnectionStatus() },
+                tile(t("الرسائل", "Messages"), t("رسائل الإدارة والرد عليها", "Management messages and replies")) {
+                    startActivity(Intent(this@MainActivity, EmployeeMessages1975Activity::class.java))
+                },
                 tile(t("فحص الجاهزية", "Readiness check"), t("البصمة والموقع والاتصال والصلاحيات", "Biometrics, location, connection and permissions")) { showReadinessCheck() }
             )
         }
