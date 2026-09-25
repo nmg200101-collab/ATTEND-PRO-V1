@@ -968,21 +968,33 @@ class MainActivity : Activity() {
         header.addView(storeSummary)
         root.addView(header)
 
-        val ownerCard = UiKit.card(this, p, 8).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, 86)
-            background = UiKit.round(p.surface, 20, this@MainActivity, p.accent)
-            elevation = UiKit.dp(this@MainActivity, 3).toFloat()
+        val ownerCard = UiKit.card(this, p, 7).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 92)
             gravity = Gravity.CENTER
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.8f).apply {
+
+            val adminFrame = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(
+                    UiKit.dp(this@MainActivity, 10),
+                    UiKit.dp(this@MainActivity, 8),
+                    UiKit.dp(this@MainActivity, 10),
+                    UiKit.dp(this@MainActivity, 10)
+                )
+                background = UiKit.round(p.surface2, 18, this@MainActivity, p.accent)
+                elevation = UiKit.dp(this@MainActivity, 1).toFloat()
+            }
+
+            adminFrame.addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.8f).apply {
                 gravity = Gravity.CENTER
                 maxLines = 1
             })
-            addView(UiKit.subtitle(this@MainActivity, p, t(
+            adminFrame.addView(UiKit.subtitle(this@MainActivity, p, t(
                 "قسم الإدارة • وصول سريع",
                 "Management • quick access"
             )).apply {
                 gravity = Gravity.CENTER
-                textSize = 10.8f
+                textSize = 10.7f
                 maxLines = 1
             })
 
@@ -991,12 +1003,13 @@ class MainActivity : Activity() {
                 layoutDirection = dir
                 gravity = Gravity.CENTER
             }
+
             fun quickButton(label: String, action: () -> Unit) = UiKit.button(
                 this@MainActivity, p, label, false
             ).apply {
-                textSize = 11.5f
+                textSize = 11.4f
                 maxLines = 1
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 44), 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 42), 1f).apply {
                     marginStart = UiKit.dp(this@MainActivity, 2)
                     marginEnd = UiKit.dp(this@MainActivity, 2)
                 }
@@ -1019,10 +1032,13 @@ class MainActivity : Activity() {
             quickRow.addView(quickButton(t("الرسائل", "Messages")) {
                 startActivity(Intent(this@MainActivity, StoreMessages1975Activity::class.java))
             })
-            addView(quickRow)
 
-            UiKit.makeInteractive(this, this@MainActivity, p)
-            setOnClickListener { requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() } }
+            adminFrame.addView(quickRow)
+            adminFrame.setOnClickListener {
+                requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() }
+            }
+            UiKit.makeInteractive(adminFrame, this@MainActivity, p)
+            addView(adminFrame)
         }
         root.addView(ownerCard)
 
