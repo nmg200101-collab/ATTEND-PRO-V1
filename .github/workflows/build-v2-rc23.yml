@@ -19,11 +19,16 @@ jobs:
           test "$(sha256sum /tmp/v156-source.patch.xz.b64 | awk '{print $1}')" = "7e07f7fb7901c628a4e725f363b684ad2fc13ee4c5c732603070b4432cfb66d9"
           base64 -d /tmp/v156-source.patch.xz.b64 | xz -d > /tmp/v156-source.patch
           patch -p1 --forward --batch < /tmp/v156-source.patch
+          cp .source_patches/v156/lock-fix.patch.xz.b64 /tmp/v156-lock-fix.patch.xz.b64
+          test "$(sha256sum /tmp/v156-lock-fix.patch.xz.b64 | awk '{print $1}')" = "7a627cae04fb7b49375c81d8bd99e2250d4a30f56d660b37c12fc64483f22d26"
+          base64 -d /tmp/v156-lock-fix.patch.xz.b64 | xz -d > /tmp/v156-lock-fix.patch
+          patch -p1 --forward --batch < /tmp/v156-lock-fix.patch
           grep -q 'versionCode = 156' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 156' buildsrc/employee-app/build.gradle.kts
           test -f buildsrc/core/src/main/java/com/attendpro/core/LanLocalMessageProtocolV156.kt
           test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreLanMessagingRuntimeV156.kt
           test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeLanMessagingRuntimeV156.kt
+          test -f buildsrc/core/src/main/java/com/attendpro/core/MessageHistoryClientV156.kt
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -352,10 +357,16 @@ jobs:
           grep -q 'minimumHeight = UiKit.dp(this@MainActivity, if (classic) 156 else 148)' "$MAIN"
           grep -q 'اختصارات إضافية' "$MAIN"
           ! grep -q 'addStoreTabs1978(root)' "$MAIN"
-          grep -q 'renderMessages(root, local' "$STORE_MESSAGES"
-          grep -q 'جاري تحديث الرسائل في الخلفية' "$STORE_MESSAGES"
-          grep -q 'renderEmployeeMessages' "$EMP_MESSAGES"
-          grep -q 'Refreshing messages in the background' "$EMP_MESSAGES"
+          # V156 intentionally replaces V152's flat-message renderers with conversation history.
+          grep -q 'private fun showInbox' "$STORE_MESSAGES"
+          grep -q 'private fun showConversation' "$STORE_MESSAGES"
+          grep -q 'StoreDirectLinkBridge1977.isConnected' "$STORE_MESSAGES"
+          grep -q 'StoreLanMessagingRuntimeV156.isAvailable' "$STORE_MESSAGES"
+          grep -q 'MessageHistoryClientV156.storeHistory' "$STORE_MESSAGES"
+          grep -q 'private fun renderConversation' "$EMP_MESSAGES"
+          grep -q 'EmployeeDirectReplyBridge1977.isAvailable' "$EMP_MESSAGES"
+          grep -q 'EmployeeLanMessagingRuntimeV156.isAvailable' "$EMP_MESSAGES"
+          grep -q 'MessageHistoryClientV156.employeeHistory' "$EMP_MESSAGES"
           grep -q 'EmployeeUiChoice' "$EMP_MAIN"
           grep -q 'showEmployeeChoiceDialog' "$EMP_MAIN"
 
