@@ -352,11 +352,11 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V156 release identity.
-          grep -q 'versionCode = 156' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 156' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING"' buildsrc/employee-app/build.gradle.kts
+          # V157 release identity.
+          grep -q 'versionCode = 157' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 157' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY"' buildsrc/employee-app/build.gradle.kts
 
           # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
