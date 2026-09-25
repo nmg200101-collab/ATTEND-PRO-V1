@@ -1535,6 +1535,7 @@ class MainActivity : Activity() {
 
     private fun triggerImmediateAttendanceSync(event: AttendanceEvent) {
         deliverAttendanceEventToReceiversNearby(event)
+        syncReceiverLiveMirrorIfDue(force = true)
 
         if (repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return
         Thread {
