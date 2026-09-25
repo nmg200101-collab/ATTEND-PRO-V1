@@ -399,6 +399,9 @@ jobs:
           grep -q 'MessageDigest' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
           test -f RELEASE-NOTES-V155.md
           test -f V155-FINAL-QA-RELEASE-HARDENING.md
+          test -f buildsrc/store-app/lint.xml
+          grep -q 'ReceiverReportBleTransport.kt' buildsrc/store-app/lint.xml
+          grep -q 'lintConfig = file("lint.xml")' buildsrc/store-app/build.gradle.kts
       - name: Verify secure DNS bootstrap
         run: |
           set -euo pipefail

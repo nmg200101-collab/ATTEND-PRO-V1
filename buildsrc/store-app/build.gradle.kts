@@ -38,6 +38,14 @@ android {
         }
     }
 
+    lint {
+        // Receiver V149 is byte-locked and field-proven. API 33+ annotates
+        // BluetoothGatt.writeCharacteristic() with BluetoothStatusCodes;
+        // the legacy locked source compares SUCCESS (0) numerically.
+        // Ignore only this lint category in that immutable Receiver file.
+        lintConfig = file("lint.xml")
+    }
+
     buildTypes {
         getByName("debug") {
             buildConfigField("boolean", "ENFORCE_OFFICIAL_SIGNATURE", "false")

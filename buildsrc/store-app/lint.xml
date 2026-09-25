@@ -1,11 +1,13 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <lint>
     <!--
-      PairingBeacon is the field-proven protected RC1 pairing implementation and must remain
-      byte-identical. Runtime BLE permission ownership is handled by the Activity before start().
-      Scope the legacy callback MissingPermission finding to this protected file only.
+      V149 Receiver source is immutable. Android API 33+ annotates the
+      three-argument BluetoothGatt.writeCharacteristic result with
+      BluetoothStatusCodes. The locked implementation compares SUCCESS to 0,
+      which is functionally equivalent but triggers WrongConstant in current lint.
+      The V149 byte lock prevents new code from entering this ignored file.
     -->
-    <issue id="MissingPermission">
-        <ignore path="src/main/java/com/attendpro/store/PairingBeacon.kt" />
+    <issue id="WrongConstant">
+        <ignore path="src/main/java/com/attendpro/store/ReceiverReportBleTransport.kt" />
     </issue>
 </lint>

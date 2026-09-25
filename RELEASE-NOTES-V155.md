@@ -27,3 +27,6 @@ V155 is a release-hardening build. It does not add product features and does not
 
 ## Field release gate
 GitHub Actions cannot certify real-device Bluetooth pairing, QR pairing, BLE GATT/ACK, Wi-Fi/Hotspot/LAN, GPS, Android biometric prompts, OEM background behavior, APK installer flow, or end-to-end backup restoration. V155 is not to receive the final field-release lock until the real-device smoke matrix passes.
+
+## Lint compatibility note
+Current Android lint flags a numeric `0` comparison in the byte-locked V149 `ReceiverReportBleTransport.kt` even though Android's success status is zero. Because Receiver is explicitly immutable for V155, the Store lint configuration suppresses only `WrongConstant` for that locked file. The V149 byte-diff guard still prevents any source change in the ignored file; all other lint errors remain release-blocking.

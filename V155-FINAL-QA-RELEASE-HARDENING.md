@@ -29,3 +29,6 @@ The V155 workflow fails on any drift in the locks above. It also runs unit tests
 - Android 12/13/14/15/16 device coverage as available.
 
 Only after the field matrix passes should `FINAL-RELEASE-LOCK-V155.md` be created.
+
+## Diagnosed automated-QA exception
+Run 36116195322 exposed a pre-existing `WrongConstant` lint finding in the V149-locked Receiver BLE transport. V155 does not modify that Receiver source. A path-scoped lint rule ignores only `WrongConstant` in that immutable file while preserving abort-on-error behavior everywhere else.
