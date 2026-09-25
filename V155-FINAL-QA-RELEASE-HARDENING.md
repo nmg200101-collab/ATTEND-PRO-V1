@@ -32,3 +32,8 @@ Only after the field matrix passes should `FINAL-RELEASE-LOCK-V155.md` be create
 
 ## Diagnosed automated-QA exception
 Run 36116195322 exposed a pre-existing `WrongConstant` lint finding in the V149-locked Receiver BLE transport. V155 does not modify that Receiver source. A path-scoped lint rule ignores only `WrongConstant` in that immutable file while preserving abort-on-error behavior everywhere else.
+
+## Confirmed V155 fixes
+- Lifecycle audit found a Store ConnectivityManager callback without unregister cleanup. V155 adds deterministic cleanup in onDestroy.
+- Update audit found that package/signature/SHA were verified but the downloaded APK's embedded versionCode was not cross-checked with release metadata. V155 now enforces exact expected versionCode and blocks downgrade/mismatch.
+- Lint gate is report-driven: immutable RC29/V149 findings are logged as legacy locked debt; any lint error in mutable code fails the release.

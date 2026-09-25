@@ -38,6 +38,11 @@ android {
         }
     }
 
+    lint {
+        // CI parses lint reports and blocks every error outside immutable RC29/V149 sources.
+        abortOnError = false
+    }
+
     buildTypes {
         getByName("debug") {
             buildConfigField("boolean", "ENFORCE_OFFICIAL_SIGNATURE", "false")

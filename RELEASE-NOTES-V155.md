@@ -30,3 +30,8 @@ GitHub Actions cannot certify real-device Bluetooth pairing, QR pairing, BLE GAT
 
 ## Lint compatibility note
 Current Android lint flags a numeric `0` comparison in the byte-locked V149 `ReceiverReportBleTransport.kt` even though Android's success status is zero. Because Receiver is explicitly immutable for V155, the Store lint configuration suppresses only `WrongConstant` for that locked file. The V149 byte-diff guard still prevents any source change in the ignored file; all other lint errors remain release-blocking.
+
+## V155 hardening fixes
+- Store lifecycle now unregisters its ConnectivityManager network callback when MainActivity is destroyed, preventing an Activity-retention leak across repeated opens/closes.
+- Direct APK update verification now checks the downloaded APK's actual versionCode against the server-declared version and refuses a mismatch/downgrade before installation.
+- Lint remains fully executed for Direct and Play. CI prints every lint error and permits an error only when its source file is one of the byte-locked RC29/V149 files; every error in mutable V155 code remains release-blocking.

@@ -105,7 +105,7 @@ object AppUpdateManager {
                     digest.digest().joinToString("") { "%02x".format(it) }
                 }
                 if (!actual.equals(release.sha256, true)) throw SecurityException("فشل التحقق من بصمة ملف التحديث")
-                verifyPackageAndSigner(activity, target)
+                verifyPackageAndSigner(activity, target, release.versionCode)
                 target
             }
             activity.runOnUiThread {
@@ -116,11 +116,19 @@ object AppUpdateManager {
         }.start()
     }
 
-    private fun verifyPackageAndSigner(activity: Activity, apk: File) {
+    private fun verifyPackageAndSigner(activity: Activity, apk: File, expectedVersionCode: Long) {
         @Suppress("DEPRECATION")
         val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val archive = activity.packageManager.getPackageArchiveInfo(apk.absolutePath, flags) ?: throw SecurityException("ملف APK غير صالح")
         if (archive.packageName != activity.packageName) throw SecurityException("ملف التحديث لا يخص هذا التطبيق")
+        val archiveVersionCode = if (Build.VERSION.SDK_INT >= 28) archive.longVersionCode else {
+            @Suppress("DEPRECATION")
+            archive.versionCode.toLong()
+        }
+        val installedVersionCode = currentVersionCode(activity)
+        if (archiveVersionCode != expectedVersionCode || archiveVersionCode <= installedVersionCode) {
+            throw SecurityException("رقم إصدار ملف التحديث لا يطابق الإصدار المعلن")
+        }
         fun signerBytes(info: android.content.pm.PackageInfo): List<ByteArray> = if (Build.VERSION.SDK_INT >= 28) {
             info.signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
         } else {

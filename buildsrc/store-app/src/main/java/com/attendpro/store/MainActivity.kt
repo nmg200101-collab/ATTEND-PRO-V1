@@ -104,6 +104,13 @@ class MainActivity : Activity() {
         runCatching { cm.registerDefaultNetworkCallback(cb) }.onSuccess { connectionRecoveryCallback1927 = cb }
     }
 
+    private fun uninstallConnectionRecovery1927() {
+        val callback = connectionRecoveryCallback1927 ?: return
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        if (cm != null) runCatching { cm.unregisterNetworkCallback(callback) }
+        connectionRecoveryCallback1927 = null
+    }
+
     private lateinit var repo: StoreRepository
     private lateinit var scanner: BleEmployeeScanner
     private lateinit var networkListener: NetworkPresenceListener
@@ -5037,6 +5044,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy(){
+        uninstallConnectionRecovery1927()
         nearbyRefreshHandler.removeCallbacks(nearbyRefreshTask)
         receiverEmployeeSyncHandler.removeCallbacks(receiverEmployeeSyncTask)
         runCatching { scanner.stop() }
