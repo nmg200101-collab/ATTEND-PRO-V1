@@ -50,41 +50,86 @@ class StoreMessages1975Activity : Activity() {
     }
 
     private fun showInbox() {
-        val root = base(t("الرسائل والإشعارات", "Messages and notifications"), t("رسائل إدارة النظام وردود الموظفين ورسائل المحل", "System messages, employee replies and Store messages"))
+        val root = base(
+            t("الرسائل والإشعارات", "Messages and notifications"),
+            t("تفتح الرسائل فورًا من الهاتف ثم تتحدث من الخادم في الخلفية", "Messages open instantly from this phone, then refresh from the server in the background")
+        )
         val actions = UiKit.card(this, p)
-        actions.addView(UiKit.button(this, p, t("✉ إرسال رسالة لموظف", "✉ Send a message to an employee")).apply { setOnClickListener { composeEmployee() } })
-        actions.addView(UiKit.button(this, p, t("↻ تحديث الوارد", "↻ Refresh inbox"), false).apply { setOnClickListener { loadMessages(root) } })
+        actions.addView(UiKit.button(this, p, t("✉ إرسال رسالة لموظف", "✉ Send a message to an employee")).apply {
+            setOnClickListener { composeEmployee() }
+        })
+        actions.addView(UiKit.button(this, p, t("↻ تحديث الوارد", "↻ Refresh inbox"), false).apply {
+            setOnClickListener { loadMessages(root, showProgress = true) }
+        })
         root.addView(actions)
-        loadMessages(root)
+
+        // V152: render local data immediately so a slow server can never block opening the screen.
+        val local = localReplies.all().sortedByDescending { it.createdAt }
+        renderMessages(root, local, t("جاري تحديث الرسائل في الخلفية…", "Refreshing messages in the background…"))
+        loadMessages(root, showProgress = false)
     }
 
-    private fun loadMessages(root: LinearLayout) {
-        if (inboxLoadInFlight1981) return
+    private fun loadMessages(root: LinearLayout, showProgress: Boolean = false) {
+        if (inboxLoadInFlight1981) {
+            if (showProgress) toast(t("التحديث جارٍ بالفعل", "Refresh is already in progress"))
+            return
+        }
         inboxLoadInFlight1981 = true
+        if (showProgress) {
+            renderMessages(
+                root,
+                localReplies.all().sortedByDescending { it.createdAt },
+                t("جاري تحديث الرسائل…", "Refreshing messages…")
+            )
+        }
+
         Thread {
-            try {
-                val result = CentralServerClient.storeMessagesInbox(repo.serverUrl, repo.centralAccessToken, repo.storeId, identity, 100)
-                val local = localReplies.all()
-                runOnUiThread {
-                    val remote = result.getOrDefault(emptyList())
-                    val merged = (local + remote).distinctBy { it.messageId }.sortedByDescending { it.createdAt }
-                    renderMessages(root, merged)
-                    if (result.isFailure && local.isNotEmpty()) {
-                        toast(t("الخادم غير متاح؛ الردود المحلية ما زالت ظاهرة.", "Server unavailable; local replies are still available."))
-                    } else if (result.isFailure) {
-                        toast(t("تعذر تحميل الرسائل: ${result.exceptionOrNull()?.message}", "Unable to load messages: ${result.exceptionOrNull()?.message}"))
-                    }
+            val result = CentralServerClient.storeMessagesInbox(
+                repo.serverUrl,
+                repo.centralAccessToken,
+                repo.storeId,
+                identity,
+                100
+            )
+            val local = localReplies.all()
+            val remote = result.getOrDefault(emptyList())
+            val merged = (local + remote)
+                .distinctBy { it.messageId }
+                .sortedByDescending { it.createdAt }
+
+            inboxLoadInFlight1981 = false
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val notice = when {
+                    result.isSuccess -> t("تم تحديث الرسائل ✓", "Messages updated ✓")
+                    merged.isNotEmpty() -> t(
+                        "الخادم غير متاح الآن؛ تظهر آخر الرسائل المحفوظة.",
+                        "The server is unavailable; the latest saved messages are shown."
+                    )
+                    else -> t(
+                        "تعذر الاتصال بالخادم. يمكنك إعادة المحاولة دون إغلاق الشاشة.",
+                        "Could not reach the server. You can retry without leaving this screen."
+                    )
                 }
-            } finally {
-                inboxLoadInFlight1981 = false
+                renderMessages(root, merged, notice)
             }
         }.apply { isDaemon = true }.start()
     }
 
-    private fun renderMessages(root: LinearLayout, messages: List<CentralServerClient.Message1975>) {
+    private fun renderMessages(
+        root: LinearLayout,
+        messages: List<CentralServerClient.Message1975>,
+        notice: String = ""
+    ) {
         while (root.childCount > 2) root.removeViewAt(2)
         val card = UiKit.card(this, p)
         card.addView(UiKit.sectionLabel(this, p, t("الوارد", "Inbox")))
+        if (notice.isNotBlank()) {
+            card.addView(UiKit.subtitle(this, p, notice).apply {
+                gravity = Gravity.CENTER
+                textSize = 11.5f
+            })
+        }
         if (messages.isEmpty()) card.addView(UiKit.subtitle(this, p, t("لا توجد رسائل حاليًا.", "No messages right now.")))
         messages.forEach { message ->
             val unread = message.readAt <= 0L
