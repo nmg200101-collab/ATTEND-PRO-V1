@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V158 Store Management UX
+name: Build ATTEND-PRO V159 Store Management Entry Fix
 on:
   push:
-    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux]
+    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux, attend-pro-v159-store-management-entry-fix]
   workflow_dispatch:
 permissions:
   contents: read
@@ -105,6 +105,21 @@ jobs:
           grep -q 'showBackupSystemV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
           test -f RELEASE-NOTES-V158.md
           test -f V158-STORE-MANAGEMENT-UX.md
+      - name: Apply V159 Store Management entry fix patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v159/source.patch.xz.b64 /tmp/v159-source.patch.xz.b64
+          test "$(sha256sum /tmp/v159-source.patch.xz.b64 | awk '{print $1}')" = "2656e663916dd894df7e77b4d95ca142939cdba226f2fcf27620dc426b4cb1fc"
+          base64 -d /tmp/v159-source.patch.xz.b64 | xz -d > /tmp/v159-source.patch
+          test "$(sha256sum /tmp/v159-source.patch | awk '{print $1}')" = "6eb1e32eb3ffdb800f0cfbdb8d3b32fc8ea3d33aea55c01345c83ecd6fccd5bf"
+          patch -p1 --forward --batch < /tmp/v159-source.patch
+          grep -q 'versionCode = 159' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 159' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          test -f RELEASE-NOTES-V159.md
+          test -f V159-STORE-MANAGEMENT-ENTRY-FIX.md
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -120,7 +135,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V158 Store Management UX and protected locks
+      - name: Verify V159 Store Management entry and protected locks
         run: |
           set -euxo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -410,11 +425,12 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V158 release identity and Store Management UX markers.
-          grep -q 'versionCode = 158' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 158' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/employee-app/build.gradle.kts
+          # V159 release identity, visible entry route, and V158 Store Management UX markers.
+          grep -q 'versionCode = 159' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 159' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' "$MAIN"
           grep -q '1. إعدادات المحل' "$SETTINGS"
           grep -q '2. الموظفون والدوام' "$SETTINGS"
           grep -q '3. الاتصال والأجهزة' "$SETTINGS"
@@ -424,6 +440,8 @@ jobs:
           grep -q 'الإعدادات المتقدمة' "$SETTINGS"
           test -f V158-STORE-MANAGEMENT-UX.md
           test -f RELEASE-NOTES-V158.md
+          test -f V159-STORE-MANAGEMENT-ENTRY-FIX.md
+          test -f RELEASE-NOTES-V159.md
 
           # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
@@ -567,10 +585,10 @@ jobs:
             :store-app:bundlePlayRelease \
             :employee-app:bundlePlayRelease \
             --stacktrace
-      - name: Enforce V158 lint gate
+      - name: Enforce V159 lint gate
         run: |
           set -euo pipefail
-          ERRORS=/tmp/v158-lint-errors.txt
+          ERRORS=/tmp/v159-lint-errors.txt
           : > "$ERRORS"
           while IFS= read -r report; do
             grep -E ' Error: ' "$report" >> "$ERRORS" || true
@@ -587,14 +605,14 @@ jobs:
                 echo "::notice::Pre-existing lint finding in immutable RC29/V149 source: $line"
                 ;;
               *)
-                echo "::error::V158 lint error outside immutable lock: $line"
+                echo "::error::V159 lint error outside immutable lock: $line"
                 BAD=1
                 ;;
             esac
           done < "$ERRORS"
           test "$BAD" -eq 0
 
-      - name: Sign V158 APKs and Play AABs
+      - name: Sign V159 APKs and Play AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -610,13 +628,13 @@ jobs:
             if [ "$APP" = employee ]; then
               MOD=employee-app
               PKG=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V158.apk
-              AAB_OUT=ATTEND-PRO-Employee-V158-PLAY.aab
+              APK_OUT=ATTEND-PRO-Employee-V159.apk
+              AAB_OUT=ATTEND-PRO-Employee-V159-PLAY.aab
             else
               MOD=store-app
               PKG=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V158.apk
-              AAB_OUT=ATTEND-PRO-Store-V158-PLAY.aab
+              APK_OUT=ATTEND-PRO-Store-V159.apk
+              AAB_OUT=ATTEND-PRO-Store-V159-PLAY.aab
             fi
 
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
@@ -634,7 +652,7 @@ jobs:
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='158' versionName='2.0.0-RC29-V158-STORE-MANAGEMENT-UX'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='159' versionName='2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX'"
 
             BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
             test -n "$BUNDLE"
@@ -647,22 +665,23 @@ jobs:
             jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
           done
 
-          cp RELEASE-NOTES-V158.md signed/RELEASE-NOTES-V158.md
+          cp RELEASE-NOTES-V159.md signed/RELEASE-NOTES-V159.md
+          cp V159-STORE-MANAGEMENT-ENTRY-FIX.md signed/V159-STORE-MANAGEMENT-ENTRY-FIX.md
           cp V158-STORE-MANAGEMENT-UX.md signed/V158-STORE-MANAGEMENT-UX.md
           cp ALL-SECTIONS-FINAL-LOCK-V157.md signed/ALL-SECTIONS-FINAL-LOCK-V157.md
           cp BLUETOOTH-FINAL-LOCK-V157.md signed/BLUETOOTH-FINAL-LOCK-V157.md
           cp RECEIVER-FINAL-LOCK-V149.md signed/RECEIVER-FINAL-LOCK-V149.md
           cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/CONNECTION_CORE_FINAL_LOCK_RC29.md
-          zip -qr signed/ATTEND-PRO-V158-SOURCE.zip . \
+          zip -qr signed/ATTEND-PRO-V159-SOURCE.zip . \
             -x '.git/*' 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
 
-          cat > signed/V158-AUTOMATED-QA.txt <<EOF
-          ATTEND-PRO V158 — AUTOMATED QA
+          cat > signed/V159-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V159 — AUTOMATED QA
           Commit: $GITHUB_SHA
           Branch: $GITHUB_REF_NAME
-          Version code: 158
-          Version name: 2.0.0-RC29-V158-STORE-MANAGEMENT-UX
-          Scope: Store Management UI organization only
+          Version code: 159
+          Version name: 2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX
+          Scope: Store Management visible entry route + V158 UX
           V157 Bluetooth dual-path baseline: LOCKED
           V149 Receiver baseline: LOCKED
           RC29 protected connection sources: LOCKED
@@ -670,14 +689,14 @@ jobs:
           Android lint (Direct + Play): reports audited; no errors outside immutable RC29/V149 sources
           Direct APK build/signature/package verification: PASSED
           Play AAB build/signature verification: PASSED
-          FIELD DEVICE GATE: UI navigation and locked connectivity regression still require real-device confirmation before V158 is approved as the next overall application baseline.
+          FIELD DEVICE GATE: Main screen -> إدارة المحل must visibly open the six-section V158 layout; locked connectivity regression still requires real-device confirmation.
           EOF
 
-          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V158.md V158-STORE-MANAGEMENT-UX.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md CONNECTION_CORE_FINAL_LOCK_RC29.md V158-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
-          echo "===== V158 SHA-256 ====="
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V159.md V159-STORE-MANAGEMENT-ENTRY-FIX.md V158-STORE-MANAGEMENT-UX.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md CONNECTION_CORE_FINAL_LOCK_RC29.md V159-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          echo "===== V159 SHA-256 ====="
           cat signed/ALL-SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V158-STORE-MANAGEMENT-UX-SIGNED
+          name: ATTEND-PRO-V159-STORE-MANAGEMENT-ENTRY-FIX-SIGNED
           path: signed/
           retention-days: 90
