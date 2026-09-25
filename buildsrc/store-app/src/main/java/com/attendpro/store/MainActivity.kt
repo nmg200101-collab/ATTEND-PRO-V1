@@ -146,6 +146,8 @@ class MainActivity : Activity() {
     @Volatile private var activationRecoveryInFlight = false
     @Volatile private var activationRecoveryAttemptId = 0L
     private var lastLateScheduleSyncAt = 0L
+    private var lastUiMaintenanceAt = 0L
+    @Volatile private var historyLoadGeneration = 0L
     private data class NearbyPhone(
         val seenAt: Long,
         val rssi: Int,
@@ -184,9 +186,12 @@ class MainActivity : Activity() {
             pollServerPresenceIfDue()
             autoSyncIfReady()
             syncReceiverLiveMirrorIfDue()
-            if (::lateAlerts.isInitialized) lateAlerts.tick()
-            checkConnectedWithoutProof()
             val lateNow = System.currentTimeMillis()
+            if (lateNow - lastUiMaintenanceAt >= 15_000L) {
+                if (::lateAlerts.isInitialized) lateAlerts.tick()
+                checkConnectedWithoutProof()
+                lastUiMaintenanceAt = lateNow
+            }
             if (lateNow - lastLateScheduleSyncAt >= 60_000L) {
                 LateAlertScheduler.sync(this@MainActivity, repo, lateNow)
                 lastLateScheduleSyncAt = lateNow
