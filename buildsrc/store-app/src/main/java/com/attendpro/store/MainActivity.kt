@@ -3177,57 +3177,205 @@ class MainActivity : Activity() {
 
     private fun showPresenceChallenge(forcedAction: AttendanceAction? = null) {
         val employees = repo.employees().filter { it.active && it.companionEnabled }
-        if (employees.isEmpty()) { info("إثبات الوجود", "لا يوجد موظف نشط مرتبط بتطبيق الموظف."); return }
-        val names = employees.map { e ->
-            val seen = nearby[e.employeeId]?.let { System.currentTimeMillis() - it.seenAt < 120_000L } == true
-            "${e.displayName} ${if (seen) "• قريب الآن" else "• غير ظاهر حاليًا"}"
+        if (employees.isEmpty()) {
+            info(
+                t("إثبات الحضور", "Attendance proof"),
+                t("لا يوجد موظف نشط مرتبط بتطبيق الموظف.", "No active employee is linked to the Employee app.")
+            )
+            return
         }
-        AlertDialog.Builder(this).setTitle("اختر الموظف").setItems(names.toTypedArray()) { _, i ->
-            val e = employees[i]
-            val options = mutableListOf<Pair<String, AttendanceMethod>>()
-            if (e.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC)) options += "◎ بصمة/وجه الهاتف" to AttendanceMethod.PHONE_BLE_BIOMETRIC
-            else if (e.allows(AttendanceMethod.PHONE_FINGERPRINT)) options += "◎ بصمة إصبع الهاتف" to AttendanceMethod.PHONE_FINGERPRINT
-            if (e.allows(AttendanceMethod.PASSWORD)) options += "▣ كلمة المرور" to AttendanceMethod.PASSWORD
-            if (options.isEmpty()) { info("إثبات الوجود", "لا توجد طريقة تحقق للهاتف مفعلة لهذا الموظف."); return@setItems }
-            AlertDialog.Builder(this).setTitle("إثبات وجود ${e.displayName}").setItems(options.map { it.first }.toTypedArray()) { _, j ->
-                val chosen = options[j]
-                val requestedAction = forcedAction ?: nextAction(e.employeeId)
-                status.text = "جاري إرسال طلب إثبات ${if (requestedAction == AttendanceAction.CHECK_IN) "حضور" else "انصراف"} إلى هاتف ${e.displayName}…"
-                Thread {
-                    val secret = SecretCodec.decode(e.pairingSecret)
-                    val requestToken = java.security.SecureRandom().nextInt()
-                    val expiresAt = System.currentTimeMillis() + 60_000L
-                    val directSent = if (secret != null) directBle.sendChallenge(e.employeeId, chosen.second, expiresAt, requestToken, requestedAction) else false
-                    val lanSent = if (!directSent && secret != null && isLanConnected(e.employeeId)) LocalChallengeSender.send(e.employeeId, secret, chosen.second, System.currentTimeMillis(), requestToken, requestedAction) else false
-                    val localSent = directSent || lanSent
-                    // One request, one transport: prefer an already verified local channel.
-                    // Only fall back to the server when neither BLE-ACK nor LAN-ACK could deliver it.
-                    if (localSent) {
-                        runOnUiThread {
-                            repo.addPresenceEvent(PresenceEvent(employeeId=e.employeeId, employeeName=e.displayName, timestampEpochMillis=System.currentTimeMillis(), channel="طلب تحقق", rssi=nearby[e.employeeId]?.rssi?:-127, details="أُرسل عبر ${if (directSent) "Bluetooth GATT ACK" else "LAN ACK"}: ${chosen.first}"))
-                            status.text = "✓ أُرسل الطلب محليًا إلى ${e.displayName}"
-                            if (repo.attendanceVoiceAnnouncementEnabled) voiceAnnouncer.announceRequestSent(e.displayName)
-                            refreshDashboard()
-                            info("أُرسل محليًا ✓", "تم استخدام قناة واحدة موثقة فقط لمنع تكرار نفس طلب الإثبات.")
+
+        val employeeChoices = employees.map { employee ->
+            val now = System.currentTimeMillis()
+            val connected = isEmployeeActuallyConnected(employee.employeeId, now)
+            val seen = nearby[employee.employeeId]?.let { now - it.seenAt < 120_000L } == true
+            val connectionLabel = when {
+                connected -> t("متصل فعليًا الآن", "Connected now")
+                seen -> t("قريب / مكتشف الآن", "Nearby / discovered")
+                else -> t("غير ظاهر محليًا الآن", "Not locally visible now")
+            }
+
+            ProfessionalChoice(
+                if (connected) "●" else if (seen) "◉" else "○",
+                employee.displayName.ifBlank { employee.employeeId },
+                t(
+                    "رقم الموظف: ${employee.employeeId}${if (employee.jobTitle.isNotBlank()) " • ${employee.jobTitle}" else ""}",
+                    "Employee ID: ${employee.employeeId}${if (employee.jobTitle.isNotBlank()) " • ${employee.jobTitle}" else ""}"
+                ),
+                connectionLabel
+            ) {
+                val methods = mutableListOf<AttendanceMethod>()
+                if (employee.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC)) {
+                    methods += AttendanceMethod.PHONE_BLE_BIOMETRIC
+                } else if (employee.allows(AttendanceMethod.PHONE_FINGERPRINT)) {
+                    methods += AttendanceMethod.PHONE_FINGERPRINT
+                }
+                if (employee.allows(AttendanceMethod.PASSWORD)) methods += AttendanceMethod.PASSWORD
+
+                if (methods.isEmpty()) {
+                    info(
+                        t("إثبات الحضور", "Attendance proof"),
+                        t("لا توجد طريقة تحقق للهاتف مفعلة لهذا الموظف.", "No phone verification method is enabled for this employee.")
+                    )
+                } else {
+                    val methodChoices = methods.map { method ->
+                        val icon = when (method) {
+                            AttendanceMethod.PHONE_BLE_BIOMETRIC -> "◎"
+                            AttendanceMethod.PHONE_FINGERPRINT -> "◎"
+                            AttendanceMethod.PASSWORD -> "▣"
+                            else -> "✓"
                         }
-                    } else {
-                        val result = if (repo.hasCentralCredentials()) {
-                            CentralServerClient.createPresenceChallenge(repo.serverUrl, repo.centralAccessToken, repo.storeId, DeviceIdentity(this), e.employeeId, chosen.second, requestedAction)
-                        } else Result.failure(IllegalStateException("لا توجد قناة محلية موثقة ولا ربط خادم مهيأ"))
-                        runOnUiThread { result.onSuccess { challenge ->
-                            repo.addPresenceEvent(PresenceEvent(employeeId=e.employeeId, employeeName=e.displayName, timestampEpochMillis=System.currentTimeMillis(), channel="طلب تحقق", rssi=nearby[e.employeeId]?.rssi?:-127, details="أُرسل عبر الخادم: ${chosen.first}"))
-                            status.text = "✓ أُرسل طلب التحقق عبر الخادم إلى ${e.displayName}"
-                            if (repo.attendanceVoiceAnnouncementEnabled) voiceAnnouncer.announceRequestSent(e.displayName)
-                            monitorPresenceChallenge(e, challenge, requestedAction)
-                            refreshDashboard()
-                        }.onFailure { error ->
-                            info("تعذر إرسال الطلب", error.message ?: "لا توجد قناة اتصال موثقة متاحة")
-                        } }
+                        val description = when (method) {
+                            AttendanceMethod.PHONE_BLE_BIOMETRIC -> t(
+                                "بصمة أو وجه Android على هاتف الموظف",
+                                "Android fingerprint or face on the employee phone"
+                            )
+                            AttendanceMethod.PHONE_FINGERPRINT -> t(
+                                "بصمة إصبع Android فقط",
+                                "Android fingerprint only"
+                            )
+                            AttendanceMethod.PASSWORD -> t(
+                                "كلمة المرور المحفوظة على هاتف الموظف",
+                                "Password saved on the employee phone"
+                            )
+                            else -> ""
+                        }
+                        ProfessionalChoice(
+                            icon,
+                            methodLabel(method),
+                            description,
+                            t("مسموح لهذا الموظف", "Allowed for this employee")
+                        ) {
+                            sendPresenceChallengeProfessional(employee, method, forcedAction)
+                        }
                     }
-                }.start()
-            }.setNegativeButton("إلغاء", null).show()
-        }.setNegativeButton("إلغاء", null).show()
-}
+
+                    showProfessionalChoiceDialog(
+                        t("إثبات حضور ${employee.displayName}", "Verify ${employee.displayName}"),
+                        t(
+                            "اختر طريقة التحقق المطلوبة. سيصل الطلب إلى هاتف الموظف عبر أفضل قناة موثقة.",
+                            "Choose the required verification method. The request will use the best authenticated channel."
+                        ),
+                        methodChoices
+                    )
+                }
+            }
+        }
+
+        showProfessionalChoiceDialog(
+            t("طلب إثبات الحضور", "Request attendance proof"),
+            t(
+                "اختر الموظف أولًا. حالة الاتصال تظهر بجانب كل موظف.",
+                "Choose an employee first. Connection status is shown on each card."
+            ),
+            employeeChoices
+        )
+    }
+
+    private fun sendPresenceChallengeProfessional(
+        employee: PairedEmployee,
+        chosenMethod: AttendanceMethod,
+        forcedAction: AttendanceAction?
+    ) {
+        val requestedAction = forcedAction ?: nextAction(employee.employeeId)
+        status.text = t(
+            "جاري إرسال طلب إثبات ${if (requestedAction == AttendanceAction.CHECK_IN) "حضور" else "انصراف"} إلى هاتف ${employee.displayName}…",
+            "Sending ${if (requestedAction == AttendanceAction.CHECK_IN) "check-in" else "check-out"} proof request to ${employee.displayName}…"
+        )
+
+        Thread {
+            val secret = SecretCodec.decode(employee.pairingSecret)
+            val requestToken = java.security.SecureRandom().nextInt()
+            val expiresAt = System.currentTimeMillis() + 60_000L
+            val directSent = if (secret != null) {
+                directBle.sendChallenge(employee.employeeId, chosenMethod, expiresAt, requestToken, requestedAction)
+            } else false
+            val lanSent = if (!directSent && secret != null && isLanConnected(employee.employeeId)) {
+                LocalChallengeSender.send(
+                    employee.employeeId,
+                    secret,
+                    chosenMethod,
+                    System.currentTimeMillis(),
+                    requestToken,
+                    requestedAction
+                )
+            } else false
+            val localSent = directSent || lanSent
+
+            if (localSent) {
+                runOnUiThread {
+                    repo.addPresenceEvent(
+                        PresenceEvent(
+                            employeeId = employee.employeeId,
+                            employeeName = employee.displayName,
+                            timestampEpochMillis = System.currentTimeMillis(),
+                            channel = "طلب تحقق",
+                            rssi = nearby[employee.employeeId]?.rssi ?: -127,
+                            details = "أُرسل عبر ${if (directSent) "Bluetooth GATT ACK" else "LAN ACK"}: ${methodLabel(chosenMethod)}"
+                        )
+                    )
+                    status.text = t(
+                        "✓ أُرسل الطلب محليًا إلى ${employee.displayName}",
+                        "✓ Request sent locally to ${employee.displayName}"
+                    )
+                    if (repo.attendanceVoiceAnnouncementEnabled) {
+                        voiceAnnouncer.announceRequestSent(employee.displayName)
+                    }
+                    refreshDashboard()
+                    info(
+                        t("أُرسل الطلب ✓", "Request sent ✓"),
+                        t(
+                            "تم استخدام قناة موثقة واحدة فقط لمنع تكرار نفس طلب الإثبات.",
+                            "One authenticated channel was used to prevent duplicate proof requests."
+                        )
+                    )
+                }
+            } else {
+                val result = if (repo.hasCentralCredentials()) {
+                    CentralServerClient.createPresenceChallenge(
+                        repo.serverUrl,
+                        repo.centralAccessToken,
+                        repo.storeId,
+                        DeviceIdentity(this),
+                        employee.employeeId,
+                        chosenMethod,
+                        requestedAction
+                    )
+                } else {
+                    Result.failure(IllegalStateException("لا توجد قناة محلية موثقة ولا ربط خادم مهيأ"))
+                }
+
+                runOnUiThread {
+                    result.onSuccess { challenge ->
+                        repo.addPresenceEvent(
+                            PresenceEvent(
+                                employeeId = employee.employeeId,
+                                employeeName = employee.displayName,
+                                timestampEpochMillis = System.currentTimeMillis(),
+                                channel = "طلب تحقق",
+                                rssi = nearby[employee.employeeId]?.rssi ?: -127,
+                                details = "أُرسل عبر الخادم: ${methodLabel(chosenMethod)}"
+                            )
+                        )
+                        status.text = t(
+                            "✓ أُرسل طلب التحقق عبر الخادم إلى ${employee.displayName}",
+                            "✓ Verification request sent through the server to ${employee.displayName}"
+                        )
+                        if (repo.attendanceVoiceAnnouncementEnabled) {
+                            voiceAnnouncer.announceRequestSent(employee.displayName)
+                        }
+                        monitorPresenceChallenge(employee, challenge, requestedAction)
+                        refreshDashboard()
+                    }.onFailure { error ->
+                        info(
+                            t("تعذر إرسال الطلب", "Could not send request"),
+                            error.message ?: t("لا توجد قناة اتصال موثقة متاحة", "No authenticated connection channel is available")
+                        )
+                    }
+                }
+            }
+        }.start()
+    }
 
     private fun showDirectQrAttendance1937(forcedAction: AttendanceAction? = null) {
         val employees = repo.employees().filter { it.active && it.companionEnabled }
