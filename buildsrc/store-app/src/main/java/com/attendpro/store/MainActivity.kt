@@ -932,7 +932,7 @@ class MainActivity : Activity() {
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p,
-                t("RC7 • إصلاح الاتصال والإدارة • ${attendProVersionName()}", "RC7 • connectivity/admin repair • ${attendProVersionName()}")).apply {
+                t("لوحة إدارة المحل • V${BuildConfig.VERSION_CODE}", "Store dashboard • V${BuildConfig.VERSION_CODE}")).apply {
                 setTextColor(android.graphics.Color.argb(225,255,255,255))
                 textSize = 11.2f
                 gravity = if (isEnglish) Gravity.START else Gravity.END
@@ -2388,25 +2388,158 @@ class MainActivity : Activity() {
         }.setNegativeButton("إغلاق", null).show()
     }
 
+    private data class ProfessionalChoice(
+        val icon: String,
+        val title: String,
+        val subtitle: String,
+        val statusText: String = "",
+        val action: () -> Unit
+    )
+
+    private fun showProfessionalChoiceDialog(
+        title: String,
+        subtitle: String,
+        choices: List<ProfessionalChoice>
+    ) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 10)
+            )
+        }
+        content.addView(UiKit.subtitle(this, p, subtitle).apply {
+            gravity = Gravity.CENTER
+            textSize = 12.5f
+            setPadding(0, 0, 0, UiKit.dp(this@MainActivity, 8))
+        })
+
+        lateinit var dialog: AlertDialog
+        choices.forEach { choice ->
+            val card = UiKit.card(this, p, 9).apply {
+                isClickable = true
+                isFocusable = true
+                minimumHeight = UiKit.dp(this@MainActivity, 76)
+                setOnClickListener {
+                    dialog.dismiss()
+                    choice.action()
+                }
+            }
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this).apply {
+                text = choice.icon
+                textSize = 26f
+                gravity = Gravity.CENTER
+                setTextColor(p.primary)
+                background = UiKit.round(p.surface2, 16, this@MainActivity, p.divider)
+                layoutParams = LinearLayout.LayoutParams(
+                    UiKit.dp(this@MainActivity, 58),
+                    UiKit.dp(this@MainActivity, 58)
+                ).apply {
+                    marginEnd = UiKit.dp(this@MainActivity, 10)
+                }
+            })
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(UiKit.title(this@MainActivity, p, choice.title, 15.5f))
+                addView(UiKit.subtitle(this@MainActivity, p, choice.subtitle).apply {
+                    textSize = 11.7f
+                    maxLines = 2
+                })
+                if (choice.statusText.isNotBlank()) {
+                    addView(UiKit.statusBadge(this@MainActivity, p, choice.statusText, true).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = UiKit.dp(this@MainActivity, 5) }
+                    })
+                }
+            })
+            card.addView(row)
+            content.addView(card)
+        }
+
+        dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(ScrollView(this).apply { addView(content) })
+            .setNegativeButton(t("إغلاق", "Close"), null)
+            .create()
+        dialog.show()
+    }
+
     private fun showAttendanceMethods(
-        dialogTitle: String = "اختر طريقة الحضور",
+        dialogTitle: String = t("اختر طريقة الحضور", "Choose attendance method"),
         forcedAction: AttendanceAction? = null
     ){
-        val actions = mutableListOf<Pair<String, () -> Unit>>()
-        if (repo.allowFaceEnrollment) actions += "◉ التعرف بالوجه" to { requestFaceRecognition(forcedAction) }
-        if (repo.allowVoiceVerification) actions += "◖ بصمة الصوت" to { showVoiceDialog(forcedAction) }
-        if (repo.allowPasswordFallback) actions += "▣ كلمة المرور" to { showPasswordDialog(forcedAction) }
-        if (repo.allowEmployeeCompanion && repo.requirePhoneBiometric) actions += "◎ بصمة/وجه هاتف الموظف" to { showPresenceChallenge(forcedAction) }
-        if (repo.allowQrAttendance) actions += "▦ QR مباشر" to { showDirectQrAttendance1937(forcedAction) }
-        if (actions.isEmpty()) {
-            info("طرق الحضور", "لا توجد طريقة مفعلة. افتح إدارة المحل ← إعدادات التطبيق ← طرق الحضور والتحقق.")
+        val actionLabel = when (forcedAction) {
+            AttendanceAction.CHECK_IN -> t("تسجيل حضور", "Check in")
+            AttendanceAction.CHECK_OUT -> t("تسجيل انصراف", "Check out")
+            null -> t("حضور أو انصراف", "Check in or out")
+        }
+        val choices = mutableListOf<ProfessionalChoice>()
+
+        if (repo.allowFaceEnrollment) choices += ProfessionalChoice(
+            "◉",
+            t("التعرف بالوجه", "Face recognition"),
+            t("التقاط الوجه والتحقق محليًا على جهاز المحل", "Capture and verify the face on the Store device"),
+            t("متاح", "Available")
+        ) { requestFaceRecognition(forcedAction) }
+
+        if (repo.allowVoiceVerification) choices += ProfessionalChoice(
+            "◖",
+            t("بصمة الصوت", "Voice verification"),
+            t("نطق العبارة المطلوبة والتحقق من الصوت", "Speak the requested phrase for voice verification"),
+            t("متاح", "Available")
+        ) { showVoiceDialog(forcedAction) }
+
+        if (repo.allowPasswordFallback) choices += ProfessionalChoice(
+            "▣",
+            t("كلمة المرور", "Password"),
+            t("إدخال رقم الموظف وكلمة المرور المعتمدة", "Enter the employee ID and approved password"),
+            t("متاح", "Available")
+        ) { showPasswordDialog(forcedAction) }
+
+        if (repo.allowEmployeeCompanion && repo.requirePhoneBiometric) choices += ProfessionalChoice(
+            "◎",
+            t("بصمة أو وجه هاتف الموظف", "Employee phone biometric"),
+            t("إرسال طلب تحقق إلى هاتف الموظف المرتبط", "Send a verification request to the linked employee phone"),
+            t("موصى به", "Recommended")
+        ) { showPresenceChallenge(forcedAction) }
+
+        if (repo.allowQrAttendance) choices += ProfessionalChoice(
+            "▦",
+            t("QR مباشر", "Direct QR"),
+            t("عرض رمز آمن يمسحه هاتف الموظف لإثبات العملية", "Show a secure code for the employee phone to scan"),
+            t("بدون إدخال يدوي", "No manual entry")
+        ) { showDirectQrAttendance1937(forcedAction) }
+
+        if (choices.isEmpty()) {
+            info(
+                t("طرق الحضور", "Attendance methods"),
+                t(
+                    "لا توجد طريقة مفعلة. افتح إدارة المحل ← الحضور والتشغيل ← طرق الحضور.",
+                    "No attendance method is enabled. Open Store Management → Attendance & operations → Attendance methods."
+                )
+            )
             return
         }
-        AlertDialog.Builder(this)
-            .setTitle(dialogTitle)
-            .setItems(actions.map { it.first }.toTypedArray()) { _, which -> actions[which].second() }
-            .setNegativeButton("إغلاق", null)
-            .show()
+
+        showProfessionalChoiceDialog(
+            dialogTitle,
+            t(
+                "${actionLabel} — اختر الطريقة الأنسب. لن تظهر إلا الطرق المفعلة من إدارة المحل.",
+                "${actionLabel} — choose the most suitable method. Only enabled methods are shown."
+            ),
+            choices
+        )
     }
 
     private fun showFaceEngineInfo(){
