@@ -892,8 +892,8 @@ class MainActivity : Activity() {
             setBackgroundColor(p.bg)
         }
 
-        val header = UiKit.heroCard(this, p, 8).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, 86)
+        val header = UiKit.heroCard(this, p, 6).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 74)
         }
         val headerTools = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -902,16 +902,16 @@ class MainActivity : Activity() {
         }
         headerTools.addView(TextView(this).apply {
             text = "⋮"
-            textSize = 25f
+            textSize = 23f
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
             contentDescription = t("القائمة", "Menu")
-            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 42), UiKit.dp(this@MainActivity, 38))
+            layoutParams = LinearLayout.LayoutParams(UiKit.dp(this@MainActivity, 38), UiKit.dp(this@MainActivity, 32))
             setOnClickListener { showStoreMainMenu1976() }
         })
         headerTools.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(0, 1, 1f) })
         headerTools.addView(homeTemplateChip1978().apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UiKit.dp(this@MainActivity, 36))
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, UiKit.dp(this@MainActivity, 30))
         })
         header.addView(headerTools)
 
@@ -925,10 +925,10 @@ class MainActivity : Activity() {
             adjustViewBounds = true
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             setPadding(
-                UiKit.dp(this@MainActivity, 5),
-                UiKit.dp(this@MainActivity, 5),
-                UiKit.dp(this@MainActivity, 5),
-                UiKit.dp(this@MainActivity, 5)
+                UiKit.dp(this@MainActivity, 3),
+                UiKit.dp(this@MainActivity, 3),
+                UiKit.dp(this@MainActivity, 3),
+                UiKit.dp(this@MainActivity, 3)
             )
             background = UiKit.round(
                 android.graphics.Color.argb(34, 255, 255, 255),
@@ -938,23 +938,24 @@ class MainActivity : Activity() {
             )
             elevation = UiKit.dp(this@MainActivity, 2).toFloat()
             layoutParams = LinearLayout.LayoutParams(
-                UiKit.dp(this@MainActivity, 50),
-                UiKit.dp(this@MainActivity, 50)
+                UiKit.dp(this@MainActivity, 40),
+                UiKit.dp(this@MainActivity, 40)
             ).apply {
-                marginEnd = UiKit.dp(this@MainActivity, 10)
+                marginEnd = UiKit.dp(this@MainActivity, 8)
+                topMargin = UiKit.dp(this@MainActivity, -2)
             }
         })
         brandRow.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = if (isEnglish) Gravity.START else Gravity.END
-            addView(UiKit.title(this@MainActivity, p, "ATTEND PRO", 21.5f).apply {
+            addView(UiKit.title(this@MainActivity, p, "ATTEND PRO", 20f).apply {
                 setTextColor(android.graphics.Color.WHITE)
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p,
                 t("لوحة إدارة المحل • V${BuildConfig.VERSION_CODE}", "Store dashboard • V${BuildConfig.VERSION_CODE}")).apply {
                 setTextColor(android.graphics.Color.argb(225,255,255,255))
-                textSize = 11.5f
+                textSize = 10.2f
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
         })
@@ -981,17 +982,37 @@ class MainActivity : Activity() {
                     UiKit.dp(this@MainActivity, 10),
                     UiKit.dp(this@MainActivity, 10)
                 )
-                background = UiKit.round(p.surface2, 18, this@MainActivity, p.accent)
-                elevation = UiKit.dp(this@MainActivity, 1).toFloat()
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+                    cornerRadius = UiKit.dp(this@MainActivity, 18).toFloat()
+                    setColor(p.surface2)
+                    setStroke(UiKit.dp(this@MainActivity, 2), p.accent)
+                }
+                elevation = UiKit.dp(this@MainActivity, 2).toFloat()
             }
 
+            adminFrame.addView(UiKit.statusBadge(
+                this@MainActivity,
+                p,
+                t("إدارة المحل", "Store Management"),
+                true
+            ).apply {
+                textSize = 9.8f
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.CENTER_HORIZONTAL
+                    bottomMargin = UiKit.dp(this@MainActivity, 3)
+                }
+            })
             adminFrame.addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.8f).apply {
                 gravity = Gravity.CENTER
                 maxLines = 1
             })
             adminFrame.addView(UiKit.subtitle(this@MainActivity, p, t(
-                "قسم الإدارة • وصول سريع",
-                "Management • quick access"
+                "وصول سريع لأهم الوظائف",
+                "Quick access to key actions"
             )).apply {
                 gravity = Gravity.CENTER
                 textSize = 10.7f
