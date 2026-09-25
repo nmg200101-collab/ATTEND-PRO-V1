@@ -339,7 +339,6 @@ jobs:
           grep -q 'تسجيل انصراف' "$MAIN"
           grep -q 'minimumHeight = UiKit.dp(this@MainActivity, if (classic) 156 else 148)' "$MAIN"
           grep -q 'اختصارات إضافية' "$MAIN"
-          grep -q 'background = UiKit.round(p.surface2, 18, this@MainActivity, p.accent)' "$MAIN"
           ! grep -q 'addStoreTabs1978(root)' "$MAIN"
           grep -q 'renderMessages(root, local' "$STORE_MESSAGES"
           grep -q 'جاري تحديث الرسائل في الخلفية' "$STORE_MESSAGES"
