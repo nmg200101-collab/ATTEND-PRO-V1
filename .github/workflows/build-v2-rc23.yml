@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V147 Receiver Live Fix UI Lock
+name: Build ATTEND-PRO V148 Receiver Exact Live Mirror
 on:
   push:
-    branches: [attend-pro-v147-receiver-live-fix-ui-lock]
+    branches: [attend-pro-v148-receiver-exact-live-mirror]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V147 receiver live fix UI lock
+      - name: Verify V148 receiver live fix UI lock
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -54,7 +54,7 @@ jobs:
           ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
 
-          # V147 keeps the simplified reports/messages-only receiver center.
+          # V148 keeps the simplified reports/messages-only receiver center.
           grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
           grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
@@ -88,7 +88,7 @@ jobs:
           ! grep -q 'receiverStoreSettings' "$RECEIVER"
           ! grep -q 'store-settings' "$RECEIVER"
 
-          # V147 keeps multi-store isolation and reports/messages-only receiver permissions.
+          # V148 keeps multi-store isolation and reports/messages-only receiver permissions.
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }' "$RECEIVER"
           ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
           ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
@@ -114,7 +114,7 @@ jobs:
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
 
-          # V147 keeps nearby report delivery independent from employee BLE pairing.
+          # V148 keeps nearby report delivery independent from employee BLE pairing.
           test -f "$OFFLINE_PROTOCOL"
           test -f "$LAN_REPORT"
           test -f "$BLE_REPORT"
@@ -151,7 +151,7 @@ jobs:
           grep -q 'sendNearbyGrant' "$BLE_REPORT"
           grep -q 'INVITE_UUID' "$BLE_REPORT"
 
-          # V147 receiver live fix lock: live dashboard + nearby fast path: live UI refresh, parallel receiver lanes, durable outbox.
+          # V148 receiver live fix lock: live dashboard + nearby fast path: live UI refresh, parallel receiver lanes, durable outbox.
           grep -q 'ACTION_DATA_CHANGED' "$SERVICE"
           grep -q 'ACTION_SYNC_NOW' "$SERVICE"
           grep -q 'REPORT_POLL_MS = 1_500L' "$SERVICE"
@@ -211,13 +211,18 @@ jobs:
           ! grep -q 'Received reports:' "$RECEIVER"
           grep -q 'RemoteDashboardPerson' "$CENTRAL"
           grep -q 'presentCount' "$CENTRAL"
-          # V147 field fix: lightweight revision must have a resilient full-dashboard fallback.
+          # V148 field fix: lightweight revision must have a resilient full-dashboard fallback.
           grep -q 'nextFullDashboardFallbackAt' "$SERVICE"
           grep -q 'remoteDashboardRevision' "$SERVICE"
           grep -q 'receiver.markLiveTransport(storeId, "SERVER"' "$SERVICE"
           grep -q 'acceptOfflineReport(envelope, "LAN")' "$SERVICE"
           grep -q 'acceptOfflineReport(envelope, "BLE")' "$SERVICE"
           grep -q 'receiverLiveTransportV147' "$PROTOCOL"
+          grep -q 'APMIRROR2:' "$PROTOCOL"
+          grep -q 'remoteLiveSnapshot' "$SERVICE"
+          grep -q 'publishReceiverLiveSnapshot' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          grep -q 'buildReceiverLiveMirror' "$MAIN"
+          grep -q 'اتصال هاتف الاستلام بالمحل' "$RECEIVER"
           grep -q 'LivePanel { PRESENT, CONNECTED, DAILY, RECENT }' "$RECEIVER"
           grep -q 'الموظفون الحاضرون' "$RECEIVER"
           grep -q 'الأجهزة المتصلة' "$RECEIVER"
@@ -303,13 +308,13 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V147 identity.
-          grep -q 'versionCode = 147' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V147-RECEIVER-LIVE-FIX-UI-LOCK"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 147' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V147-RECEIVER-LIVE-FIX-UI-LOCK"' buildsrc/employee-app/build.gradle.kts
+          # V148 identity.
+          grep -q 'versionCode = 148' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V148-RECEIVER-LIVE-FIX-UI-LOCK"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 148' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V148-RECEIVER-LIVE-FIX-UI-LOCK"' buildsrc/employee-app/build.gradle.kts
 
-          # RC29 field-proven pairing/direct-link files remain immutable in V147.
+          # RC29 field-proven pairing/direct-link files remain immutable in V148.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -338,7 +343,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V147
+      - name: Sign V148
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -351,9 +356,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V147.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V148.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V147.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V148.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -369,11 +374,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='147' versionName='2.0.0-RC29-V147-RECEIVER-LIVE-FIX-UI-LOCK'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='148' versionName='2.0.0-RC29-V148-RECEIVER-LIVE-FIX-UI-LOCK'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V147-RECEIVER-LIVE-FIX-UI-LOCK-SIGNED
+          name: ATTEND-PRO-V148-RECEIVER-EXACT-LIVE-MIRROR-SIGNED
           path: signed/
           retention-days: 30
