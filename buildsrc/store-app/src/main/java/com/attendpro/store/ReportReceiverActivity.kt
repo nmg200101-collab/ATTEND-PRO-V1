@@ -911,6 +911,12 @@ class ReportReceiverActivity : Activity() {
 
         val target = messageEmployees.firstOrNull { it.employeeId == selectedMessageEmployeeId }
         if (target != null) {
+            card.addView(UiKit.button(this, p, t(
+                "مراسلة سريعة — ${target.employeeName}",
+                "Quick message — ${target.employeeName}"
+            ), false).apply {
+                setOnClickListener { showQuickMessageDialog(target.employeeId, target.employeeName) }
+            })
             val field = UiKit.field(this, p, t("اكتب الرسالة إلى ${target.employeeName}", "Write a message to ${target.employeeName}"))
             card.addView(field)
             card.addView(UiKit.button(this, p,
@@ -940,8 +946,13 @@ class ReportReceiverActivity : Activity() {
                     "RETRY" -> t("إعادة محاولة تلقائية", "Automatic retry")
                     else -> t("قيد الإرسال…", "Sending…")
                 }
+                val priorityText = when (row.priority) {
+                    "URGENT" -> t("عاجلة", "Urgent")
+                    "IMPORTANT" -> t("مهمة", "Important")
+                    else -> t("عادية", "Normal")
+                }
                 card.addView(UiKit.subtitle(this, p,
-                    "$employeeName • $stateText\n${row.body}\n${formatTime(row.createdAt)}"
+                    "$employeeName • $stateText • $priorityText\n${row.body}\n${formatTime(row.createdAt)}"
                 ))
                 if (row.state == "FAILED") {
                     card.addView(UiKit.button(this, p, t("إعادة محاولة الإرسال", "Retry sending"), false).apply {
