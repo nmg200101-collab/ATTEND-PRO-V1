@@ -4185,24 +4185,67 @@ class MainActivity : Activity() {
 
     private fun activityHistoryLines(limit: Int): List<String> {
         val fmt = SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault())
+        val employeesById = repo.employees().associateBy { it.employeeId.lowercase(Locale.US) }
+
         val presence = repo.presenceEvents().map { event ->
-            val employee = repo.employees().firstOrNull { it.employeeId.equals(event.employeeId, true) }
-            val profile = listOfNotNull(employee?.jobTitle?.takeIf { it.isNotBlank() }, employee?.department?.takeIf { it.isNotBlank() }, employee?.branchId?.takeIf { it.isNotBlank() }).joinToString(" • ")
+            val employee = employeesById[event.employeeId.lowercase(Locale.US)]
+            val profile = listOfNotNull(
+                employee?.jobTitle?.takeIf { it.isNotBlank() },
+                employee?.department?.takeIf { it.isNotBlank() },
+                employee?.branchId?.takeIf { it.isNotBlank() }
+            ).joinToString(" • ")
             event.timestampEpochMillis to "🔵 ${fmt.format(Date(event.timestampEpochMillis))} • ${event.employeeName.ifBlank { event.employeeId }}${if (profile.isNotBlank()) " • $profile" else ""}\nارتباط تلقائي: ${event.channel}${if (event.rssi > -127) " • ${event.rssi} dBm" else ""}${if (event.details.isNotBlank()) " • ${event.details}" else ""}"
         }
+
         val attendance = repo.events().map { event ->
             val action = if (event.action == AttendanceAction.CHECK_IN) "تسجيل حضور" else "تسجيل انصراف"
             val sync = if (event.synced) "متزامن" else "محفوظ محليًا"
             event.timestampEpochMillis to "🟢 ${fmt.format(Date(event.timestampEpochMillis))} • ${event.employeeName.ifBlank { event.employeeId }} • فرع ${event.branchId}\n$action • ${methodLabel(event.method)} • $sync${if (event.evidence.isNotBlank()) " • ${event.evidence}" else ""}"
         }
-        return (presence + attendance).sortedByDescending { it.first }.take(limit).map { it.second }
+
+        return (presence + attendance)
+            .sortedByDescending { it.first }
+            .take(limit.coerceIn(1, 100))
+            .map { it.second }
     }
 
     private fun showConnectionAttendanceHistory() {
-        val lines = activityHistoryLines(100)
-        AlertDialog.Builder(this).setTitle("سجل الارتباط والحضور")
-            .setMessage(if (lines.isEmpty()) "لا توجد عمليات بعد" else lines.joinToString("\n\n"))
-            .setPositiveButton("إغلاق", null).show()
+        val generation = ++historyLoadGeneration
+        val message = TextView(this).apply {
+            text = t("جاري تجهيز آخر الحركات…", "Preparing recent activity…")
+            textSize = 13.5f
+            setTextColor(p.muted)
+            setPadding(
+                UiKit.dp(this@MainActivity, 16),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 16),
+                UiKit.dp(this@MainActivity, 12)
+            )
+        }
+        val scroll = ScrollView(this).apply { addView(message) }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(t("آخر الحركات", "Recent activity"))
+            .setView(scroll)
+            .setPositiveButton(t("إغلاق", "Close"), null)
+            .create()
+        dialog.setOnDismissListener { historyLoadGeneration++ }
+        dialog.show()
+
+        Thread {
+            val lines = runCatching { activityHistoryLines(60) }.getOrElse { emptyList() }
+            runOnUiThread {
+                if (isFinishing || isDestroyed || !dialog.isShowing || generation != historyLoadGeneration) return@runOnUiThread
+                message.text = if (lines.isEmpty()) {
+                    t("لا توجد عمليات بعد", "No activity yet")
+                } else {
+                    lines.joinToString("\n\n")
+                }
+                message.setTextColor(p.text)
+            }
+        }.apply {
+            isDaemon = true
+            name = "attend-history-v153"
+        }.start()
     }
 
     private fun showLiveAttendanceNow() {
