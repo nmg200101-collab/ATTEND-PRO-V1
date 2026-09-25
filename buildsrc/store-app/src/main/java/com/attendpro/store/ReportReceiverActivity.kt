@@ -551,6 +551,7 @@ class ReportReceiverActivity : Activity() {
         val transport = receiver.liveTransport(storeId)
         val transportAt = receiver.liveTransportAt(storeId)
         val transportText = liveTransportLabel(transport)
+        val transportDetail = receiver.liveTransportDetail(storeId).ifBlank { transportText }
 
         content.addView(UiKit.card(this, p, 10).apply {
             addView(UiKit.sectionLabel(this@ReportReceiverActivity, p, t(
@@ -560,12 +561,12 @@ class ReportReceiverActivity : Activity() {
             val last = cachedAt.takeIf { it > 0L }?.let { formatTime(it) } ?: t("لم تصل بيانات بعد", "No data yet")
             val pathTime = transportAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
             addView(UiKit.title(this@ReportReceiverActivity, p, t(
-                "مسار البيانات: $transportText",
-                "Data path: $transportText"
+                "اتصال هاتف الاستلام بالمحل: $transportText",
+                "Receiver-to-store connection: $transportText"
             ), 19f))
             addView(UiKit.subtitle(this@ReportReceiverActivity, p, t(
-                "آخر تحديث: $last • آخر وصول عبر هذا المسار: $pathTime\nتظل آخر بيانات محفوظة ظاهرة حتى عند ضعف الإنترنت.",
-                "Last update: $last • Last arrival on this path: $pathTime\nThe last cached data stays visible when connectivity is weak."
+                "تفاصيل المسار: $transportDetail\nآخر تحديث: $last • آخر وصول: $pathTime\nتظل آخر بيانات محفوظة ظاهرة حتى عند ضعف الإنترنت.",
+                "Path details: $transportDetail\nLast update: $last • Last arrival: $pathTime\nThe last cached data stays visible when connectivity is weak."
             )))
             addView(UiKit.button(this@ReportReceiverActivity, p,
                 if (reportsInFlight) t("جاري التحديث…", "Refreshing…") else t("تحديث من الخادم الآن", "Refresh from server now"),
@@ -692,8 +693,8 @@ class ReportReceiverActivity : Activity() {
                                     val seen = employee.lastSeenAt.takeIf { it > 0L }?.let { formatTime(it) } ?: "—"
                                     addView(UiKit.subtitle(this@ReportReceiverActivity, p,
                                         "● ${employee.employeeName.ifBlank { employee.employeeId }}\n" +
-                                            t("الفرع: ${employee.branchId.ifBlank { "—" }} • آخر اتصال: $seen",
-                                                "Branch: ${employee.branchId.ifBlank { "—" }} • Last seen: $seen")
+                                            t("الفرع: ${employee.branchId.ifBlank { "—" }} • آخر اتصال: $seen\nنوع اتصال هاتف الموظف بالمحل: ${employee.method.ifBlank { "غير محدد" }}",
+                                                "Branch: ${employee.branchId.ifBlank { "—" }} • Last seen: $seen\nEmployee-to-store connection: ${employee.method.ifBlank { "Unknown" }}")
                                     ))
                                 }
                             }
