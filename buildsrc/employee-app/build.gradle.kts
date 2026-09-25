@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.employee"
         minSdk = 26
         targetSdk = 36
-        versionCode = 152
-        versionName = "2.0.0-RC29-V152-MESSAGING-COMPACT-UI-POLISH"
+        versionCode = 153
+        versionName = "2.0.0-RC29-V153-STABILITY-FINAL-UI-POLISH"
     }
 
     compileOptions {
