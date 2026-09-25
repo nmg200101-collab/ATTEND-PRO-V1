@@ -948,18 +948,57 @@ class MainActivity : Activity() {
         header.addView(storeSummary)
         root.addView(header)
 
-        val ownerCard = UiKit.card(this, p, 7).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, 62)
+        val ownerCard = UiKit.card(this, p, 8).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 96)
             gravity = Gravity.CENTER
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.5f).apply {
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.8f).apply {
                 gravity = Gravity.CENTER
                 maxLines = 1
             })
-            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.owner_settings_subtitle)).apply {
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "وصول سريع لأهم وظائف مدير المحل",
+                "Quick access to the most important Store management tools"
+            )).apply {
                 gravity = Gravity.CENTER
                 textSize = 10.5f
                 maxLines = 1
             })
+
+            val quickRow = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = dir
+                gravity = Gravity.CENTER
+            }
+            fun quickButton(label: String, action: () -> Unit) = UiKit.button(
+                this@MainActivity, p, label, false
+            ).apply {
+                textSize = 11.5f
+                maxLines = 1
+                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 44), 1f).apply {
+                    marginStart = UiKit.dp(this@MainActivity, 2)
+                    marginEnd = UiKit.dp(this@MainActivity, 2)
+                }
+                setOnClickListener { action() }
+            }
+
+            quickRow.addView(quickButton(t("الموظفون", "Employees")) {
+                requireStoreOwner(t("الموظفون", "Employees")) {
+                    startActivity(Intent(this@MainActivity, MainActivity::class.java)
+                        .putExtra(EXTRA_EMPLOYEE_MANAGER, true)
+                        .putExtra(EXTRA_STORE_ADMIN_SESSION, repo.issueStoreAdminSession()))
+                }
+            })
+            quickRow.addView(quickButton(t("التقارير", "Reports")) {
+                requireStoreOwner(t("التقارير", "Reports")) {
+                    startActivity(Intent(this@MainActivity, ReportsActivity::class.java)
+                        .putExtra(ReportsActivity.EXTRA_STORE_ADMIN_SESSION, repo.issueStoreAdminSession()))
+                }
+            })
+            quickRow.addView(quickButton(t("الرسائل", "Messages")) {
+                startActivity(Intent(this@MainActivity, StoreMessages1975Activity::class.java))
+            })
+            addView(quickRow)
+
             UiKit.makeInteractive(this, this@MainActivity, p)
             setOnClickListener { requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() } }
         }
