@@ -33,48 +33,165 @@ class EmployeeMessages1975Activity : Activity() {
     }
 
     private fun load() {
-        if (loadInFlight1981) return
-        loadInFlight1981 = true
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; layoutDirection = if (AppLanguage.isEnglish(this@EmployeeMessages1975Activity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL; gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(UiKit.dp(this@EmployeeMessages1975Activity,16), UiKit.dp(this@EmployeeMessages1975Activity,18), UiKit.dp(this@EmployeeMessages1975Activity,16), UiKit.dp(this@EmployeeMessages1975Activity,30)); setBackgroundColor(p.bg)
+        if (loadInFlight1981) {
+            Toast.makeText(this, t("التحديث جارٍ بالفعل", "Refresh is already in progress"), Toast.LENGTH_SHORT).show()
+            return
         }
+        loadInFlight1981 = true
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@EmployeeMessages1975Activity))
+                View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(
+                UiKit.dp(this@EmployeeMessages1975Activity, 16),
+                UiKit.dp(this@EmployeeMessages1975Activity, 18),
+                UiKit.dp(this@EmployeeMessages1975Activity, 16),
+                UiKit.dp(this@EmployeeMessages1975Activity, 30)
+            )
+            setBackgroundColor(p.bg)
+        }
+
         val hero = UiKit.heroCard(this, p)
-        hero.addView(UiKit.title(this,p,t("الرسائل والإشعارات", "Messages and notifications"),24f).apply { gravity=Gravity.CENTER; setTextColor(android.graphics.Color.WHITE) })
-        hero.addView(UiKit.subtitle(this,p,t("مركز التواصل مع إدارة المحل وإدارة النظام", "Communication center for Store Management and system administration")).apply { gravity=Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
+        hero.addView(UiKit.title(this, p, t("الرسائل والإشعارات", "Messages and notifications"), 24f).apply {
+            gravity = Gravity.CENTER
+            setTextColor(android.graphics.Color.WHITE)
+        })
+        hero.addView(UiKit.subtitle(this, p, t(
+            "تفتح الرسائل فورًا من الهاتف ثم تتحدث في الخلفية",
+            "Messages open instantly from this phone, then refresh in the background"
+        )).apply {
+            gravity = Gravity.CENTER
+            setTextColor(android.graphics.Color.argb(225,255,255,255))
+        })
         root.addView(hero)
-        val actions = UiKit.card(this,p,10)
-        actions.addView(UiKit.button(this,p,t("＋ رسالة جديدة إلى إدارة المحل", "＋ New message to Store Management")).apply { setOnClickListener { composeToStore1978() } })
-        actions.addView(UiKit.subtitle(this,p,t("يمكنك بدء رسالة لإدارة المحل، أو الرد على أي رسالة واردة. الرد على رسالة إدارة النظام يعود إلى إدارة النظام.", "You can start a message to Store Management or reply to any incoming message. Replies to system messages return to system administration.")).apply { gravity=Gravity.CENTER })
+
+        val actions = UiKit.card(this, p, 10)
+        actions.addView(UiKit.button(this, p, t(
+            "＋ رسالة جديدة إلى إدارة المحل",
+            "＋ New message to Store Management"
+        )).apply {
+            setOnClickListener { composeToStore1978() }
+        })
         root.addView(actions)
-        val loading = UiKit.card(this,p).apply { addView(UiKit.subtitle(this@EmployeeMessages1975Activity,p,t("يجري تحميل الرسائل…", "Loading messages…"))) }
-        root.addView(loading); setContentView(ScrollView(this).apply { setBackgroundColor(p.bg); addView(root) })
-        val localMessages = localStore.all()
+
+        setContentView(ScrollView(this).apply {
+            setBackgroundColor(p.bg)
+            addView(root)
+        })
+
+        val localMessages = localStore.all().sortedByDescending { it.createdAt }
+        renderEmployeeMessages(
+            root,
+            localMessages,
+            t("جاري تحديث الرسائل في الخلفية…", "Refreshing messages in the background…")
+        )
+
         Thread {
-            val remoteResult = CentralServerClient.employeeMessages(identity.serverUrl, identity.trustedStoreId, identity.employeeId, identity.pairingSecret, identity.installationId, true, 100)
+            val remoteResult = CentralServerClient.employeeMessages(
+                identity.serverUrl,
+                identity.trustedStoreId,
+                identity.employeeId,
+                identity.pairingSecret,
+                identity.installationId,
+                true,
+                100
+            )
             val remote = remoteResult.getOrDefault(emptyList())
-            val messages = (localMessages + remote).distinctBy { it.messageId }.sortedByDescending { it.createdAt }
+            val latestLocal = localStore.all()
+            val messages = (latestLocal + remote)
+                .distinctBy { it.messageId }
+                .sortedByDescending { it.createdAt }
+
+            loadInFlight1981 = false
             runOnUiThread {
-                loadInFlight1981 = false
-                root.removeView(loading)
-                if (remoteResult.isFailure) root.addView(UiKit.card(this,p).apply { addView(UiKit.subtitle(this@EmployeeMessages1975Activity,p,t("لا يوجد اتصال بالخادم الآن؛ الرسائل المباشرة المستلمة من جهاز المحل تبقى متاحة بدون إنترنت.", "The server is currently unavailable; direct Store messages remain available offline."))) })
-                if (messages.isEmpty()) root.addView(UiKit.card(this,p).apply { addView(UiKit.subtitle(this@EmployeeMessages1975Activity,p,t("لا توجد رسائل حاليًا.", "No messages right now."))) })
-                messages.forEach { m ->
-                    val local = localStore.isLocal(m.messageId); val card = UiKit.card(this,p)
-                    val sender = if (m.senderType == "SYSTEM_OWNER") t("إدارة نظام ATTEND PRO", "ATTEND PRO system administration") else t("إدارة المحل", "Store Management")
-                    card.addView(UiKit.sectionLabel(this,p,(if (m.readAt <= 0L) "● " else "") + sender + if (local) t(" • مباشر بدون إنترنت", " • direct offline") else ""))
-                    card.addView(UiKit.title(this,p,m.title.ifBlank { t("رسالة", "Message") },18f)); card.addView(UiKit.subtitle(this,p,"${m.body}\n${time(m.createdAt)} • ${priorityArabic(m.priority)}"))
-                    if (m.readAt <= 0L) card.addView(UiKit.button(this,p,t("تعليم كمقروء", "Mark as read"),false).apply { setOnClickListener { markRead(m.messageId) } })
-                    card.addView(UiKit.button(this,p,t("رد على الرسالة", "Reply"),false).apply { setOnClickListener { reply(m) } })
-                    if (local) card.addView(UiKit.subtitle(this,p,t("وصلت هذه الرسالة مباشرة بدون إنترنت. يمكنك الرد مباشرة عبر Bluetooth الموثق ما دام جهاز المحل متصلًا.", "This message arrived directly without Internet. You can reply through authenticated Bluetooth while the Store device is connected.")))
-                    root.addView(card)
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                val notice = when {
+                    remoteResult.isSuccess -> t("تم تحديث الرسائل ✓", "Messages updated ✓")
+                    messages.isNotEmpty() -> t(
+                        "الخادم غير متاح الآن؛ الرسائل المحفوظة والمباشرة ما زالت متاحة.",
+                        "The server is unavailable; saved and direct messages remain available."
+                    )
+                    else -> t(
+                        "تعذر الاتصال بالخادم. يمكنك إعادة المحاولة دون إغلاق الشاشة.",
+                        "Could not reach the server. You can retry without leaving this screen."
+                    )
                 }
-                root.addView(UiKit.card(this,p).apply {
-                    addView(UiKit.button(this@EmployeeMessages1975Activity,p,t("تحديث", "Refresh"),false).apply { setOnClickListener { load() } })
-                    addView(UiKit.button(this@EmployeeMessages1975Activity,p,t("رجوع", "Back"),false).apply { setOnClickListener { finish() } })
+                renderEmployeeMessages(root, messages, notice)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun renderEmployeeMessages(
+        root: LinearLayout,
+        messages: List<CentralServerClient.Message1975>,
+        notice: String
+    ) {
+        while (root.childCount > 2) root.removeViewAt(2)
+
+        if (notice.isNotBlank()) {
+            root.addView(UiKit.card(this, p, 8).apply {
+                addView(UiKit.subtitle(this@EmployeeMessages1975Activity, p, notice).apply {
+                    gravity = Gravity.CENTER
+                    textSize = 11.5f
+                })
+            })
+        }
+
+        if (messages.isEmpty()) {
+            root.addView(UiKit.card(this, p).apply {
+                addView(UiKit.subtitle(
+                    this@EmployeeMessages1975Activity,
+                    p,
+                    t("لا توجد رسائل حاليًا.", "No messages right now.")
+                ))
+            })
+        }
+
+        messages.forEach { m ->
+            val local = localStore.isLocal(m.messageId)
+            val card = UiKit.card(this, p)
+            val sender = if (m.senderType == "SYSTEM_OWNER")
+                t("إدارة نظام ATTEND PRO", "ATTEND PRO system administration")
+            else
+                t("إدارة المحل", "Store Management")
+
+            card.addView(UiKit.sectionLabel(
+                this,
+                p,
+                (if (m.readAt <= 0L) "● " else "") +
+                    sender +
+                    if (local) t(" • مباشر بدون إنترنت", " • direct offline") else ""
+            ))
+            card.addView(UiKit.title(this, p, m.title.ifBlank { t("رسالة", "Message") }, 18f))
+            card.addView(UiKit.subtitle(this, p, "${m.body}\n${time(m.createdAt)} • ${priorityArabic(m.priority)}"))
+
+            if (m.readAt <= 0L) {
+                card.addView(UiKit.button(this, p, t("تعليم كمقروء", "Mark as read"), false).apply {
+                    setOnClickListener { markRead(m.messageId) }
                 })
             }
-        }.start()
+            card.addView(UiKit.button(this, p, t("رد على الرسالة", "Reply"), false).apply {
+                setOnClickListener { reply(m) }
+            })
+            if (local) {
+                card.addView(UiKit.subtitle(this, p, t(
+                    "وصلت هذه الرسالة مباشرة بدون إنترنت. يمكنك الرد عبر Bluetooth الموثق ما دام جهاز المحل متصلًا.",
+                    "This message arrived directly offline. You can reply through authenticated Bluetooth while the Store device is connected."
+                )))
+            }
+            root.addView(card)
+        }
+
+        root.addView(UiKit.card(this, p).apply {
+            addView(UiKit.button(this@EmployeeMessages1975Activity, p, t("تحديث", "Refresh"), false).apply {
+                setOnClickListener { load() }
+            })
+            addView(UiKit.button(this@EmployeeMessages1975Activity, p, t("رجوع", "Back"), false).apply {
+                setOnClickListener { finish() }
+            })
+        })
     }
 
     private fun markRead(id: String) {
