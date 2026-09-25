@@ -1085,9 +1085,18 @@ class ReportReceiverActivity : Activity() {
         if (alive()) render()
 
         Thread {
-            val dashboard = CentralServerClient.remoteDashboard(
+            val exact = CentralServerClient.remoteLiveSnapshot(
                 binding.serverUrl, receiver.receiverId, receiver.secret, storeId
             )
+            val exactSnapshot = exact.getOrNull()
+            val usedExactMirror = exact.isSuccess && exactSnapshot != null
+            val dashboard: Result<CentralServerClient.RemoteDashboard> = if (usedExactMirror) {
+                Result.success(exactSnapshot!!)
+            } else {
+                CentralServerClient.remoteDashboard(
+                    binding.serverUrl, receiver.receiverId, receiver.secret, storeId
+                )
+            }
             if (dashboard.isSuccess) receiver.cacheLiveDashboard(storeId, dashboard.getOrThrow())
 
             runOnUiThread {
@@ -1096,7 +1105,11 @@ class ReportReceiverActivity : Activity() {
                 if (!alive()) return@runOnUiThread
                 if (dashboard.isSuccess) {
                     markActiveServerContact(storeId)
-                    receiver.markLiveTransport(storeId, "SERVER", "الخادم")
+                    receiver.markLiveTransport(
+                        storeId,
+                        "SERVER",
+                        if (usedExactMirror) "الخادم • مرآة المحل" else "الخادم • تقرير احتياطي"
+                    )
                     if (!silent) notice = t("تم تحديث المراقبة المباشرة ✓", "Live monitor refreshed ✓")
                 } else if (!silent) {
                     showError(
