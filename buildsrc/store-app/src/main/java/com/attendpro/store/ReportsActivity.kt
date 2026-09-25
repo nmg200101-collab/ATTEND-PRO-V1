@@ -106,11 +106,17 @@ class ReportsActivity : Activity() {
 
     private fun buildUi() {
         window.statusBarColor = p.bg
+        val layoutMode = UiKit.currentLayout(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             layoutDirection = if (AppLanguage.isEnglish(this@ReportsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-            setPadding(UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 18), UiKit.dp(this@ReportsActivity, 16), UiKit.dp(this@ReportsActivity, 28))
+            setPadding(
+                UiKit.dp(this@ReportsActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 9 else 13),
+                UiKit.dp(this@ReportsActivity, 12),
+                UiKit.dp(this@ReportsActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 9 else 13),
+                UiKit.dp(this@ReportsActivity, 24)
+            )
             setBackgroundColor(p.bg)
         }
 
@@ -119,24 +125,42 @@ class ReportsActivity : Activity() {
         header.addView(UiKit.subtitle(this, p, "${repo.storeName} • ${periodLabel()} • ${t("الفرع", "Branch")} ${repo.branchId}").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         root.addView(header)
 
-        val filter = UiKit.card(this, p, 12)
-        filter.addView(UiKit.sectionLabel(this, p, t("الفترة", "Period")))
-        filter.addView(UiKit.button(this, p, t("تقرير اليوم", "Today"), period == Period.TODAY).apply { setOnClickListener { period = Period.TODAY; buildUi() } })
-        filter.addView(UiKit.button(this, p, t("آخر 7 أيام", "Last 7 days"), period == Period.WEEK).apply { setOnClickListener { period = Period.WEEK; buildUi() } })
-        filter.addView(UiKit.button(this, p, t("هذا الشهر", "This month"), period == Period.MONTH).apply { setOnClickListener { period = Period.MONTH; buildUi() } })
-        filter.addView(UiKit.button(this, p, t("كل السجلات", "All records"), period == Period.ALL).apply { setOnClickListener { period = Period.ALL; buildUi() } })
+        val filter = UiKit.card(this, p, 11)
+        filter.addView(UiKit.sectionLabel(this, p, t("اختر فترة التقرير", "Choose report period")))
+        fun periodButton(label: String, target: Period) = UiKit.button(this, p, label, period == target).apply {
+            textSize = 12.5f
+            layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@ReportsActivity, 48), 1f).apply {
+                marginStart = UiKit.dp(this@ReportsActivity, 3)
+                marginEnd = UiKit.dp(this@ReportsActivity, 3)
+            }
+            setOnClickListener { period = target; buildUi() }
+        }
+        val firstRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = if (AppLanguage.isEnglish(this@ReportsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+        }
+        firstRow.addView(periodButton(t("اليوم", "Today"), Period.TODAY))
+        firstRow.addView(periodButton(t("7 أيام", "7 days"), Period.WEEK))
+        filter.addView(firstRow)
+        val secondRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = if (AppLanguage.isEnglish(this@ReportsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+        }
+        secondRow.addView(periodButton(t("هذا الشهر", "This month"), Period.MONTH))
+        secondRow.addView(periodButton(t("كل السجلات", "All records"), Period.ALL))
+        filter.addView(secondRow)
         root.addView(filter)
 
         val events = selectedEvents()
         val summary = summary(events)
         val stats = UiKit.card(this, p)
-        stats.addView(UiKit.sectionLabel(this, p, t("الملخص", "Summary")))
+        stats.addView(UiKit.sectionLabel(this, p, t("ملخص الفترة", "Period summary")))
         stats.addView(UiKit.title(this, p, t("${summary.uniqueEmployees} موظف • ${events.size} حركة", "${summary.uniqueEmployees} employees • ${events.size} events"), 20f))
         stats.addView(UiKit.subtitle(this, p, t("حضور ${summary.checkIns} • انصراف ${summary.checkOuts} • حالات تأخير ${summary.lateEmployees} • انصراف مبكر ${summary.earlyDepartures}", "Check-ins ${summary.checkIns} • check-outs ${summary.checkOuts} • late ${summary.lateEmployees} • early departures ${summary.earlyDepartures}")))
         root.addView(stats)
 
         val recent = UiKit.card(this, p)
-        recent.addView(UiKit.sectionLabel(this, p, t("السجل", "Log")))
+        recent.addView(UiKit.sectionLabel(this, p, t("الحركات المسجلة", "Recorded activity")))
         recent.addView(UiKit.subtitle(this, p, reportPreview(events)))
         root.addView(recent)
 
