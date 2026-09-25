@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 148
-        versionName = "2.0.0-RC29-V148-RECEIVER-EXACT-LIVE-MIRROR"
+        versionCode = 149
+        versionName = "2.0.0-RC29-V149-RECEIVER-FINAL-LOCK"
     }
 
     compileOptions {
