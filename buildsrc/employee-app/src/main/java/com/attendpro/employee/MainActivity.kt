@@ -575,56 +575,115 @@ class MainActivity : Activity() {
 
     private fun showPairingCenter(){
         pairingSessionDialog?.takeIf { it.isShowing }?.let {
-            updatePairingSessionStatus("اختر طريقة الربط، وستبقى هذه الشاشة مفتوحة حتى يظهر تقدم الربط")
+            updatePairingSessionStatus(
+                t(
+                    "اختر طريقة الربط، وستبقى هذه الشاشة مفتوحة حتى يظهر تقدم الربط",
+                    "Choose a pairing method. This screen stays open while pairing progresses."
+                )
+            )
             return
         }
+
         val box = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 10), UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 12))
-        }
-        val state = TextView(this).apply {
-            text = "جاهز — اختر الطريقة. لن تغلق شاشة الربط أثناء البحث."
-            textSize = 15f
-            gravity = Gravity.CENTER
-            setTextColor(p.accent)
-            setPadding(0, UiKit.dp(this@MainActivity, 6), 0, UiKit.dp(this@MainActivity, 12))
-        }
-        pairingSessionStatus = state
-        box.addView(state)
-        fun add(label: String, action: () -> Unit) {
-            box.addView(UiKit.button(this,p,label,false).apply { setOnClickListener { action() } })
-        }
-        add("▦ مسح QR / باركود الربط") {
-            updatePairingSessionStatus("جاري فتح الكاميرا لالتقاط QR جلسة المحل…")
-            scanProvision()
-        }
-        add("Bluetooth فقط — ابدأ البحث الآن") {
-            updatePairingSessionStatus("بدء Bluetooth Scanner…")
-            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.BLUETOOTH_ONLY)
-        }
-        add("Wi‑Fi / نقطة اتصال فقط — ابدأ البحث الآن") {
-            updatePairingSessionStatus("بدء البحث المحلي عبر Wi‑Fi / Hotspot…")
-            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.WIFI_HOTSPOT_ONLY)
-        }
-        add("Bluetooth + Wi‑Fi — اختيار تلقائي للأسرع") {
-            updatePairingSessionStatus("بدء البحث المتزامن عبر Bluetooth وWi‑Fi…")
-            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.ALL)
-        }
-        add("إدخال أو لصق رمز الربط") { showManualProvision() }
-        add("إيقاف البحث") {
-            pairingDiscovery.stop()
-            pendingPairingCode = ""
-            updatePairingSessionStatus("تم إيقاف البحث. اختر طريقة للبدء من جديد.")
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 12)
+            )
         }
 
+        val stateCard = UiKit.card(this, p, 9)
+        stateCard.addView(UiKit.sectionLabel(this, p, t("حالة الربط", "Pairing status")))
+        val state = TextView(this).apply {
+            text = t(
+                "جاهز — اختر الطريقة المناسبة.",
+                "Ready — choose the method that suits you."
+            )
+            textSize = 13.5f
+            gravity = Gravity.CENTER
+            setTextColor(p.accent)
+            setPadding(0, UiKit.dp(this@MainActivity, 6), 0, UiKit.dp(this@MainActivity, 6))
+        }
+        pairingSessionStatus = state
+        stateCard.addView(state)
+        box.addView(stateCard)
+
+        fun addChoice(choice: EmployeeUiChoice) {
+            box.addView(employeeOptionCard(choice).apply {
+                setOnClickListener { choice.action() }
+            })
+        }
+
+        addChoice(EmployeeUiChoice(
+            "▦",
+            t("مسح QR / باركود", "Scan QR / barcode"),
+            t("وجّه الكاميرا إلى رمز الموظف في جهاز المحل", "Point the camera at the employee code on the Store device"),
+            t("الأسهل", "Easiest")
+        ) {
+            updatePairingSessionStatus(t("جاري فتح الكاميرا لالتقاط رمز الربط…", "Opening the camera to scan the pairing code…"))
+            scanProvision()
+        })
+
+        addChoice(EmployeeUiChoice(
+            "⇄",
+            t("اختيار تلقائي للأسرع", "Automatic fastest connection"),
+            t("يبحث معًا عبر Bluetooth وWi-Fi/Hotspot", "Searches over Bluetooth and Wi-Fi/Hotspot together"),
+            t("موصى به", "Recommended")
+        ) {
+            updatePairingSessionStatus(t("بدء البحث المتزامن عبر Bluetooth وWi-Fi…", "Starting Bluetooth and Wi-Fi discovery…"))
+            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.ALL)
+        })
+
+        addChoice(EmployeeUiChoice(
+            "B",
+            "Bluetooth",
+            t("استخدمه عندما يكون الهاتف قريبًا من جهاز المحل", "Use when this phone is near the Store device"),
+            t("بدون إنترنت", "Offline")
+        ) {
+            updatePairingSessionStatus(t("بدء البحث عبر Bluetooth…", "Starting Bluetooth discovery…"))
+            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.BLUETOOTH_ONLY)
+        })
+
+        addChoice(EmployeeUiChoice(
+            "Wi",
+            t("Wi-Fi / نقطة اتصال", "Wi-Fi / Hotspot"),
+            t("استخدمه عندما يكون الهاتفان على نفس الشبكة", "Use when both phones are on the same local network"),
+            t("محلي", "Local")
+        ) {
+            updatePairingSessionStatus(t("بدء البحث المحلي عبر Wi-Fi / Hotspot…", "Starting local Wi-Fi / Hotspot discovery…"))
+            pairingDiscovery.start(requestedMode = PairingDiscovery.Mode.WIFI_HOTSPOT_ONLY)
+        })
+
+        addChoice(EmployeeUiChoice(
+            "⌨",
+            t("إدخال رمز الربط", "Enter pairing code"),
+            t("اكتب أو الصق الرمز القصير إذا تعذر المسح", "Type or paste the short code if scanning is unavailable")
+        ) {
+            showManualProvision()
+        })
+
+        addChoice(EmployeeUiChoice(
+            "■",
+            t("إيقاف البحث", "Stop discovery"),
+            t("إيقاف البحث الحالي دون حذف بيانات الربط", "Stop the current search without removing pairing data")
+        ) {
+            pairingDiscovery.stop()
+            pendingPairingCode = ""
+            updatePairingSessionStatus(t("تم إيقاف البحث. اختر طريقة للبدء من جديد.", "Discovery stopped. Choose a method to start again."))
+        })
+
         val dialog = AlertDialog.Builder(this)
-            .setTitle("ربط هاتف الموظف")
+            .setTitle(t("ربط هاتف الموظف", "Pair employee phone"))
             .setView(ScrollView(this).apply { addView(box) })
-            .setNegativeButton("إغلاق") { _, _ ->
+            .setNegativeButton(t("إغلاق", "Close")) { _, _ ->
                 pairingDiscovery.stop()
                 pendingPairingCode = ""
             }
             .create()
+
         dialog.setOnDismissListener {
             pairingSessionDialog = null
             pairingSessionStatus = null
@@ -1220,30 +1279,123 @@ class MainActivity : Activity() {
     private fun showReadinessCheck() {
         val bt = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter
         val now = System.currentTimeMillis()
-        val serviceAlive = identity.presenceServiceHeartbeatAt > 0L && now - identity.presenceServiceHeartbeatAt < 25_000L
+        val serviceAlive = identity.presenceServiceHeartbeatAt > 0L &&
+            now - identity.presenceServiceHeartbeatAt < 25_000L
         val advertisingState = identity.lastBleAdvertisingState
-        val bluetooth = when {
-            bt == null -> "غير مدعوم"
-            !bt.isEnabled -> "متوقف"
-            !bt.isMultipleAdvertisementSupported -> "يعمل لكن الهاتف لا يدعم بث BLE"
-            serviceAlive && advertisingState.contains("BLE يعمل") -> "Advertising يعمل من الخدمة ✓"
-            serviceAlive -> "الخدمة تعمل • ${advertisingState.ifBlank { "بانتظار نتيجة Advertising" }}"
-            else -> "Bluetooth متاح لكن خدمة الخلفية غير مؤكدة"
+
+        val bluetoothReady = bt?.isEnabled == true &&
+            bt.isMultipleAdvertisementSupported &&
+            serviceAlive
+        val bluetoothText = when {
+            bt == null -> t("غير مدعوم", "Not supported")
+            !bt.isEnabled -> t("متوقف", "Off")
+            !bt.isMultipleAdvertisementSupported -> t("الهاتف لا يدعم بث BLE", "BLE advertising is not supported")
+            serviceAlive && advertisingState.contains("BLE يعمل") -> t("جاهز ويعمل ✓", "Ready and running ✓")
+            serviceAlive -> t("الخدمة تعمل • بانتظار الإعلان", "Service is running • waiting for advertising")
+            else -> t("الخدمة غير مؤكدة", "Background service not confirmed")
         }
+
         val cm = getSystemService(ConnectivityManager::class.java)
         val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
         val internet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
         val local = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
         val lanVerified = identity.lastLanStoreSeenAt > 0L && now - identity.lastLanStoreSeenAt < 8_000L
+        val serverReady = ServerDiagnostics.snapshot().isFresh(now)
         val biometric = biometricReadiness()
-        AlertDialog.Builder(this).setTitle("فحص جاهزية هاتف الموظف").setMessage(
-            "الربط بالخادم: ${if(ServerDiagnostics.snapshot().isFresh()) "HTTP مؤكد ✓" else "غير مؤكد الآن"}\n" +
-            "Bluetooth: $bluetooth\n" +
-            "Wi‑Fi/نقطة اتصال: ${when { lanVerified -> "LAN ACK مؤكد ✓"; local -> "الشبكة متاحة • بانتظار ACK من المحل"; else -> "غير متصل" }}\n" +
-            "الإنترنت: ${if(internet) "متاح" else "غير متاح — يظل Bluetooth والشبكة المحلية يعملان"}\n" +
-            "بصمة/وجه Android: $biometric\n\n" +
-            "الحضور دون إنترنت يعتمد على قناة BLE أو LAN موثقة فعليًا. وجود Wi‑Fi أو Bluetooth وحده لا يعني اتصالًا. ومع الإنترنت لا يعتبر الخادم متصلًا إلا بعد نجاح HTTP حقيقي."
-        ).setPositiveButton("حسنًا",null).show()
+        val biometricReady = biometric.contains("✓") || biometric.contains("جاهز")
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 10)
+            )
+        }
+
+        content.addView(UiKit.subtitle(this, p, t(
+            "هذا الفحص لا يغير الإعدادات؛ يعرض فقط ما هو جاهز الآن.",
+            "This check does not change settings; it only shows what is ready now."
+        )).apply {
+            gravity = Gravity.CENTER
+            textSize = 12.3f
+        })
+
+        fun readinessCard(
+            title: String,
+            state: String,
+            description: String,
+            healthy: Boolean
+        ) = UiKit.card(this, p, 8).apply {
+            addView(UiKit.title(this@MainActivity, p, title, 14.5f))
+            addView(UiKit.statusBadge(this@MainActivity, p, state, healthy))
+            addView(UiKit.subtitle(this@MainActivity, p, description).apply {
+                textSize = 11.2f
+                maxLines = 3
+            })
+        }
+
+        content.addView(readinessCard(
+            "Bluetooth",
+            bluetoothText,
+            t(
+                "يُستخدم للاتصال القريب والحضور دون إنترنت.",
+                "Used for nearby connection and offline attendance."
+            ),
+            bluetoothReady
+        ))
+
+        content.addView(readinessCard(
+            t("Wi-Fi / نقطة اتصال", "Wi-Fi / Hotspot"),
+            when {
+                lanVerified -> t("ACK مؤكد ✓", "ACK confirmed ✓")
+                local -> t("الشبكة متاحة", "Network available")
+                else -> t("غير متصل", "Not connected")
+            },
+            t(
+                "يعمل محليًا عندما يكون الهاتفان على نفس الشبكة.",
+                "Works locally when both phones are on the same network."
+            ),
+            lanVerified
+        ))
+
+        content.addView(readinessCard(
+            t("الخادم والإنترنت", "Server & Internet"),
+            if (serverReady) t("HTTP مؤكد ✓", "HTTP confirmed ✓")
+            else if (internet) t("الإنترنت متاح", "Internet available")
+            else t("غير متاح", "Unavailable"),
+            t(
+                "الخادم مسار إضافي للمزامنة ولا يمنع Bluetooth/LAN من العمل.",
+                "The server is an additional sync path and does not block Bluetooth/LAN."
+            ),
+            serverReady
+        ))
+
+        content.addView(readinessCard(
+            t("بصمة / وجه Android", "Android biometric"),
+            biometric,
+            t(
+                "يجب تسجيل بصمة أو وجه في إعدادات الهاتف قبل استخدامه للحضور.",
+                "Enroll a fingerprint or face in Android settings before using biometric attendance."
+            ),
+            biometricReady
+        ))
+
+        content.addView(UiKit.subtitle(this, p, t(
+            "مهم: ظهور Bluetooth أو Wi-Fi وحده لا يعني اتصالًا موثقًا؛ يعتمد الحضور المحلي على ACK فعلي.",
+            "Important: Bluetooth or Wi-Fi availability alone is not an authenticated connection; local attendance requires an actual ACK."
+        )).apply {
+            gravity = Gravity.CENTER
+            textSize = 11.5f
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle(t("فحص جاهزية الهاتف", "Phone readiness"))
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton(t("حسنًا", "OK"), null)
+            .show()
     }
 
     @Suppress("DEPRECATION")
