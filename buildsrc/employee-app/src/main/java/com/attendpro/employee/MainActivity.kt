@@ -382,7 +382,7 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
         })
-        header.addView(UiKit.subtitle(this, p, t("تطبيق الموظف • الإصدار ${attendProVersionName()}", "Employee app • version ${attendProVersionName()}")).apply {
+        header.addView(UiKit.subtitle(this, p, t("تطبيق الموظف • V${BuildConfig.VERSION_CODE}", "Employee app • V${BuildConfig.VERSION_CODE}")).apply {
             gravity = Gravity.CENTER
             setTextColor(android.graphics.Color.argb(225, 255, 255, 255))
         })
@@ -634,7 +634,27 @@ class MainActivity : Activity() {
     }
 
     private fun showEmployeeAttendanceCenter(){
-        showLayeredMenu1977("تسجيل الحضور والانصراف", listOf("تسجيل الحضور الآن" to { chooseAttendanceMethod(AttendanceAction.CHECK_IN) }, "تسجيل الانصراف الآن" to { chooseAttendanceMethod(AttendanceAction.CHECK_OUT) }))
+        showEmployeeChoiceDialog(
+            t("الحضور والانصراف", "Attendance"),
+            t(
+                "اختر العملية أولًا، ثم سيعرض التطبيق طرق التحقق المسموحة لك.",
+                "Choose the action first, then the app will show your allowed verification methods."
+            ),
+            listOf(
+                EmployeeUiChoice(
+                    "✓",
+                    t("تسجيل حضور", "Check in"),
+                    t("بدء الدوام وإثبات الوصول", "Start your shift and verify arrival"),
+                    t("بدء", "Start")
+                ) { chooseAttendanceMethod(AttendanceAction.CHECK_IN) },
+                EmployeeUiChoice(
+                    "↗",
+                    t("تسجيل انصراف", "Check out"),
+                    t("إنهاء الدوام وإثبات المغادرة", "End your shift and verify departure"),
+                    t("إنهاء", "Finish")
+                ) { chooseAttendanceMethod(AttendanceAction.CHECK_OUT) }
+            )
+        )
     }
 
     private fun showEmployeeVerificationCenter(){
@@ -850,22 +870,152 @@ class MainActivity : Activity() {
 }
 
 
+    private data class EmployeeUiChoice(
+        val icon: String,
+        val title: String,
+        val subtitle: String,
+        val statusText: String = "",
+        val action: () -> Unit
+    )
+
+    private fun employeeOptionCard(choice: EmployeeUiChoice): LinearLayout {
+        return UiKit.card(this, p, 9).apply {
+            isClickable = true
+            isFocusable = true
+            minimumHeight = UiKit.dp(this@MainActivity, 76)
+            val row = LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(TextView(this@MainActivity).apply {
+                text = choice.icon
+                textSize = 26f
+                gravity = Gravity.CENTER
+                setTextColor(p.primary)
+                background = UiKit.round(p.surface2, 16, this@MainActivity, p.divider)
+                layoutParams = LinearLayout.LayoutParams(
+                    UiKit.dp(this@MainActivity, 58),
+                    UiKit.dp(this@MainActivity, 58)
+                ).apply { marginEnd = UiKit.dp(this@MainActivity, 10) }
+            })
+            row.addView(LinearLayout(this@MainActivity).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(UiKit.title(this@MainActivity, p, choice.title, 15.5f))
+                addView(UiKit.subtitle(this@MainActivity, p, choice.subtitle).apply {
+                    textSize = 11.7f
+                    maxLines = 2
+                })
+                if (choice.statusText.isNotBlank()) {
+                    addView(UiKit.statusBadge(this@MainActivity, p, choice.statusText, true).apply {
+                        layoutParams = LinearLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply { topMargin = UiKit.dp(this@MainActivity, 5) }
+                    })
+                }
+            })
+            addView(row)
+        }
+    }
+
+    private fun showEmployeeChoiceDialog(
+        title: String,
+        subtitle: String,
+        choices: List<EmployeeUiChoice>
+    ) {
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 10)
+            )
+        }
+        content.addView(UiKit.subtitle(this, p, subtitle).apply {
+            gravity = Gravity.CENTER
+            textSize = 12.5f
+            setPadding(0, 0, 0, UiKit.dp(this@MainActivity, 8))
+        })
+
+        lateinit var dialog: AlertDialog
+        choices.forEach { choice ->
+            content.addView(employeeOptionCard(choice).apply {
+                setOnClickListener {
+                    dialog.dismiss()
+                    choice.action()
+                }
+            })
+        }
+
+        dialog = AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(ScrollView(this).apply { addView(content) })
+            .setNegativeButton(t("إلغاء", "Cancel"), null)
+            .create()
+        dialog.show()
+    }
+
     private fun chooseAttendanceMethod(action: AttendanceAction) {
-        if (!identity.isConfigured) { status.text = "يجب ربط الهاتف بالمحل أولًا"; return }
+        if (!identity.isConfigured) {
+            status.text = t("يجب ربط الهاتف بالمحل أولًا", "Pair this phone with the Store first")
+            showPairingCenter()
+            return
+        }
+
         pendingAction = action
-        val labels = mutableListOf<String>(); val methods = mutableListOf<AttendanceMethod>()
-        if (identity.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC)) { labels += "◎ بصمة الإصبع أو الوجه في الهاتف"; methods += AttendanceMethod.PHONE_BLE_BIOMETRIC }
-        else if (identity.allows(AttendanceMethod.PHONE_FINGERPRINT)) { labels += "◎ بصمة الإصبع في الهاتف"; methods += AttendanceMethod.PHONE_FINGERPRINT }
-        if (identity.allows(AttendanceMethod.PASSWORD)) { labels += "▣ كلمة المرور"; methods += AttendanceMethod.PASSWORD }
-        if (methods.isEmpty()) { status.text = "لم يسمح صاحب المحل بطريقة حضور تعمل من هاتف الموظف"; return }
-        AlertDialog.Builder(this).setTitle(if(action==AttendanceAction.CHECK_IN) "طريقة تسجيل الحضور" else "طريقة تسجيل الانصراف")
-            .setItems(labels.toTypedArray()) { _, index -> when(methods[index]) {
-                AttendanceMethod.PHONE_BLE_BIOMETRIC -> requestBiometric()
-                AttendanceMethod.PHONE_FINGERPRINT -> requestFingerprintOnly()
-                AttendanceMethod.PASSWORD, AttendanceMethod.PHONE_BIOMETRIC -> confirmWithLocalCredential()
-                else -> Unit
-            }}.setNegativeButton("إلغاء",null).show()
-}
+        val choices = mutableListOf<EmployeeUiChoice>()
+
+        if (identity.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC)) {
+            choices += EmployeeUiChoice(
+                "◎",
+                t("بصمة أو وجه الهاتف", "Phone fingerprint or face"),
+                t("استخدم التحقق الحيوي المسجل في Android", "Use the biometric method enrolled in Android"),
+                t("موصى به", "Recommended")
+            ) { requestBiometric() }
+        } else if (identity.allows(AttendanceMethod.PHONE_FINGERPRINT)) {
+            choices += EmployeeUiChoice(
+                "◎",
+                t("بصمة الإصبع", "Fingerprint"),
+                t("استخدم بصمة إصبع Android المسجلة", "Use an enrolled Android fingerprint"),
+                t("مسموح", "Allowed")
+            ) { requestFingerprintOnly() }
+        }
+
+        if (identity.allows(AttendanceMethod.PASSWORD)) {
+            choices += EmployeeUiChoice(
+                "▣",
+                t("كلمة المرور", "Password"),
+                t("استخدم كلمة المرور التي أعددتها لهذا الهاتف", "Use the password configured on this phone"),
+                t("مسموح", "Allowed")
+            ) { confirmWithLocalCredential() }
+        }
+
+        if (choices.isEmpty()) {
+            status.text = t(
+                "لم يسمح صاحب المحل بطريقة حضور تعمل من هاتف الموظف",
+                "Store Management has not enabled a phone attendance method for this employee"
+            )
+            return
+        }
+
+        val actionText = if (action == AttendanceAction.CHECK_IN)
+            t("تسجيل الحضور", "Check in")
+        else
+            t("تسجيل الانصراف", "Check out")
+
+        showEmployeeChoiceDialog(
+            t("$actionText — اختر طريقة التحقق", "$actionText — choose verification"),
+            t(
+                "لن تظهر إلا الطرق التي سمحت بها إدارة المحل لهذا الموظف.",
+                "Only methods allowed by Store Management are shown."
+            ),
+            choices
+        )
+    }
 
     private fun sendAttendanceToServer(method: AttendanceMethod, evidence: String) {
         status.text = "تم التحقق، جاري تسجيل العملية في الخادم..."
