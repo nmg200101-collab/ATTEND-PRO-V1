@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V149 Receiver Final Proof Messaging Lock
+name: Build ATTEND-PRO V151 Professional One Screen UI
 on:
   push:
-    branches: [attend-pro-v149-receiver-final-proof-messaging-lock]
+    branches: [attend-pro-v151-professional-one-screen-internal-ui]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V149 receiver exact live mirror
+      - name: Verify V151 professional one-screen UI lock
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -54,7 +54,7 @@ jobs:
           ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
           grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
 
-          # V149 keeps the simplified reports/messages-only receiver center.
+          # V151 preserves the V149 receiver center.
           grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
           grep -q 'نظرة عامة' "$CENTER"
           grep -q 'الهواتف' "$CENTER"
@@ -88,7 +88,7 @@ jobs:
           ! grep -q 'receiverStoreSettings' "$RECEIVER"
           ! grep -q 'store-settings' "$RECEIVER"
 
-          # V149 keeps multi-store isolation and reports/messages-only receiver permissions.
+          # V151 preserves V149 multi-store isolation and receiver permissions.
           grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }' "$RECEIVER"
           ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
           ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
@@ -114,7 +114,7 @@ jobs:
           test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
           ! grep -q 'buildUi' "$RECEIVER"
 
-          # V149 keeps nearby report delivery independent from employee BLE pairing.
+          # V151 preserves V149 nearby report delivery independent from employee BLE pairing.
           test -f "$OFFLINE_PROTOCOL"
           test -f "$LAN_REPORT"
           test -f "$BLE_REPORT"
@@ -151,7 +151,7 @@ jobs:
           grep -q 'sendNearbyGrant' "$BLE_REPORT"
           grep -q 'INVITE_UUID' "$BLE_REPORT"
 
-          # V149 receiver live fix lock: live dashboard + nearby fast path: live UI refresh, parallel receiver lanes, durable outbox.
+          # V151 preserves the V149 receiver final lock.
           grep -q 'ACTION_DATA_CHANGED' "$SERVICE"
           grep -q 'ACTION_SYNC_NOW' "$SERVICE"
           grep -q 'REPORT_POLL_MS = 1_500L' "$SERVICE"
@@ -211,7 +211,7 @@ jobs:
           ! grep -q 'Received reports:' "$RECEIVER"
           grep -q 'RemoteDashboardPerson' "$CENTRAL"
           grep -q 'presentCount' "$CENTRAL"
-          # V149 field fix: lightweight revision must have a resilient full-dashboard fallback.
+          # V151 preserves the V149 resilient live dashboard fallback.
           grep -q 'nextFullDashboardFallbackAt' "$SERVICE"
           grep -q 'remoteDashboardRevision' "$SERVICE"
           grep -q 'receiver.markLiveTransport(storeId, "SERVER"' "$SERVICE"
@@ -315,13 +315,36 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V149 identity.
-          grep -q 'versionCode = 149' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V149-RECEIVER-FINAL-LOCK"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 149' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V149-RECEIVER-FINAL-LOCK"' buildsrc/employee-app/build.gradle.kts
+          # V151 identity.
+          grep -q 'versionCode = 151' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V151-PROFESSIONAL-ONE-SCREEN-UI"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 151' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V151-PROFESSIONAL-ONE-SCREEN-UI"' buildsrc/employee-app/build.gradle.kts
 
-          # RC29 field-proven pairing/direct-link files remain immutable in V149.
+          # V151 professional UI acceptance markers.
+          test -f PROFESSIONAL-ONE-SCREEN-UI-V151.md
+          grep -q 'ProfessionalChoice' "$MAIN"
+          grep -q 'showProfessionalChoiceDialog' "$MAIN"
+          grep -q 'sendPresenceChallengeProfessional' "$MAIN"
+          grep -q 'عرض التفاصيل التقنية' "$MAIN"
+          grep -q 'EmployeeUiChoice' "$EMP_MAIN"
+          grep -q 'showEmployeeChoiceDialog' "$EMP_MAIN"
+          grep -q 'اختيار تلقائي للأسرع' "$EMP_MAIN"
+          grep -q 'فحص جاهزية الهاتف' "$EMP_MAIN"
+
+          # V149 Receiver Final Lock must remain byte-identical in V151.
+          git diff --exit-code bf20500742cbfa71ad10958bb536a94ee9f41956 -- \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportLanTransport.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportBleTransport.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReceiverPermissionsActivity.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReportProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReceiverOfflineReportProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+
+          # RC29 field-proven pairing/direct-link files remain immutable in V151.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
@@ -350,7 +373,7 @@ jobs:
 
       - name: Test and build
         run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V149
+      - name: Sign V151
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -363,9 +386,9 @@ jobs:
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V149.apk
+              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V151.apk
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V149.apk
+              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V151.apk
             fi
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
@@ -381,11 +404,11 @@ jobs:
               --out signed/$OUT /tmp/$APP.apk
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='149' versionName='2.0.0-RC29-V149-RECEIVER-FINAL-LOCK'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='151' versionName='2.0.0-RC29-V151-PROFESSIONAL-ONE-SCREEN-UI'"
           done
           (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V149-RECEIVER-FINAL-LOCK-SIGNED
+          name: ATTEND-PRO-V151-PROFESSIONAL-ONE-SCREEN-UI-SIGNED
           path: signed/
           retention-days: 30
