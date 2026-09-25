@@ -528,28 +528,14 @@ jobs:
 
           cp RELEASE-NOTES-V156.md signed/RELEASE-NOTES-V156.md
           cp V156-BLUETOOTH-PROOF-MESSAGING.md signed/V156-BLUETOOTH-PROOF-MESSAGING.md
-          python3 - <<'PY'
-import os, zipfile
-root='.'
-out='signed/ATTEND-PRO-V156-SOURCE.zip'
-skip={'.git','signed','build'}
-with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-    for dp, dns, fns in os.walk(root):
-        dns[:] = [d for d in dns if d not in skip and not d.startswith('.gradle')]
-        if dp.startswith('./buildsrc/') and ('/build/' in dp or dp.endswith('/build')):
-            continue
-        for fn in fns:
-            p=os.path.join(dp,fn)
-            if p.startswith('./signed/') or '/build/' in p or '/.gradle/' in p:
-                continue
-            z.write(p, p[2:] if p.startswith('./') else p)
-PY
+          zip -qr signed/ATTEND-PRO-V156-SOURCE.zip . \
+            -x '.git/*' 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
 
           cat > signed/V156-AUTOMATED-QA.txt <<EOF
           ATTEND-PRO V156 — AUTOMATED QA
           Commit: $GITHUB_SHA
           Branch: $GITHUB_REF_NAME
-          Version code: 155
+          Version code: 156
           Version name: 2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING
           Target/compile SDK: 36
           RC29 protected connection sources: LOCKED
