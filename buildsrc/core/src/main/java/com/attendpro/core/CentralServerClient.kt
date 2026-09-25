@@ -144,6 +144,20 @@ object CentralServerClient {
         val storeLastSeenAt: Long = 0L
     )
     data class ReceiverEmployee(val employeeId: String, val employeeName: String, val branchId: String, val lastSeenAt: Long)
+    data class ReceiverPresenceProof(
+        val challengeId: String,
+        val employeeId: String,
+        val employeeName: String = "",
+        val branchId: String = "MAIN",
+        val requiredMethod: String = "",
+        val requestedAction: String = "",
+        val status: String = "PENDING",
+        val createdAt: Long = 0L,
+        val expiresAt: Long = 0L,
+        val verifiedAt: Long = 0L,
+        val evidence: String = "",
+        val attendanceApplied: Boolean = false
+    )
     data class ReceiverEmployeeCommand(
         val commandId: String,
         val action: String,
@@ -809,6 +823,58 @@ object CentralServerClient {
             val x = a.getJSONObject(i)
             ReceiverEmployee(x.optString("employeeId"), x.optString("employeeName"), x.optString("branchId", "MAIN"), x.optLong("lastSeenAt", 0L))
         }
+    }
+
+    private fun parseReceiverPresenceProof(o: JSONObject) = ReceiverPresenceProof(
+        challengeId = o.optString("challengeId"),
+        employeeId = o.optString("employeeId"),
+        employeeName = o.optString("employeeName"),
+        branchId = o.optString("branchId", "MAIN"),
+        requiredMethod = o.optString("requiredMethod"),
+        requestedAction = o.optString("requestedAction"),
+        status = o.optString("status", "PENDING"),
+        createdAt = o.optLong("createdAt", 0L),
+        expiresAt = o.optLong("expiresAt", 0L),
+        verifiedAt = o.optLong("verifiedAt", 0L),
+        evidence = o.optString("evidence"),
+        attendanceApplied = o.optBoolean("attendanceApplied", false)
+    )
+
+    fun receiverRequestPresenceProof(
+        serverUrl: String,
+        receiverId: String,
+        secret: String,
+        employeeId: String,
+        action: String = "",
+        storeId: String = ""
+    ): Result<ReceiverPresenceProof> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/presence-proof/request", "POST", JSONObject().apply {
+            put("receiverId", receiverId)
+            put("secret", secret)
+            if (storeId.isNotBlank()) put("storeId", storeId)
+            put("employeeId", employeeId)
+            put("requiredMethod", "AUTO")
+            if (action.isNotBlank()) put("action", action)
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
+        parseReceiverPresenceProof(o)
+    }
+
+    fun receiverPresenceProofStatus(
+        serverUrl: String,
+        receiverId: String,
+        secret: String,
+        challengeId: String,
+        storeId: String = ""
+    ): Result<ReceiverPresenceProof> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(serverUrl, "/api/v1/monitor/presence-proof/status", "POST", JSONObject().apply {
+            put("receiverId", receiverId)
+            put("secret", secret)
+            if (storeId.isNotBlank()) put("storeId", storeId)
+            put("challengeId", challengeId)
+        }, connectTimeoutMs = 3_500, readTimeoutMs = 4_500)
+        parseReceiverPresenceProof(o)
     }
 
     fun receiverSendEmployeeMessage(
