@@ -4081,11 +4081,23 @@ class MainActivity : Activity() {
         val stale=nearby.filterValues{now-it.seenAt>12_000L}.keys.toList()
         stale.forEach { autoPresenceRecorded.remove(it) }
         val employees=repo.employees().filter{it.active}
+        val employeeById = employees.associateBy { it.employeeId.lowercase(Locale.US) }
         val events=repo.events().filter{it.timestampEpochMillis>=dayStartMillis()}
-        val present=employees.mapNotNull{e->val last=events.lastOrNull{it.employeeId.equals(e.employeeId,true)};if(last?.action==AttendanceAction.CHECK_IN)e.employeeId else null}.toSet()
-        val late=employees.mapNotNull{e->val first=events.firstOrNull{it.employeeId.equals(e.employeeId,true)&&it.action==AttendanceAction.CHECK_IN};if(first!=null&&first.timestampEpochMillis>shiftCutoffMillis(e, first.timestampEpochMillis))e.employeeId else null}.toSet()
+        val eventsByEmployee = events.groupBy { it.employeeId.lowercase(Locale.US) }
+        val present=employees.mapNotNull { e ->
+            val last = eventsByEmployee[e.employeeId.lowercase(Locale.US)]?.maxByOrNull { it.timestampEpochMillis }
+            if(last?.action==AttendanceAction.CHECK_IN)e.employeeId else null
+        }.toSet()
+        val late=employees.mapNotNull { e ->
+            val first = eventsByEmployee[e.employeeId.lowercase(Locale.US)]
+                ?.filter { it.action == AttendanceAction.CHECK_IN }
+                ?.minByOrNull { it.timestampEpochMillis }
+            if(first!=null&&first.timestampEpochMillis>shiftCutoffMillis(e, first.timestampEpochMillis))e.employeeId else null
+        }.toSet()
         val early=employees.mapNotNull { e ->
-            val lastOut = events.lastOrNull { it.employeeId.equals(e.employeeId, true) && it.action == AttendanceAction.CHECK_OUT }
+            val lastOut = eventsByEmployee[e.employeeId.lowercase(Locale.US)]
+                ?.filter { it.action == AttendanceAction.CHECK_OUT }
+                ?.maxByOrNull { it.timestampEpochMillis }
             if (lastOut != null && lastOut.timestampEpochMillis < shiftEndMillis(e, lastOut.timestampEpochMillis)) e.employeeId else null
         }.toSet()
         if (::linkedEmployeesSummaryView.isInitialized) {
@@ -4103,7 +4115,7 @@ class MainActivity : Activity() {
         }
         if (::connectionSummaryView.isInitialized) {
             val connectedIds = employees.map { it.employeeId }.filter { isEmployeeActuallyConnected(it, now) }
-            val connectedNames = connectedIds.map { id -> employees.firstOrNull { it.employeeId == id }?.displayName ?: id }
+            val connectedNames = connectedIds.map { id -> employeeById[id.lowercase(Locale.US)]?.displayName ?: id }
             val activeChannels = connectedIds.flatMap { id ->
                 buildList {
                     if (isDirectBleUiConnected(id, now)) add("Bluetooth BLE • ACK")
@@ -4147,7 +4159,7 @@ class MainActivity : Activity() {
             nearbyView.text = if(livePhones.isEmpty()) {
                 "لا توجد هواتف مرتبطة قريبة الآن\nشغّل Bluetooth في الهاتفين واترك تطبيق الموظف يعمل في الخلفية"
             } else livePhones.entries.joinToString("\n") { (id, phone) ->
-                val name = employees.firstOrNull { it.employeeId == id }?.displayName ?: id
+                val name = employeeById[id.lowercase(Locale.US)]?.displayName ?: id
                 val hasFreshBluetooth = phone.channelTimes.any { (channel, t) -> channel.startsWith("Bluetooth") && now - t <= 12_000L }
                 val strength = if (!hasFreshBluetooth) "بدون قياس RSSI مباشر" else when { phone.rssi >= -55 -> "قريب جدًا"; phone.rssi >= -70 -> "قريب"; else -> "إشارة ضعيفة" }
                 val time = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(phone.seenAt))
