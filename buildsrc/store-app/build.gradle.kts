@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 151
-        versionName = "2.0.0-RC29-V151-PROFESSIONAL-ONE-SCREEN-UI"
+        versionCode = 152
+        versionName = "2.0.0-RC29-V152-MESSAGING-COMPACT-UI-POLISH"
     }
 
     compileOptions {
