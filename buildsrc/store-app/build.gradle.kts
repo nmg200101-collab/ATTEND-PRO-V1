@@ -11,8 +11,8 @@ android {
         applicationId = "com.attendpro.store"
         minSdk = 26
         targetSdk = 36
-        versionCode = 149
-        versionName = "2.0.0-RC29-V149-RECEIVER-FINAL-LOCK"
+        versionCode = 151
+        versionName = "2.0.0-RC29-V151-PROFESSIONAL-ONE-SCREEN-UI"
     }
 
     compileOptions {
