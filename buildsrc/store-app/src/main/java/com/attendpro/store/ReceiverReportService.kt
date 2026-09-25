@@ -195,6 +195,17 @@ class ReceiverReportService : Service() {
             it.storeId == envelope.storeId && it.active && it.canReceiveReports
         } ?: return false
 
+        if (envelope.packageText.startsWith("APMIRROR2:")) {
+            val applied = receiver.applyNearbyLiveSnapshot(envelope.storeId, envelope.packageText)
+            if (applied) {
+                val detail = if (transport == "BLE") "Bluetooth • مرآة المحل" else "Wi-Fi / Hotspot / LAN • مرآة المحل"
+                receiver.markLiveTransport(envelope.storeId, transport, detail)
+                updateStatus("تمت مطابقة شاشة ${binding.storeName} مباشرة عبر $detail ✓")
+                broadcastChanged(KIND_LIVE_DASHBOARD, envelope.storeId)
+            }
+            return applied
+        }
+
         if (envelope.packageText.startsWith("APLIVE1:")) {
             val applied = receiver.applyNearbyLiveEvent(
                 envelope.storeId,
@@ -354,6 +365,30 @@ class ReceiverReportService : Service() {
 
         val storeId = binding.storeId
         val cached = receiver.cachedLiveDashboard(storeId)
+
+        val exactMirror = CentralServerClient.remoteLiveSnapshot(
+            binding.serverUrl,
+            receiver.receiverId,
+            receiver.secret,
+            storeId
+        )
+        if (exactMirror.isSuccess) {
+            val snapshot = exactMirror.getOrNull()
+            if (snapshot != null) {
+                val changed = receiver.cacheLiveDashboard(storeId, snapshot)
+                val recentNearby = System.currentTimeMillis() - receiver.liveTransportAt(storeId) <= 10_000L &&
+                    receiver.liveTransport(storeId) in setOf("LAN", "BLE")
+                if (!recentNearby) {
+                    receiver.markLiveTransport(storeId, "SERVER", "الخادم • مرآة المحل")
+                }
+                if (changed) {
+                    updateStatus("تمت مطابقة شاشة المحل عبر الخادم ✓")
+                    broadcastChanged(KIND_LIVE_DASHBOARD, storeId)
+                }
+                return
+            }
+        }
+
         val probe = CentralServerClient.remoteDashboardRevision(
             binding.serverUrl,
             receiver.receiverId,
