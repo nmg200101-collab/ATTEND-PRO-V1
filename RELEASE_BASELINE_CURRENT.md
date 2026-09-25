@@ -2,39 +2,42 @@
 
 Status: FIELD-APPROVED + OFFICIAL-SIGNING-VERIFIED BASELINE
 
-Version: 1.9.65
-Version code: 72
-Approved purpose: Bluetooth authenticated connection after QR while preserving all existing connection paths.
+Version: ATTEND-PRO V157 — Bluetooth Dual-Path Stability
+Version code: 157
+Approved date: 2026-09-25
+Approved purpose: Stable Bluetooth presence recognition after pairing, with dual-path Bluetooth resilience while preserving all other connection channels.
 
-Field approval
-- The project owner confirmed on 2026-09-08 that Bluetooth improved and is working.
-- This makes 1.9.65 the required functional base for subsequent application updates unless a later release is explicitly field-approved.
+## Field approval
+- The project owner tested V157 on real devices and explicitly approved it as the new essential Bluetooth baseline.
+- V157 supersedes the previous Bluetooth baseline for all future connectivity regression checks.
 
-Verified build provenance
+## Verified build provenance
 - Repository: nmg200101-collab/ATTEND-PRO-V1
-- GitHub Actions run: 34141355070
-- Build commit: 9e6cd1957bf4743c466f866916f5c6e87ed09ea1
-- Verified source artifact: ATTEND-PRO-V1-source-1.9.65-BLUETOOTH-ACK-AFTER-QR.zip
-- Verified source SHA-256: b8ba7ed0e6cf3c5a7fcfe8010c8b761b961d8b8838785a8875800719e6b7c180
+- Branch: attend-pro-v157-bluetooth-dual-path-stability
+- Field-approved source commit: 575f4dddc77ae025574caba3321d6990e102c216
+- GitHub Actions run: 36161498185
+- Run number: 164
+- Artifact: ATTEND-PRO-V157-BLUETOOTH-DUAL-PATH-STABILITY-SIGNED
+- Artifact ID: 10875414244
+- Artifact SHA-256: 527ccb53e58339eaee00748d61d508f7aa0d3a7b1f34274d30b64713418c06e0
 
-Official signing verification
-- Existing permanent ATTEND-PRO key reused; no replacement key generated.
-- Required certificate SHA-256: 6F:8B:CC:08:AE:6C:8D:96:54:E7:AA:2C:9A:66:1F:B6:BD:F2:1E:31:B7:20:AB:3A:DD:88:AE:D0:CD:4F:4D:82
-- Employee APK SHA-256: 27bca85459fae6856335348db8ea1f83eff19bfd9096ec94baf3bebb4039500b
-- Store APK SHA-256: 7ecc707d8a7f701c42b582da5622ee5ff556e25cf5b9854c1f9985173a9bd5a1
-- APK Signature Scheme v2: PASS
-- APK Signature Scheme v3: PASS
-- zipalign: PASS
+## Official package hashes
+- Store APK SHA-256: 9d08bdebbc65aafa44f92310d8c456a333e3b234ff67bb128491c0b0405e928b
+- Employee APK SHA-256: 54d056597a99c60e4aa7f69fe5758ba28f7d663605806bfecc25c37c8b20e8e7
 
-Connection invariants for every later release
-1. Preserve the approved 1.9.65 Bluetooth orchestration behavior after QR.
-2. Bluetooth may be displayed as connected only after authenticated ACK; discovery alone is not a connection.
-3. Preserve Wi-Fi/Hotspot, Server and QR connection paths.
-4. GPS remains monitoring/proximity only and must never become attendance proof or a transport channel.
-5. Preserve all attendance and departure methods.
-6. Preserve CONNECTION_CORE_LOCK_1.9.58.sha256. Dedicated locked connection-core files may not be silently changed by unrelated UI/admin/report updates.
-7. Any later Bluetooth/core connection modification requires a dedicated regression build, connection-lock review, and new field approval before replacing this baseline.
+## Connection invariants for every later release
+1. Preserve V157 Bluetooth dual-path presence recognition.
+2. Bluetooth pairing success and Bluetooth presence recognition are separate gates; later code must preserve both.
+3. Bluetooth must work without requiring Wi-Fi/Hotspot.
+4. Preserve authenticated ACK/GATT semantics; discovery alone is not a valid authenticated connection.
+5. Preserve Wi-Fi/Hotspot, LAN, Server and QR paths.
+6. GPS remains monitoring/proximity only and must never replace Bluetooth or become attendance proof.
+7. Preserve proof requests, messages, attendance and departure methods.
+8. Preserve RC29 protected connection protocol files and Receiver V149 lock.
+9. Any later connectivity/lifecycle/background/permission change requires the V157 Bluetooth regression gate and new real-device confirmation.
 
-Release rule
-- All subsequent work must reconstruct from this verified 1.9.65 source baseline or an exact verified descendant.
-- A future build must not be labeled FINAL or OFFICIAL unless it passes the official signing policy in OFFICIAL_SIGNING_POLICY.md.
+## Lock reference
+See: BLUETOOTH-FINAL-LOCK-V157.md
+
+## Release rule
+A later release must not replace this baseline unless Bluetooth passes real-device field testing after all changes.
