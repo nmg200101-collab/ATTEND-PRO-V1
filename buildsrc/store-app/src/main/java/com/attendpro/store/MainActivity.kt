@@ -2381,12 +2381,8 @@ class MainActivity : Activity() {
         val shortcuts = ownerShortcutCatalog().filter { it.id in selectedIds }
         if (shortcuts.isEmpty()) return
 
-        val card = UiKit.card(this, p, 10).apply {
-            addView(UiKit.sectionLabel(this@MainActivity, p, "اختصارات إدارة المحل"))
-            addView(UiKit.subtitle(this@MainActivity, p, "الوصول السريع للوظائف التي اختارها مدير المحل. تبقى صلاحيات الإدارة محمية.").apply {
-                gravity = Gravity.CENTER
-                textSize = 11.5f
-            })
+        val card = UiKit.card(this, p, 7).apply {
+            addView(UiKit.sectionLabel(this@MainActivity, p, t("اختصارات إضافية", "More shortcuts")))
         }
 
         shortcuts.chunked(2).forEach { pair ->
@@ -2397,9 +2393,9 @@ class MainActivity : Activity() {
             }
             pair.forEachIndexed { index, shortcut ->
                 val button = UiKit.button(this, p, shortcut.title, false).apply {
-                    textSize = 12f
+                    textSize = 11.5f
                     maxLines = 2
-                    layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 54), 1f).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 48), 1f).apply {
                         if (index == 0) marginEnd = UiKit.dp(this@MainActivity, 4) else marginStart = UiKit.dp(this@MainActivity, 4)
                     }
                     setOnClickListener {
@@ -2410,7 +2406,7 @@ class MainActivity : Activity() {
             }
             if (pair.size == 1) {
                 row.addView(View(this).apply {
-                    layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 54), 1f).apply {
+                    layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 48), 1f).apply {
                         marginStart = UiKit.dp(this@MainActivity, 4)
                     }
                 })
@@ -2418,7 +2414,8 @@ class MainActivity : Activity() {
             card.addView(row)
         }
 
-        card.addView(UiKit.button(this, p, "تعديل اختصارات الرئيسية", false).apply {
+        card.addView(UiKit.button(this, p, t("تعديل الاختصارات", "Edit shortcuts"), false).apply {
+            textSize = 11.3f
             setOnClickListener { requireStoreOwner("اختصارات إدارة المحل") { showOwnerShortcutPicker() } }
         })
         root.addView(card)
