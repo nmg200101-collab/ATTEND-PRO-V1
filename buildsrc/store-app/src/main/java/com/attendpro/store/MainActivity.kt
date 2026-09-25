@@ -1310,6 +1310,229 @@ class MainActivity : Activity() {
         }
     }
 
+
+    private fun receiverConnectionMethod(employeeId: String, now: Long): String = when {
+        isDirectBleUiConnected(employeeId, now) -> "Bluetooth BLE • ACK"
+        isAuthenticatedPresenceConnected(employeeId, now) -> "Bluetooth BLE • موثّق"
+        isLanConnected(employeeId, now) -> "Wi-Fi/Hotspot • ACK"
+        isServerPresenceConnected(employeeId, now) -> "Server • Heartbeat"
+        isGpsRecognizedFresh(employeeId, now) -> "GPS • داخل/قرب النطاق"
+        else -> ""
+    }
+
+    private fun receiverConnectionSeenAt(employeeId: String, now: Long): Long {
+        val direct = directBleLastVisibleAck(employeeId)
+        val best = listOf(
+            direct,
+            authenticatedPresenceAt[employeeId] ?: 0L,
+            lanConfirmedAt[employeeId] ?: 0L,
+            serverPresenceAt[employeeId] ?: 0L,
+            serverGpsSeenAt[employeeId] ?: 0L
+        ).maxOrNull() ?: 0L
+        return if (best > 0L) best else if (directBle.isConnected(employeeId)) now else 0L
+    }
+
+    private fun buildReceiverLiveMirror(now: Long = System.currentTimeMillis()): CentralServerClient.RemoteDashboard {
+        val employees = repo.employees().filter { it.active }
+        val events = repo.events()
+            .filter { it.timestampEpochMillis >= dayStartMillis() }
+            .sortedBy { it.timestampEpochMillis }
+
+        val present = employees.mapNotNull { employee ->
+            val last = events.lastOrNull { it.employeeId.equals(employee.employeeId, true) }
+            if (last?.action != AttendanceAction.CHECK_IN) return@mapNotNull null
+            CentralServerClient.RemoteDashboardPerson(
+                employeeId = employee.employeeId,
+                employeeName = employee.displayName.ifBlank { employee.employeeId },
+                branchId = employee.branchId,
+                lastSeenAt = receiverConnectionSeenAt(employee.employeeId, now),
+                method = last.method.name,
+                timeEpochMillis = last.timestampEpochMillis
+            )
+        }
+
+        val connected = employees.mapNotNull { employee ->
+            if (!isEmployeeActuallyConnected(employee.employeeId, now)) return@mapNotNull null
+            CentralServerClient.RemoteDashboardPerson(
+                employeeId = employee.employeeId,
+                employeeName = employee.displayName.ifBlank { employee.employeeId },
+                branchId = employee.branchId,
+                lastSeenAt = receiverConnectionSeenAt(employee.employeeId, now),
+                method = receiverConnectionMethod(employee.employeeId, now),
+                timeEpochMillis = 0L
+            )
+        }
+
+        val recent = events.asReversed().take(30).map { event ->
+            CentralServerClient.RemoteDashboardEvent(
+                employeeId = event.employeeId,
+                employeeName = event.employeeName.ifBlank { event.employeeId },
+                action = if (event.action == AttendanceAction.CHECK_IN) "حضور" else "انصراف",
+                method = event.method.name,
+                timeEpochMillis = event.timestampEpochMillis
+            )
+        }
+
+        val revision = maxOf(
+            events.maxOfOrNull { it.timestampEpochMillis } ?: 0L,
+            connected.maxOfOrNull { it.lastSeenAt } ?: 0L,
+            present.maxOfOrNull { it.timeEpochMillis } ?: 0L
+        )
+
+        return CentralServerClient.RemoteDashboard(
+            storeId = repo.storeId,
+            storeName = repo.storeName,
+            branchId = repo.branchId,
+            revision = revision,
+            serverNow = now,
+            checkIns = events.count { it.action == AttendanceAction.CHECK_IN },
+            checkOuts = events.count { it.action == AttendanceAction.CHECK_OUT },
+            todayEvents = events.size,
+            presentCount = present.size,
+            connectedCount = connected.size,
+            lastSeen = "",
+            present = present,
+            connected = connected,
+            recent = recent
+        )
+    }
+
+    private fun receiverMirrorJson(dashboard: CentralServerClient.RemoteDashboard): JSONObject {
+        fun people(items: List<CentralServerClient.RemoteDashboardPerson>): JSONArray = JSONArray().apply {
+            items.forEach { p -> put(JSONObject().apply {
+                put("employeeId", p.employeeId)
+                put("employeeName", p.employeeName)
+                put("branchId", p.branchId)
+                put("lastSeenAt", p.lastSeenAt)
+                put("method", p.method)
+                put("timeEpochMillis", p.timeEpochMillis)
+            }) }
+        }
+        return JSONObject().apply {
+            put("storeId", dashboard.storeId)
+            put("storeName", dashboard.storeName)
+            put("branchId", dashboard.branchId)
+            put("revision", dashboard.revision)
+            put("serverNow", dashboard.serverNow)
+            put("checkIns", dashboard.checkIns)
+            put("checkOuts", dashboard.checkOuts)
+            put("todayEvents", dashboard.todayEvents)
+            put("presentCount", dashboard.presentCount)
+            put("connectedCount", dashboard.connectedCount)
+            put("lastSeen", dashboard.lastSeen)
+            put("present", people(dashboard.present))
+            put("connected", people(dashboard.connected))
+            put("recent", JSONArray().apply {
+                dashboard.recent.forEach { e -> put(JSONObject().apply {
+                    put("employeeId", e.employeeId)
+                    put("employeeName", e.employeeName)
+                    put("action", e.action)
+                    put("method", e.method)
+                    put("timeEpochMillis", e.timeEpochMillis)
+                }) }
+            })
+        }
+    }
+
+    private fun receiverMirrorFingerprint(dashboard: CentralServerClient.RemoteDashboard): String = buildString {
+        append(dashboard.checkIns).append('|').append(dashboard.checkOuts).append('|').append(dashboard.todayEvents)
+        append("|P:")
+        dashboard.present.sortedBy { it.employeeId }.forEach {
+            append(it.employeeId).append('@').append(it.timeEpochMillis).append(';')
+        }
+        append("|C:")
+        dashboard.connected.sortedBy { it.employeeId }.forEach {
+            append(it.employeeId).append('@').append(it.method).append(';')
+        }
+        append("|R:")
+        dashboard.recent.take(4).forEach {
+            append(it.employeeId).append('@').append(it.action).append('@').append(it.timeEpochMillis).append(';')
+        }
+    }
+
+    private fun deliverReceiverMirrorNearby(dashboard: CentralServerClient.RemoteDashboard) {
+        val targets = repo.authorizedReportReceivers()
+            .filter { it.active && it.canReceiveReports && it.receiverId.isNotBlank() && it.secret.isNotBlank() }
+            .take(8)
+        if (targets.isEmpty()) return
+
+        val packageText = "APMIRROR2:" + receiverMirrorJson(dashboard).toString()
+        val createdAt = System.currentTimeMillis()
+        targets.forEach { receiver ->
+            val transferId = "MIRROR-${dashboard.revision}-${createdAt / 1000L}"
+            val envelope = runCatching {
+                ReceiverOfflineReportProtocol.encodeEnvelope(
+                    receiver.receiverId,
+                    repo.storeId,
+                    transferId,
+                    packageText,
+                    receiver.secret,
+                    createdAt
+                )
+            }.getOrNull() ?: return@forEach
+
+            Thread {
+                val lan = ReceiverReportLanClient.send(
+                    receiver.receiverId,
+                    receiver.secret,
+                    repo.storeId,
+                    transferId,
+                    envelope,
+                    discoveryWindowMs = 1_350L,
+                    connectTimeoutMs = 1_800,
+                    socketTimeoutMs = 3_500
+                )
+                if (lan.success) repo.markReportReceiverUsed(receiver.receiverId)
+            }.apply { isDaemon = true; start() }
+
+            if (ReceiverReportBluetoothSupport.hasPermissions(this) &&
+                ReceiverReportBluetoothSupport.bluetoothEnabled(this)
+            ) {
+                Thread {
+                    val ble = ReceiverReportBleClient.sendFastEvent(
+                        this,
+                        receiver.receiverId,
+                        receiver.secret,
+                        repo.storeId,
+                        transferId,
+                        envelope
+                    )
+                    if (ble.success) repo.markReportReceiverUsed(receiver.receiverId)
+                }.apply { isDaemon = true; start() }
+            }
+        }
+    }
+
+    private fun syncReceiverLiveMirrorIfDue(force: Boolean = false) {
+        if (!::repo.isInitialized || !repo.isCentralActivationActive()) return
+        val now = System.currentTimeMillis()
+        val dashboard = buildReceiverLiveMirror(now)
+        val fingerprint = receiverMirrorFingerprint(dashboard)
+        if (!force && fingerprint == receiverMirrorFingerprint && now - receiverMirrorLastSentAt < 15_000L) return
+
+        receiverMirrorFingerprint = fingerprint
+        receiverMirrorLastSentAt = now
+        deliverReceiverMirrorNearby(dashboard)
+
+        if (receiverMirrorInFlight || repo.serverUrl.isBlank() || !repo.hasCentralCredentials()) return
+        receiverMirrorInFlight = true
+        Thread {
+            val result = CentralServerClient.publishReceiverLiveSnapshot(
+                repo.serverUrl,
+                repo.centralAccessToken,
+                repo.storeId,
+                DeviceIdentity(this@MainActivity),
+                dashboard
+            )
+            receiverMirrorInFlight = false
+            if (result.isFailure) {
+                runOnUiThread {
+                    repo.lastSyncMessage = "تعذر رفع مرآة هاتف المحل — سيعاد تلقائيًا"
+                }
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
     private fun triggerImmediateAttendanceSync(event: AttendanceEvent) {
         deliverAttendanceEventToReceiversNearby(event)
 
