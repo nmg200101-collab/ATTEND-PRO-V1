@@ -109,10 +109,14 @@ jobs:
         run: |
           set -euxo pipefail
           cp .source_patches/v159/source.patch.xz.b64 /tmp/v159-source.patch.xz.b64
-          test "$(sha256sum /tmp/v159-source.patch.xz.b64 | awk '{print $1}')" = "2656e663916dd894df7e77b4d95ca142939cdba226f2fcf27620dc426b4cb1fc"
+          test "$(sha256sum /tmp/v159-source.patch.xz.b64 | awk '{print $1}')" = "627aa0dd3edc94b849085b8c4d9d33d8498dbf25ad2d705281dddb9dc937f7e2"
           base64 -d /tmp/v159-source.patch.xz.b64 | xz -d > /tmp/v159-source.patch
-          test "$(sha256sum /tmp/v159-source.patch | awk '{print $1}')" = "6eb1e32eb3ffdb800f0cfbdb8d3b32fc8ea3d33aea55c01345c83ecd6fccd5bf"
+          test "$(sha256sum /tmp/v159-source.patch | awk '{print $1}')" = "c7025ce72681fc08ba94c057ab86071b2e024dcf373e980bf6f814ab1f02bce4"
           patch -p1 --forward --batch < /tmp/v159-source.patch
+          sed -i 's/versionCode = 158/versionCode = 159/' buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"/versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"/' buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionCode = 158/versionCode = 159/' buildsrc/employee-app/build.gradle.kts
+          sed -i 's/versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"/versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"/' buildsrc/employee-app/build.gradle.kts
           grep -q 'versionCode = 159' buildsrc/store-app/build.gradle.kts
           grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 159' buildsrc/employee-app/build.gradle.kts
