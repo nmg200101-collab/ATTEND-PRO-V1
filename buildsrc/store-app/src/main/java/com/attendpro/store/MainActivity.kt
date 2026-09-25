@@ -66,6 +66,8 @@ import com.attendpro.core.ShiftWindow
 import com.attendpro.core.ShiftTimeCodec
 import com.attendpro.core.StoreRepository
 import com.attendpro.core.UiKit
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.text.SimpleDateFormat
@@ -135,6 +137,9 @@ class MainActivity : Activity() {
     private val voiceEnrollmentQualities = mutableListOf<Int>()
     private val autoPresenceRecorded = mutableSetOf<String>()
     @Volatile private var syncInProgress = false
+    @Volatile private var receiverMirrorInFlight = false
+    private var receiverMirrorFingerprint = ""
+    private var receiverMirrorLastSentAt = 0L
     private var employeeManagerMode = false
     private var recoveryAttempted = false
     private var recoveryRetryCount = 0
@@ -178,6 +183,7 @@ class MainActivity : Activity() {
             ensurePresenceDiscoveryRunning()
             pollServerPresenceIfDue()
             autoSyncIfReady()
+            syncReceiverLiveMirrorIfDue()
             if (::lateAlerts.isInitialized) lateAlerts.tick()
             checkConnectedWithoutProof()
             val lateNow = System.currentTimeMillis()
