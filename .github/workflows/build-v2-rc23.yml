@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V157 Bluetooth Dual Path Stability
+name: Build ATTEND-PRO V158 Store Management UX
 on:
   push:
-    branches: [attend-pro-v157-bluetooth-dual-path-stability]
+    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux]
   workflow_dispatch:
 permissions:
   contents: read
@@ -85,6 +85,26 @@ jobs:
           test "$(sha256sum /tmp/v157-lint-fix.patch | awk '{print $1}')" = "92913195cb2a7fcfcb88ce04a4ad0c9968e36524e1a2d0fca665ada88743a926"
           patch -p1 --forward --batch < /tmp/v157-lint-fix.patch
           grep -q 'val canConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+      - name: Apply V158 Store Management UX patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v158/source.patch.xz.b64 /tmp/v158-source.patch.xz.b64
+          test "$(sha256sum /tmp/v158-source.patch.xz.b64 | awk '{print $1}')" = "706405037c5c8dbfbff698498bf9e767ce22cb6cd2700a9f05a6f3a6db43bfb9"
+          base64 -d /tmp/v158-source.patch.xz.b64 | xz -d > /tmp/v158-source.patch
+          test "$(sha256sum /tmp/v158-source.patch | awk '{print $1}')" = "518e8ba14ef98cc7366549bf717485133a81341df2b9d14072fc9558b7d5636a"
+          patch -p1 --forward --batch < /tmp/v158-source.patch
+          grep -q 'versionCode = 158' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 158' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'showStoreSettingsV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showEmployeesAndShiftV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showConnectionReadinessV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showReportsReceptionV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showCommunicationV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showBackupSystemV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          test -f RELEASE-NOTES-V158.md
+          test -f V158-STORE-MANAGEMENT-UX.md
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -100,7 +120,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V157 Bluetooth dual-path stability locks
+      - name: Verify V158 Store Management UX and protected locks
         run: |
           set -euxo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -390,11 +410,20 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V157 release identity.
-          grep -q 'versionCode = 157' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 157' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY"' buildsrc/employee-app/build.gradle.kts
+          # V158 release identity and Store Management UX markers.
+          grep -q 'versionCode = 158' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 158' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/employee-app/build.gradle.kts
+          grep -q '1. إعدادات المحل' "$SETTINGS"
+          grep -q '2. الموظفون والدوام' "$SETTINGS"
+          grep -q '3. الاتصال والأجهزة' "$SETTINGS"
+          grep -q '4. التقارير والاستلام' "$SETTINGS"
+          grep -q '5. الرسائل والتواصل' "$SETTINGS"
+          grep -q '6. النسخ والحماية والنظام' "$SETTINGS"
+          grep -q 'الإعدادات المتقدمة' "$SETTINGS"
+          test -f V158-STORE-MANAGEMENT-UX.md
+          test -f RELEASE-NOTES-V158.md
 
           # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
@@ -538,10 +567,10 @@ jobs:
             :store-app:bundlePlayRelease \
             :employee-app:bundlePlayRelease \
             --stacktrace
-      - name: Enforce V157 lint gate
+      - name: Enforce V158 lint gate
         run: |
           set -euo pipefail
-          ERRORS=/tmp/v157-lint-errors.txt
+          ERRORS=/tmp/v158-lint-errors.txt
           : > "$ERRORS"
           while IFS= read -r report; do
             grep -E ' Error: ' "$report" >> "$ERRORS" || true
@@ -558,14 +587,14 @@ jobs:
                 echo "::notice::Pre-existing lint finding in immutable RC29/V149 source: $line"
                 ;;
               *)
-                echo "::error::V157 lint error outside immutable lock: $line"
+                echo "::error::V158 lint error outside immutable lock: $line"
                 BAD=1
                 ;;
             esac
           done < "$ERRORS"
           test "$BAD" -eq 0
 
-      - name: Sign V157 APKs and Play AABs
+      - name: Sign V158 APKs and Play AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -581,13 +610,13 @@ jobs:
             if [ "$APP" = employee ]; then
               MOD=employee-app
               PKG=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V157.apk
-              AAB_OUT=ATTEND-PRO-Employee-V157-PLAY.aab
+              APK_OUT=ATTEND-PRO-Employee-V158.apk
+              AAB_OUT=ATTEND-PRO-Employee-V158-PLAY.aab
             else
               MOD=store-app
               PKG=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V157.apk
-              AAB_OUT=ATTEND-PRO-Store-V157-PLAY.aab
+              APK_OUT=ATTEND-PRO-Store-V158.apk
+              AAB_OUT=ATTEND-PRO-Store-V158-PLAY.aab
             fi
 
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
@@ -605,7 +634,7 @@ jobs:
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='157' versionName='2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='158' versionName='2.0.0-RC29-V158-STORE-MANAGEMENT-UX'"
 
             BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
             test -n "$BUNDLE"
@@ -618,32 +647,37 @@ jobs:
             jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
           done
 
-          cp RELEASE-NOTES-V157.md signed/RELEASE-NOTES-V157.md
-          cp V157-BLUETOOTH-DUAL-PATH-STABILITY.md signed/V157-BLUETOOTH-DUAL-PATH-STABILITY.md
-          zip -qr signed/ATTEND-PRO-V157-SOURCE.zip . \
+          cp RELEASE-NOTES-V158.md signed/RELEASE-NOTES-V158.md
+          cp V158-STORE-MANAGEMENT-UX.md signed/V158-STORE-MANAGEMENT-UX.md
+          cp ALL-SECTIONS-FINAL-LOCK-V157.md signed/ALL-SECTIONS-FINAL-LOCK-V157.md
+          cp BLUETOOTH-FINAL-LOCK-V157.md signed/BLUETOOTH-FINAL-LOCK-V157.md
+          cp RECEIVER-FINAL-LOCK-V149.md signed/RECEIVER-FINAL-LOCK-V149.md
+          cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/CONNECTION_CORE_FINAL_LOCK_RC29.md
+          zip -qr signed/ATTEND-PRO-V158-SOURCE.zip . \
             -x '.git/*' 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
 
-          cat > signed/V157-AUTOMATED-QA.txt <<EOF
-          ATTEND-PRO V157 — AUTOMATED QA
+          cat > signed/V158-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V158 — AUTOMATED QA
           Commit: $GITHUB_SHA
           Branch: $GITHUB_REF_NAME
-          Version code: 157
-          Version name: 2.0.0-RC29-V157-BLUETOOTH-DUAL-PATH-STABILITY
-          Target/compile SDK: 36
+          Version code: 158
+          Version name: 2.0.0-RC29-V158-STORE-MANAGEMENT-UX
+          Scope: Store Management UI organization only
+          V157 Bluetooth dual-path baseline: LOCKED
+          V149 Receiver baseline: LOCKED
           RC29 protected connection sources: LOCKED
-          V149 Receiver sources: LOCKED
           Unit tests: PASSED before this file was generated
           Android lint (Direct + Play): reports audited; no errors outside immutable RC29/V149 sources
           Direct APK build/signature/package verification: PASSED
           Play AAB build/signature verification: PASSED
-          FIELD DEVICE GATE: NOT CERTIFIED BY CI. Bluetooth/QR/LAN/GPS/biometric/background/update-install/restore require the real-device smoke matrix before FINAL-RELEASE-LOCK is issued.
+          FIELD DEVICE GATE: UI navigation and locked connectivity regression still require real-device confirmation before V158 is approved as the next overall application baseline.
           EOF
 
-          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V157.md V157-BLUETOOTH-DUAL-PATH-STABILITY.md V157-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
-          echo "===== V157 SHA-256 ====="
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V158.md V158-STORE-MANAGEMENT-UX.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md CONNECTION_CORE_FINAL_LOCK_RC29.md V158-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          echo "===== V158 SHA-256 ====="
           cat signed/ALL-SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V157-BLUETOOTH-DUAL-PATH-STABILITY-SIGNED
+          name: ATTEND-PRO-V158-STORE-MANAGEMENT-UX-SIGNED
           path: signed/
           retention-days: 90
