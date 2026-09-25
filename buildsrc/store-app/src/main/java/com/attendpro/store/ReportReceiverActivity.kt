@@ -56,6 +56,9 @@ class ReportReceiverActivity : Activity() {
     private var messageEmployees: List<CentralServerClient.ReceiverEmployee> = emptyList()
     private var messageReplies: List<ReplyRow> = emptyList()
     private var selectedMessageEmployeeId: String? = null
+    private var proofEmployeeId: String = ""
+    private var proofChallengeId: String = ""
+    private var proofStatusText: String = ""
     private var notice = ""
     private var lastServerRefreshAt = 0L
     private var lanStatus = ""
@@ -696,6 +699,45 @@ class ReportReceiverActivity : Activity() {
                                             t("الفرع: ${employee.branchId.ifBlank { "—" }} • آخر اتصال: $seen\nنوع اتصال هاتف الموظف بالمحل: ${employee.method.ifBlank { "غير محدد" }}",
                                                 "Branch: ${employee.branchId.ifBlank { "—" }} • Last seen: $seen\nEmployee-to-store connection: ${employee.method.ifBlank { "Unknown" }}")
                                     ))
+                                    val alreadyPresent = live.present.any { it.employeeId.equals(employee.employeeId, true) }
+                                    addView(UiKit.button(
+                                        this@ReportReceiverActivity,
+                                        p,
+                                        if (proofEmployeeId == employee.employeeId && proofChallengeId.isNotBlank())
+                                            t("بانتظار إثبات الموظف…", "Waiting for employee proof…")
+                                        else if (alreadyPresent)
+                                            t("طلب إثبات الوجود", "Request presence proof")
+                                        else
+                                            t("طلب إثبات الحضور", "Request attendance proof"),
+                                        false
+                                    ).apply {
+                                        isEnabled = proofEmployeeId.isBlank()
+                                        setOnClickListener {
+                                            requestReceiverPresenceProof(
+                                                employee.employeeId,
+                                                employee.employeeName.ifBlank { employee.employeeId },
+                                                checkInIfVerified = !alreadyPresent
+                                            )
+                                        }
+                                    })
+                                    if (receiver.canMessageEmployees) {
+                                        addView(UiKit.button(
+                                            this@ReportReceiverActivity,
+                                            p,
+                                            t("مراسلة الموظف", "Message employee"),
+                                            false
+                                        ).apply {
+                                            setOnClickListener {
+                                                showQuickMessageDialog(
+                                                    employee.employeeId,
+                                                    employee.employeeName.ifBlank { employee.employeeId }
+                                                )
+                                            }
+                                        })
+                                    }
+                                    if (proofEmployeeId == employee.employeeId && proofStatusText.isNotBlank()) {
+                                        addView(UiKit.subtitle(this@ReportReceiverActivity, p, proofStatusText))
+                                    }
                                 }
                             }
                         }
@@ -880,7 +922,7 @@ class ReportReceiverActivity : Activity() {
                     if (body.isBlank()) {
                         field.error = t("الرسالة فارغة", "Message is empty")
                     } else {
-                        sendMessage(target.employeeId, body)
+                        sendMessage(target.employeeId, body, "NORMAL")
                     }
                 }
             })
@@ -1220,7 +1262,192 @@ class ReportReceiverActivity : Activity() {
         }.apply { isDaemon = true }.start()
     }
 
-    private fun sendMessage(employeeId: String, body: String) {
+    private fun requestReceiverPresenceProof(
+        employeeId: String,
+        employeeName: String,
+        checkInIfVerified: Boolean
+    ) {
+        val binding = receiver.activeBinding() ?: return
+        if (!receiver.canReceiveReports || binding.serverUrl.isBlank() || binding.storeId.isBlank()) {
+            showError(t("تعذر طلب الإثبات", "Could not request proof"), t("اتصال الخادم غير جاهز لهذا المحل.", "Server connection is not ready for this store."))
+            return
+        }
+        if (proofEmployeeId.isNotBlank()) {
+            notice = t("يوجد طلب إثبات جارٍ بالفعل.", "A presence proof request is already in progress.")
+            render()
+            return
+        }
+
+        val generation = ++actionGeneration
+        proofEmployeeId = employeeId
+        proofChallengeId = ""
+        proofStatusText = t("جاري إرسال طلب الإثبات…", "Sending proof request…")
+        render()
+
+        Thread {
+            val result = CentralServerClient.receiverRequestPresenceProof(
+                binding.serverUrl,
+                receiver.receiverId,
+                receiver.secret,
+                employeeId,
+                if (checkInIfVerified) "CHECK_IN" else "",
+                binding.storeId
+            )
+            runOnUiThread {
+                if (!alive() || generation != actionGeneration || receiver.activeBinding()?.storeId != binding.storeId) return@runOnUiThread
+                if (result.isFailure) {
+                    proofEmployeeId = ""
+                    proofChallengeId = ""
+                    proofStatusText = ""
+                    showError(t("تعذر طلب إثبات الحضور", "Could not request attendance proof"), networkMessage(result.exceptionOrNull()))
+                    render()
+                    return@runOnUiThread
+                }
+                val proof = result.getOrThrow()
+                proofChallengeId = proof.challengeId
+                proofStatusText = t(
+                    "تم إرسال الطلب إلى ${employeeName} • بانتظار تحقق الموظف",
+                    "Request sent to ${employeeName} • waiting for employee verification"
+                )
+                notice = t(
+                    "تم إرسال طلب إثبات إلى ${employeeName} ✓",
+                    "Presence proof request sent to ${employeeName} ✓"
+                )
+                render()
+                pollReceiverPresenceProof(binding, employeeName, proof.challengeId, generation)
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun pollReceiverPresenceProof(
+        binding: ReceiverStoreBinding,
+        employeeName: String,
+        challengeId: String,
+        generation: Long
+    ) {
+        Thread {
+            var lastError: Throwable? = null
+            repeat(60) {
+                if (generation != actionGeneration || receiver.activeBinding()?.storeId != binding.storeId) return@Thread
+                val result = CentralServerClient.receiverPresenceProofStatus(
+                    binding.serverUrl,
+                    receiver.receiverId,
+                    receiver.secret,
+                    challengeId,
+                    binding.storeId
+                )
+                if (result.isSuccess) {
+                    val proof = result.getOrThrow()
+                    when (proof.status.uppercase(Locale.US)) {
+                        "VERIFIED" -> {
+                            runOnUiThread {
+                                if (!alive() || generation != actionGeneration) return@runOnUiThread
+                                proofEmployeeId = ""
+                                proofChallengeId = ""
+                                proofStatusText = ""
+                                notice = if (proof.attendanceApplied) {
+                                    t(
+                                        "✓ تم إثبات حضور ${employeeName} وتسجيل الحضور بنجاح.",
+                                        "✓ ${employeeName} verified presence and check-in was recorded."
+                                    )
+                                } else {
+                                    t(
+                                        "✓ تم إثبات وجود ${employeeName} بنجاح.",
+                                        "✓ ${employeeName} presence was verified."
+                                    )
+                                }
+                                ReceiverReportService.requestImmediateSync(this@ReportReceiverActivity)
+                                render()
+                                refreshReports(silent = true)
+                            }
+                            return@Thread
+                        }
+                        "EXPIRED" -> {
+                            runOnUiThread {
+                                if (!alive() || generation != actionGeneration) return@runOnUiThread
+                                proofEmployeeId = ""
+                                proofChallengeId = ""
+                                proofStatusText = ""
+                                notice = t(
+                                    "انتهت مهلة إثبات ${employeeName} ولم يصل تحقق.",
+                                    "${employeeName} proof request expired without verification."
+                                )
+                                render()
+                            }
+                            return@Thread
+                        }
+                    }
+                    lastError = null
+                } else {
+                    lastError = result.exceptionOrNull()
+                }
+                try { Thread.sleep(2_000L) } catch (_: InterruptedException) { return@Thread }
+            }
+            runOnUiThread {
+                if (!alive() || generation != actionGeneration) return@runOnUiThread
+                proofEmployeeId = ""
+                proofChallengeId = ""
+                proofStatusText = ""
+                val errorText = networkMessage(lastError)
+                notice = t(
+                    "لم يكتمل إثبات ${employeeName}. ${errorText}",
+                    "Proof for ${employeeName} did not complete. ${errorText}"
+                )
+                render()
+            }
+        }.apply { isDaemon = true }.start()
+    }
+
+    private fun showQuickMessageDialog(employeeId: String, employeeName: String) {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@ReportReceiverActivity))
+                View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(UiKit.dp(this@ReportReceiverActivity, 18), UiKit.dp(this@ReportReceiverActivity, 8),
+                UiKit.dp(this@ReportReceiverActivity, 18), UiKit.dp(this@ReportReceiverActivity, 4))
+        }
+        val field = UiKit.field(
+            this,
+            p,
+            t("اكتب رسالة إلى ${employeeName}", "Write a message to ${employeeName}")
+        )
+        box.addView(field)
+        box.addView(UiKit.subtitle(this, p, t("رسائل سريعة:", "Quick messages:")))
+        listOf(
+            t("يرجى التواصل مع الإدارة", "Please contact management"),
+            t("يرجى التوجه إلى المحل", "Please come to the store"),
+            t("يرجى تأكيد وجودك الآن", "Please confirm your presence now")
+        ).forEach { template ->
+            box.addView(UiKit.button(this, p, template, false).apply {
+                setOnClickListener { field.setText(template) }
+            })
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(t("مراسلة ${employeeName}", "Message ${employeeName}"))
+            .setView(box)
+            .setNegativeButton(t("إلغاء", "Cancel"), null)
+            .setPositiveButton(t("إرسال", "Send"), null)
+            .setNeutralButton(t("إرسال كمهمة", "Send important"), null)
+            .create()
+
+        dialog.setOnShowListener {
+            val send: (String) -> Unit = { priority ->
+                val body = field.text.toString().trim()
+                if (body.isBlank()) {
+                    field.error = t("الرسالة فارغة", "Message is empty")
+                } else {
+                    sendMessage(employeeId, body, priority)
+                    dialog.dismiss()
+                }
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { send("NORMAL") }
+            dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener { send("IMPORTANT") }
+        }
+        dialog.show()
+    }
+
+    private fun sendMessage(employeeId: String, body: String, priority: String = "NORMAL") {
         val binding = receiver.activeBinding() ?: return
         if (!receiver.canMessageEmployees || binding.storeId.isBlank()) return
         val queued = receiver.queueOutgoingMessage(
@@ -1228,7 +1455,7 @@ class ReportReceiverActivity : Activity() {
             employeeId,
             t("رسالة من هاتف الاستلام", "Receiver phone message"),
             body,
-            "NORMAL"
+            priority
         )
         if (queued == null) {
             showError(t("تعذر تجهيز الرسالة", "Message could not be queued"), t("تحقق من الموظف ونص الرسالة.", "Check the employee and message text."))
