@@ -881,16 +881,22 @@ class MainActivity : Activity() {
         window.statusBarColor = p.bg
         val isEnglish = AppLanguage.isEnglish(this)
         val dir = if (isEnglish) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+        val layoutMode = UiKit.currentLayout(this)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             layoutDirection = dir
-            setPadding(UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 12))
+            setPadding(
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 8 else 11),
+                UiKit.dp(this@MainActivity, 10),
+                UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 8 else 11),
+                UiKit.dp(this@MainActivity, 18)
+            )
             setBackgroundColor(p.bg)
         }
 
-        val header = UiKit.heroCard(this, p, 8).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, 92)
+        val header = UiKit.heroCard(this, p, 11).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 96 else 108)
         }
         val headerTools = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -932,9 +938,9 @@ class MainActivity : Activity() {
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
             addView(UiKit.subtitle(this@MainActivity, p,
-                t("RC7 • إصلاح الاتصال والإدارة • ${attendProVersionName()}", "RC7 • connectivity/admin repair • ${attendProVersionName()}")).apply {
+                t("لوحة إدارة المحل • ${attendProVersionName()}", "Store dashboard • ${attendProVersionName()}")).apply {
                 setTextColor(android.graphics.Color.argb(225,255,255,255))
-                textSize = 11.2f
+                textSize = 11.8f
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
         })
@@ -948,24 +954,18 @@ class MainActivity : Activity() {
         header.addView(storeSummary)
         root.addView(header)
 
-        val ownerCard = UiKit.card(this, p, 7).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, 62)
-            gravity = Gravity.CENTER
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 15.5f).apply {
-                gravity = Gravity.CENTER
-                maxLines = 1
-            })
-            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.owner_settings_subtitle)).apply {
-                gravity = Gravity.CENTER
-                textSize = 10.5f
-                maxLines = 1
-            })
-            UiKit.makeInteractive(this, this@MainActivity, p)
-            setOnClickListener { requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() } }
-        }
-        root.addView(ownerCard)
-
         addStoreTabs1978(root)
+
+        root.addView(UiKit.card(this, p, 7).apply {
+            addView(UiKit.sectionLabel(this@MainActivity, p, t("المتابعة الآن", "Live overview")))
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "الحضور والاتصال أمامك مباشرة؛ اضغط أي بطاقة لعرض التفاصيل.",
+                "Attendance and connectivity are shown live; tap any card for details."
+            )).apply {
+                gravity = Gravity.CENTER
+                textSize = 11.5f
+            })
+        })
 
         status = TextView(this).apply {
             text = getString(R.string.system_ready)
@@ -977,13 +977,13 @@ class MainActivity : Activity() {
         linkedEmployeesSummaryView = UiKit.subtitle(this, p, t("جاري تحميل الحضور…", "Loading attendance…"))
         connectionSummaryView = UiKit.subtitle(this, p, t("جاري فحص الاتصال…", "Checking connections…"))
         fun livePanel(title: String, detail: TextView, action: () -> Unit) = UiKit.card(this, p, 7).apply {
-            minimumHeight = UiKit.dp(this@MainActivity, if (classic) 88 else 78)
-            addView(UiKit.title(this@MainActivity, p, title, 13.8f).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, if (classic) 92 else 84)
+            addView(UiKit.title(this@MainActivity, p, title, 14.5f).apply {
                 gravity = Gravity.CENTER
                 maxLines = 1
             })
             detail.gravity = Gravity.CENTER
-            detail.textSize = 10.7f
+            detail.textSize = 11.2f
             detail.maxLines = if (classic) 3 else 2
             addView(detail)
             UiKit.makeInteractive(this, this@MainActivity, p)
@@ -1002,9 +1002,13 @@ class MainActivity : Activity() {
         liveRow.addView(connectPanel)
         root.addView(liveRow)
 
-        val attendanceCard = UiKit.card(this, p, 10).apply {
+        val attendanceCard = UiKit.card(this, p, 14).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            minimumHeight = UiKit.dp(this@MainActivity, 132)
+            minimumHeight = UiKit.dp(this@MainActivity, if (layoutMode == UiKit.LayoutMode.COMPACT) 142 else 154)
+            addView(UiKit.sectionLabel(this@MainActivity, p, t("الإجراء الرئيسي", "Primary action")).apply {
+                gravity = Gravity.CENTER
+                textSize = 12.5f
+            })
         }
         val attendanceRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1016,8 +1020,8 @@ class MainActivity : Activity() {
             background = UiKit.round(p.surface2, 18, this@MainActivity, p.divider)
             elevation = UiKit.dp(this@MainActivity, 1).toFloat()
             layoutParams = LinearLayout.LayoutParams(
-                UiKit.dp(this@MainActivity, if (classic) 132 else 122),
-                UiKit.dp(this@MainActivity, if (classic) 122 else 112)
+                UiKit.dp(this@MainActivity, if (classic) 136 else 128),
+                UiKit.dp(this@MainActivity, if (classic) 128 else 120)
             ).apply {
                 marginEnd = UiKit.dp(this@MainActivity, 10)
             }
@@ -1028,12 +1032,15 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             layoutDirection = dir
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 17.5f).apply {
+            addView(UiKit.title(this@MainActivity, p, t("الحضور والانصراف", "Check-in & check-out"), 18.5f).apply {
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
-            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
-                textSize = 11.5f
-                maxLines = 2
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "اختر حضورًا أو انصرافًا، ثم استخدم طريقة التحقق المعتمدة.",
+                "Choose check-in or check-out, then use an approved verification method."
+            )).apply {
+                textSize = 11.8f
+                maxLines = 3
             })
             val actions = LinearLayout(this@MainActivity).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -1088,7 +1095,29 @@ class MainActivity : Activity() {
         root.addView(bottomRow)
         addOwnerShortcutCard(root)
 
-        root.addView(UiKit.card(this, p, 4).apply { addView(status) })
+        root.addView(UiKit.card(this, p, 11).apply {
+            gravity = Gravity.CENTER
+            addView(UiKit.sectionLabel(this@MainActivity, p, t("إدارة المحل", "Store management")))
+            addView(UiKit.title(this@MainActivity, p, getString(R.string.owner_settings), 16.5f).apply {
+                gravity = Gravity.CENTER
+            })
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "الموظفون والدوام والصلاحيات والإعدادات في مكان واحد. هذا القسم محمي لمدير المحل.",
+                "Employees, shifts, permissions and settings in one place. This area is protected for the Store manager."
+            )).apply {
+                gravity = Gravity.CENTER
+                textSize = 11.5f
+            })
+            addView(UiKit.button(this@MainActivity, p, t("فتح إدارة المحل", "Open Store management"), false).apply {
+                setOnClickListener {
+                    requireStoreOwner(t("إدارة المحل", "Store Management")) { showStoreOwnerHub() }
+                }
+            })
+        })
+
+        root.addView(UiKit.card(this, p, 5).apply {
+            addView(status.apply { textSize = 11.5f })
+        })
 
         setContentView(ScrollView(this).apply {
             isFillViewport = true
