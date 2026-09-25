@@ -31,7 +31,7 @@ jobs:
           test -f buildsrc/core/src/main/java/com/attendpro/core/MessageHistoryClientV156.kt
       - name: Apply V157 Bluetooth dual-path stability patch
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           cp .source_patches/v157/source.patch.xz.b64 /tmp/v157-source.patch.xz.b64
           test "$(sha256sum /tmp/v157-source.patch.xz.b64 | awk '{print $1}')" = "d0c046895e41aef87282e3187dc82d8497e465b8ad69ba047ea6b8e40bcaed1f"
           base64 -d /tmp/v157-source.patch.xz.b64 | xz -d > /tmp/v157-source.patch
