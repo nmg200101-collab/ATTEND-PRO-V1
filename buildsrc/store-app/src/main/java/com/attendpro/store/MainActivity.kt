@@ -1101,54 +1101,109 @@ class MainActivity : Activity() {
 
         val attendanceCard = UiKit.card(this, p, 10).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            minimumHeight = UiKit.dp(this@MainActivity, 132)
+            minimumHeight = UiKit.dp(this@MainActivity, if (classic) 156 else 148)
         }
-        val attendanceRow = LinearLayout(this).apply {
+
+        val attendanceHeader = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutDirection = dir
             gravity = Gravity.CENTER_VERTICAL
         }
+
         val fingerView = FingerprintActionView(this, p.primary).apply {
             contentDescription = getString(R.string.attendance_checkout)
-            background = UiKit.round(p.surface2, 18, this@MainActivity, p.divider)
+            background = UiKit.round(p.surface2, 16, this@MainActivity, p.divider)
             elevation = UiKit.dp(this@MainActivity, 1).toFloat()
             layoutParams = LinearLayout.LayoutParams(
-                UiKit.dp(this@MainActivity, if (classic) 132 else 122),
-                UiKit.dp(this@MainActivity, if (classic) 122 else 112)
+                UiKit.dp(this@MainActivity, if (classic) 88 else 80),
+                UiKit.dp(this@MainActivity, if (classic) 88 else 80)
             ).apply {
                 marginEnd = UiKit.dp(this@MainActivity, 10)
             }
-            setOnClickListener { showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method")) }
+            setOnClickListener {
+                showAttendanceMethods(t("اختر طريقة التحقق", "Choose a verification method"))
+            }
         }
-        attendanceRow.addView(fingerView)
-        attendanceRow.addView(LinearLayout(this).apply {
+        attendanceHeader.addView(fingerView)
+
+        attendanceHeader.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = dir
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            addView(UiKit.title(this@MainActivity, p, getString(R.string.attendance_checkout), 17.5f).apply {
+
+            addView(UiKit.title(
+                this@MainActivity,
+                p,
+                t("الحضور والانصراف", "Check-in & check-out"),
+                18.8f
+            ).apply {
+                gravity = if (isEnglish) Gravity.START else Gravity.END
+                maxLines = 1
+            })
+
+            addView(UiKit.subtitle(this@MainActivity, p, t(
+                "اختر العملية ثم استخدم إحدى طرق التحقق المعتمدة.",
+                "Choose the action, then use an approved verification method."
+            )).apply {
+                textSize = 11.7f
+                maxLines = 2
                 gravity = if (isEnglish) Gravity.START else Gravity.END
             })
-            addView(UiKit.subtitle(this@MainActivity, p, getString(R.string.attendance_instruction)).apply {
-                textSize = 11.5f
-                maxLines = 2
-            })
-            val actions = LinearLayout(this@MainActivity).apply {
-                orientation = LinearLayout.HORIZONTAL
-                layoutDirection = dir
-            }
-            actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_in)).apply {
-                textSize = 13.2f
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginEnd = 3 }
-                setOnClickListener { showAttendanceMethods(t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"), AttendanceAction.CHECK_IN) }
-            })
-            actions.addView(UiKit.button(this@MainActivity, p, getString(R.string.check_out), false).apply {
-                textSize = 13.2f
-                layoutParams = LinearLayout.LayoutParams(0, UiKit.dp(this@MainActivity, 50), 1f).apply { marginStart = 3 }
-                setOnClickListener { showAttendanceMethods(t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"), AttendanceAction.CHECK_OUT) }
-            })
-            addView(actions)
         })
-        attendanceCard.addView(attendanceRow)
+        attendanceCard.addView(attendanceHeader)
+
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutDirection = dir
+            gravity = Gravity.CENTER
+            setPadding(
+                0,
+                UiKit.dp(this@MainActivity, 7),
+                0,
+                0
+            )
+        }
+
+        actions.addView(UiKit.button(this@MainActivity, p, t("تسجيل حضور", "Check in")).apply {
+            textSize = 14.3f
+            maxLines = 1
+            minWidth = 0
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                UiKit.dp(this@MainActivity, 54),
+                1f
+            ).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 4)
+            }
+            setOnClickListener {
+                showAttendanceMethods(
+                    t("تسجيل حضور — اختر طريقة التحقق", "Check in — choose a verification method"),
+                    AttendanceAction.CHECK_IN
+                )
+            }
+        })
+
+        actions.addView(UiKit.button(this@MainActivity, p, t("تسجيل انصراف", "Check out"), false).apply {
+            textSize = 14.3f
+            maxLines = 1
+            minWidth = 0
+            layoutParams = LinearLayout.LayoutParams(
+                0,
+                UiKit.dp(this@MainActivity, 54),
+                1f
+            ).apply {
+                marginStart = UiKit.dp(this@MainActivity, 4)
+            }
+            setOnClickListener {
+                showAttendanceMethods(
+                    t("تسجيل انصراف — اختر طريقة التحقق", "Check out — choose a verification method"),
+                    AttendanceAction.CHECK_OUT
+                )
+            }
+        })
+
+        attendanceCard.addView(actions)
         root.addView(attendanceCard)
 
         counts = TextView(this).apply {
