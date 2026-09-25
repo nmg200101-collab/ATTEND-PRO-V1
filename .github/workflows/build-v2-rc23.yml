@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V155 Final QA Release Hardening
+name: Build ATTEND-PRO V156 Bluetooth Proof Messaging
 on:
   push:
-    branches: [attend-pro-v155-final-qa-release-hardening]
+    branches: [attend-pro-v156-bluetooth-proof-messaging]
   workflow_dispatch:
 permissions:
   contents: read
@@ -12,6 +12,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: Apply V156 targeted source patch
+        run: |
+          set -euo pipefail
+          cat .source_patches/v156/source.patch.xz.b64.part{0,1,2,3,4,5} > /tmp/v156-source.patch.xz.b64
+          test "$(sha256sum /tmp/v156-source.patch.xz.b64 | awk '{print $1}')" = "7e07f7fb7901c628a4e725f363b684ad2fc13ee4c5c732603070b4432cfb66d9"
+          base64 -d /tmp/v156-source.patch.xz.b64 | xz -d > /tmp/v156-source.patch
+          patch -p1 --forward --batch < /tmp/v156-source.patch
+          grep -q 'versionCode = 156' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 156' buildsrc/employee-app/build.gradle.kts
+          test -f buildsrc/core/src/main/java/com/attendpro/core/LanLocalMessageProtocolV156.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreLanMessagingRuntimeV156.kt
+          test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeLanMessagingRuntimeV156.kt
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -27,7 +39,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V155 final QA release hardening locks
+      - name: Verify V156 Bluetooth proof messaging locks
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -173,7 +185,7 @@ jobs:
           grep -q 'clientMessageId' "$CENTRAL"
           grep -q 'connectTimeoutMs = 3_500' "$CENTRAL"
           test -f "$EMP_FAST"
-          grep -q 'NORMAL_POLL_MS = 2_000L' "$EMP_FAST"
+          grep -q 'NORMAL_POLL_MS = 1_000L' "$EMP_FAST"
           grep -q 'LIVE_DASHBOARD_POLL_MS = 1_250L' "$SERVICE"
           grep -q 'EMPLOYEE_POLL_MS = 2_000L' "$SERVICE"
           grep -q 'launchLiveDashboardPoll' "$SERVICE"
@@ -317,11 +329,11 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V155 release identity.
-          grep -q 'versionCode = 155' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 155' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING"' buildsrc/employee-app/build.gradle.kts
+          # V156 release identity.
+          grep -q 'versionCode = 156' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 156' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING"' buildsrc/employee-app/build.gradle.kts
 
           # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
@@ -373,7 +385,7 @@ jobs:
             buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
 
-          # V155 release-hardening guards: preserve the effective RC29 runtime build path.
+          # V156 release-hardening guards: preserve the effective RC29 runtime build path.
           git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/build.gradle.kts
           grep -q 'compileSdk = 36' buildsrc/store-app/build.gradle.kts
           grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
@@ -397,8 +409,8 @@ jobs:
           grep -q 'supportsDirectInstall' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
           grep -q 'verifyPackageAndSigner' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
           grep -q 'MessageDigest' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
-          test -f RELEASE-NOTES-V155.md
-          test -f V155-FINAL-QA-RELEASE-HARDENING.md
+          test -f RELEASE-NOTES-V156.md
+          test -f V156-BLUETOOTH-PROOF-MESSAGING.md
           grep -q 'abortOnError = false' buildsrc/store-app/build.gradle.kts
           grep -q 'abortOnError = false' buildsrc/employee-app/build.gradle.kts
           grep -q 'uninstallConnectionRecovery1927' "$MAIN"
@@ -434,10 +446,10 @@ jobs:
             :store-app:bundlePlayRelease \
             :employee-app:bundlePlayRelease \
             --stacktrace
-      - name: Enforce V155 lint gate
+      - name: Enforce V156 lint gate
         run: |
           set -euo pipefail
-          ERRORS=/tmp/v155-lint-errors.txt
+          ERRORS=/tmp/v156-lint-errors.txt
           : > "$ERRORS"
           while IFS= read -r report; do
             grep -E ' Error: ' "$report" >> "$ERRORS" || true
@@ -454,14 +466,14 @@ jobs:
                 echo "::notice::Pre-existing lint finding in immutable RC29/V149 source: $line"
                 ;;
               *)
-                echo "::error::V155 lint error outside immutable lock: $line"
+                echo "::error::V156 lint error outside immutable lock: $line"
                 BAD=1
                 ;;
             esac
           done < "$ERRORS"
           test "$BAD" -eq 0
 
-      - name: Sign V155 APKs and Play AABs
+      - name: Sign V156 APKs and Play AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -477,13 +489,13 @@ jobs:
             if [ "$APP" = employee ]; then
               MOD=employee-app
               PKG=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V155.apk
-              AAB_OUT=ATTEND-PRO-Employee-V155-PLAY.aab
+              APK_OUT=ATTEND-PRO-Employee-V156.apk
+              AAB_OUT=ATTEND-PRO-Employee-V156-PLAY.aab
             else
               MOD=store-app
               PKG=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V155.apk
-              AAB_OUT=ATTEND-PRO-Store-V155-PLAY.aab
+              APK_OUT=ATTEND-PRO-Store-V156.apk
+              AAB_OUT=ATTEND-PRO-Store-V156-PLAY.aab
             fi
 
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
@@ -501,7 +513,7 @@ jobs:
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='155' versionName='2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='155' versionName='2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING'"
 
             BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
             test -n "$BUNDLE"
@@ -514,16 +526,31 @@ jobs:
             jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
           done
 
-          cp RELEASE-NOTES-V155.md signed/RELEASE-NOTES-V155.md
-          cp V155-FINAL-QA-RELEASE-HARDENING.md signed/V155-FINAL-QA-RELEASE-HARDENING.md
-          git archive --format=zip --output signed/ATTEND-PRO-V155-SOURCE.zip HEAD
+          cp RELEASE-NOTES-V156.md signed/RELEASE-NOTES-V156.md
+          cp V156-BLUETOOTH-PROOF-MESSAGING.md signed/V156-BLUETOOTH-PROOF-MESSAGING.md
+          python3 - <<'PY'
+import os, zipfile
+root='.'
+out='signed/ATTEND-PRO-V156-SOURCE.zip'
+skip={'.git','signed','build'}
+with zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
+    for dp, dns, fns in os.walk(root):
+        dns[:] = [d for d in dns if d not in skip and not d.startswith('.gradle')]
+        if dp.startswith('./buildsrc/') and ('/build/' in dp or dp.endswith('/build')):
+            continue
+        for fn in fns:
+            p=os.path.join(dp,fn)
+            if p.startswith('./signed/') or '/build/' in p or '/.gradle/' in p:
+                continue
+            z.write(p, p[2:] if p.startswith('./') else p)
+PY
 
-          cat > signed/V155-AUTOMATED-QA.txt <<EOF
-          ATTEND-PRO V155 — AUTOMATED QA
+          cat > signed/V156-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V156 — AUTOMATED QA
           Commit: $GITHUB_SHA
           Branch: $GITHUB_REF_NAME
           Version code: 155
-          Version name: 2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING
+          Version name: 2.0.0-RC29-V156-BLUETOOTH-PROOF-MESSAGING
           Target/compile SDK: 36
           RC29 protected connection sources: LOCKED
           V149 Receiver sources: LOCKED
@@ -534,11 +561,11 @@ jobs:
           FIELD DEVICE GATE: NOT CERTIFIED BY CI. Bluetooth/QR/LAN/GPS/biometric/background/update-install/restore require the real-device smoke matrix before FINAL-RELEASE-LOCK is issued.
           EOF
 
-          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V155.md V155-FINAL-QA-RELEASE-HARDENING.md V155-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
-          echo "===== V155 SHA-256 ====="
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V156.md V156-BLUETOOTH-PROOF-MESSAGING.md V156-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          echo "===== V156 SHA-256 ====="
           cat signed/ALL-SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V155-FINAL-QA-RELEASE-HARDENING-SIGNED
+          name: ATTEND-PRO-V156-BLUETOOTH-PROOF-MESSAGING-SIGNED
           path: signed/
           retention-days: 90
