@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V154 Final Visual Ergonomics
+name: Build ATTEND-PRO V155 Final QA Release Hardening
 on:
   push:
-    branches: [attend-pro-v154-final-visual-ergonomics]
+    branches: [attend-pro-v155-final-qa-release-hardening]
   workflow_dispatch:
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V154 final visual ergonomics lock
+      - name: Verify V155 final QA release hardening locks
         run: |
           set -euo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -317,13 +317,13 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V152 identity.
-          grep -q 'versionCode = 154' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V154-FINAL-VISUAL-ERGONOMICS"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 154' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V154-FINAL-VISUAL-ERGONOMICS"' buildsrc/employee-app/build.gradle.kts
+          # V155 release identity.
+          grep -q 'versionCode = 155' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 155' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING"' buildsrc/employee-app/build.gradle.kts
 
-          # V154 final visual ergonomics acceptance markers.
+          # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
           grep -q 'ProfessionalChoice' "$MAIN"
           grep -q 'showProfessionalChoiceDialog' "$MAIN"
@@ -372,6 +372,33 @@ jobs:
             buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
             buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # V155 release-hardening guards: preserve the effective RC29 runtime build path.
+          git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/build.gradle.kts
+          grep -q 'compileSdk = 36' buildsrc/store-app/build.gradle.kts
+          grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
+          grep -q 'compileSdk = 36' buildsrc/employee-app/build.gradle.kts
+          grep -q 'targetSdk = 36' buildsrc/employee-app/build.gradle.kts
+          grep -q 'usesCleartextTraffic="false"' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'usesCleartextTraffic="false"' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_CONNECTED_DEVICE' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'foregroundServiceType="connectedDevice"' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_LOCATION' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'foregroundServiceType="connectedDevice|location"' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'ACCESS_BACKGROUND_LOCATION' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'REQUEST_INSTALL_PACKAGES' buildsrc/store-app/src/play/AndroidManifest.xml
+          grep -q 'tools:node="remove"' buildsrc/store-app/src/play/AndroidManifest.xml
+          grep -q 'REQUEST_INSTALL_PACKAGES' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'tools:node="remove"' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'isMonitoringTool' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'enterprise_management' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'يجمع ATTEND PRO بيانات الموقع' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'ACCESS_BACKGROUND_LOCATION' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'supportsDirectInstall' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          grep -q 'verifyPackageAndSigner' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          grep -q 'MessageDigest' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          test -f RELEASE-NOTES-V155.md
+          test -f V155-FINAL-QA-RELEASE-HARDENING.md
       - name: Verify secure DNS bootstrap
         run: |
           set -euo pipefail
@@ -386,9 +413,23 @@ jobs:
           test -n "$CODE"
           test "$CODE" != "000"
 
-      - name: Test and build
-        run: gradle -p buildsrc :core:testDebugUnitTest :foundation:testDebugUnitTest :store-app:testDirectDebugUnitTest :employee-app:testDirectDebugUnitTest :store-app:assembleDirectRelease :employee-app:assembleDirectRelease --stacktrace
-      - name: Sign V154
+      - name: Unit test, lint and build Direct + Play
+        run: |
+          gradle -p buildsrc \
+            :core:testDebugUnitTest \
+            :foundation:testDebugUnitTest \
+            :store-app:testDirectDebugUnitTest \
+            :employee-app:testDirectDebugUnitTest \
+            :store-app:lintDirectRelease \
+            :employee-app:lintDirectRelease \
+            :store-app:lintPlayRelease \
+            :employee-app:lintPlayRelease \
+            :store-app:assembleDirectRelease \
+            :employee-app:assembleDirectRelease \
+            :store-app:bundlePlayRelease \
+            :employee-app:bundlePlayRelease \
+            --stacktrace
+      - name: Sign V155 APKs and Play AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -399,12 +440,20 @@ jobs:
           mkdir signed
           printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode >/tmp/a.jks
           EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+
           for APP in employee store; do
             if [ "$APP" = employee ]; then
-              MOD=employee-app; PKG=com.attendpro.employee; OUT=ATTEND-PRO-Employee-V154.apk
+              MOD=employee-app
+              PKG=com.attendpro.employee
+              APK_OUT=ATTEND-PRO-Employee-V155.apk
+              AAB_OUT=ATTEND-PRO-Employee-V155-PLAY.aab
             else
-              MOD=store-app; PKG=com.attendpro.store; OUT=ATTEND-PRO-Store-V154.apk
+              MOD=store-app
+              PKG=com.attendpro.store
+              APK_OUT=ATTEND-PRO-Store-V155.apk
+              AAB_OUT=ATTEND-PRO-Store-V155-PLAY.aab
             fi
+
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
             test -n "$U"
             "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$U" /tmp/$APP.apk
@@ -416,14 +465,48 @@ jobs:
               --v1-signing-enabled false \
               --v2-signing-enabled true \
               --v3-signing-enabled true \
-              --out signed/$OUT /tmp/$APP.apk
-            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+              --out signed/$APK_OUT /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
+            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$OUT | grep -q "package: name='$PKG' versionCode='154' versionName='2.0.0-RC29-V154-FINAL-VISUAL-ERGONOMICS'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='155' versionName='2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING'"
+
+            BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
+            test -n "$BUNDLE"
+            jarsigner \
+              -keystore /tmp/a.jks \
+              -storepass:env ATTEND_PRO_STORE_PASSWORD \
+              -keypass:env ATTEND_PRO_KEY_PASSWORD \
+              -signedjar signed/$AAB_OUT \
+              "$BUNDLE" "$ATTEND_PRO_KEY_ALIAS"
+            jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
           done
-          (cd signed && sha256sum *.apk > ALL-SHA256SUMS.txt)
+
+          cp RELEASE-NOTES-V155.md signed/RELEASE-NOTES-V155.md
+          cp V155-FINAL-QA-RELEASE-HARDENING.md signed/V155-FINAL-QA-RELEASE-HARDENING.md
+          git archive --format=zip --output signed/ATTEND-PRO-V155-SOURCE.zip HEAD
+
+          cat > signed/V155-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V155 — AUTOMATED QA
+          Commit: $GITHUB_SHA
+          Branch: $GITHUB_REF_NAME
+          Version code: 155
+          Version name: 2.0.0-RC29-V155-FINAL-QA-RELEASE-HARDENING
+          Target/compile SDK: 36
+          RC29 protected connection sources: LOCKED
+          V149 Receiver sources: LOCKED
+          Unit tests: PASSED before this file was generated
+          Android lint (Direct + Play): PASSED before this file was generated
+          Direct APK build/signature/package verification: PASSED
+          Play AAB build/signature verification: PASSED
+          FIELD DEVICE GATE: NOT CERTIFIED BY CI. Bluetooth/QR/LAN/GPS/biometric/background/update-install/restore require the real-device smoke matrix before FINAL-RELEASE-LOCK is issued.
+          EOF
+
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V155.md V155-FINAL-QA-RELEASE-HARDENING.md V155-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          echo "===== V155 SHA-256 ====="
+          cat signed/ALL-SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V154-FINAL-VISUAL-ERGONOMICS-SIGNED
+          name: ATTEND-PRO-V155-FINAL-QA-RELEASE-HARDENING-SIGNED
           path: signed/
-          retention-days: 30
+          retention-days: 90
