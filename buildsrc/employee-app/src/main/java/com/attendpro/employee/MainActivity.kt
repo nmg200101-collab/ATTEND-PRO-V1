@@ -717,13 +717,56 @@ class MainActivity : Activity() {
     }
 
     private fun showEmployeeVerificationCenter(){
-        val items = mutableListOf<Pair<String, () -> Unit>>()
-        if (identity.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC) || identity.allows(AttendanceMethod.PHONE_FINGERPRINT))
-            items += "◎ بصمة/وجه الهاتف" to { requestBiometric() }
-        if (identity.allows(AttendanceMethod.PASSWORD)) items += "▣ كلمة المرور" to { confirmWithLocalCredential() }
-        if (identity.allows(AttendanceMethod.PHONE_PROXIMITY)) items += "▦ مسح QR للحضور" to { scanProvision() }
-        items += "اختبار بصمة/وجه الهاتف" to { testBiometricOnly() }
-        showLayeredMenu1977("طرق التحقق", items)
+        val choices = mutableListOf<EmployeeUiChoice>()
+
+        if (identity.allows(AttendanceMethod.PHONE_BLE_BIOMETRIC)) {
+            choices += EmployeeUiChoice(
+                "◎",
+                t("بصمة أو وجه الهاتف", "Phone fingerprint or face"),
+                t("اختبار التحقق الحيوي الأصلي في Android", "Test the native Android biometric verification"),
+                t("مسموح", "Allowed")
+            ) { requestBiometric() }
+        } else if (identity.allows(AttendanceMethod.PHONE_FINGERPRINT)) {
+            choices += EmployeeUiChoice(
+                "◎",
+                t("بصمة الإصبع", "Fingerprint"),
+                t("استخدام بصمة إصبع Android فقط", "Use Android fingerprint only"),
+                t("مسموح", "Allowed")
+            ) { requestFingerprintOnly() }
+        }
+
+        if (identity.allows(AttendanceMethod.PASSWORD)) {
+            choices += EmployeeUiChoice(
+                "▣",
+                t("كلمة المرور", "Password"),
+                t("التحقق بكلمة المرور المحفوظة على الهاتف", "Verify with the password saved on this phone"),
+                t("مسموح", "Allowed")
+            ) { confirmWithLocalCredential() }
+        }
+
+        if (identity.allows(AttendanceMethod.PHONE_PROXIMITY)) {
+            choices += EmployeeUiChoice(
+                "▦",
+                t("QR للحضور", "Attendance QR"),
+                t("مسح رمز الحضور الذي يعرضه جهاز المحل", "Scan the attendance code shown by the Store device"),
+                t("مسموح", "Allowed")
+            ) { scanProvision() }
+        }
+
+        choices += EmployeeUiChoice(
+            "✓",
+            t("اختبار البصمة / الوجه", "Test fingerprint / face"),
+            t("اختبار فقط بدون تسجيل حضور أو انصراف", "Test only; no attendance will be recorded")
+        ) { testBiometricOnly() }
+
+        showEmployeeChoiceDialog(
+            t("طرق التحقق", "Verification methods"),
+            t(
+                "هذه هي الطرق المتاحة لهذا الهاتف حسب صلاحيات الموظف.",
+                "These are the methods available to this phone based on employee permissions."
+            ),
+            choices
+        )
     }
 
     private fun showEmployeeProfile(){
@@ -1210,70 +1253,169 @@ class MainActivity : Activity() {
     }
 
     private fun showConnectionStatus(){
-        val cm=getSystemService(ConnectivityManager::class.java);val network=cm?.activeNetwork;val caps=network?.let{cm.getNetworkCapabilities(it)}
-        val wifi=caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)==true
-        val internet=caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)==true
-        val bt=getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter
-        val now=System.currentTimeMillis()
-        val directAge=if(identity.lastBleDirectSeenAt>0) now-identity.lastBleDirectSeenAt else Long.MAX_VALUE
-        val lanAge=if(identity.lastLanStoreSeenAt>0) now-identity.lastLanStoreSeenAt else Long.MAX_VALUE
-        val serviceAge=if(identity.presenceServiceHeartbeatAt>0) now-identity.presenceServiceHeartbeatAt else Long.MAX_VALUE
-        val serviceAlive=serviceAge<25_000L
+        val cm = getSystemService(ConnectivityManager::class.java)
+        val network = cm?.activeNetwork
+        val caps = network?.let { cm.getNetworkCapabilities(it) }
+        val wifi = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+        val internet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
+        val bt = getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter
+        val now = System.currentTimeMillis()
+        val directAge = if (identity.lastBleDirectSeenAt > 0) now - identity.lastBleDirectSeenAt else Long.MAX_VALUE
+        val lanAge = if (identity.lastLanStoreSeenAt > 0) now - identity.lastLanStoreSeenAt else Long.MAX_VALUE
+        val serviceAge = if (identity.presenceServiceHeartbeatAt > 0) now - identity.presenceServiceHeartbeatAt else Long.MAX_VALUE
+        val serviceAlive = serviceAge < 25_000L
         val blePermissions = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) true else
-            checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE)==PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED
-        val ble=when{
-            bt==null->"غير مدعوم"
-            !bt.isEnabled->"Adapter OFF"
-            directAge<12_000L->"GATT/Heartbeat/ACK/confirm مؤكد ✓ • آخر ACK ${directAge/1000}ث"
-            identity.lastBleDirectSeenAt>0->"GATT غير مؤكد الآن • آخر ACK ${directAge/1000}ث • جارٍ إعادة الربط"
-            else->"لم يصل ACK مباشر بعد"
+            checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED &&
+                checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED
+
+        val bleHealthy = bt?.isEnabled == true && directAge < 12_000L
+        val bleState = when {
+            bt == null -> t("غير مدعوم", "Not supported")
+            !bt.isEnabled -> t("متوقف", "Off")
+            directAge < 12_000L -> t("متصل • ACK مؤكد ✓", "Connected • ACK confirmed ✓")
+            identity.lastBleDirectSeenAt > 0 -> t("جارٍ إعادة الاتصال", "Reconnecting")
+            else -> t("بانتظار اتصال", "Waiting for connection")
         }
-        val lan=when{
-            lanAge<8_000L->"ACK ثنائي مؤكد ✓ • آخر ACK ${lanAge/1000}ث"
-            wifi->"الشبكة المحلية متاحة • بانتظار ACK"
-            else->"غير متصل"
+
+        val lanHealthy = lanAge < 8_000L
+        val lanState = when {
+            lanHealthy -> t("متصل • ACK مؤكد ✓", "Connected • ACK confirmed ✓")
+            wifi -> t("الشبكة متاحة", "Network available")
+            else -> t("غير متصل", "Not connected")
         }
-        val server=ServerDiagnostics.snapshot()
-        fun serverTime(value: Long): String = if (value <= 0L) "لا يوجد" else java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(value))
-        val serverState=when{
-            server.isFresh(now)->"متصل فعليًا ✓ • HTTP ${server.lastHttpStatus} • آخر نجاح ${serverTime(server.lastSuccessAt)} • ${server.lastSuccessPath.ifBlank { server.lastPath }}"
-            identity.serverLinked && internet->"الربط مسجل لكن لا يوجد HTTP نجاح حديث • آخر نجاح ${serverTime(server.lastSuccessAt)} • آخر خطأ ${serverTime(server.lastErrorAt)} ${server.lastError.takeIf{it.isNotBlank()}?.let{"• $it"}.orEmpty()}"
-            else->"غير متصل فعليًا • آخر نجاح ${serverTime(server.lastSuccessAt)} • آخر خطأ ${serverTime(server.lastErrorAt)} ${server.lastError.takeIf{it.isNotBlank()}?.let{"• $it"}.orEmpty()}"
+
+        val server = ServerDiagnostics.snapshot()
+        fun serverTime(value: Long): String =
+            if (value <= 0L) t("لا يوجد", "None")
+            else java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(value))
+        val serverHealthy = server.isFresh(now)
+        val serverState = when {
+            serverHealthy -> t("متصل • HTTP مؤكد ✓", "Connected • HTTP confirmed ✓")
+            identity.serverLinked && internet -> t("مرتبط • بانتظار HTTP", "Linked • waiting for HTTP")
+            else -> t("غير متصل الآن", "Not connected now")
         }
-        val lm=getSystemService(LocationManager::class.java)
-        val gpsEnabled=if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.P) lm?.isLocationEnabled==true else
-            runCatching { lm?.isProviderEnabled(LocationManager.GPS_PROVIDER)==true || lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER)==true }.getOrDefault(false)
+
+        val lm = getSystemService(LocationManager::class.java)
+        val gpsEnabled = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            lm?.isLocationEnabled == true
+        } else {
+            runCatching {
+                lm?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
+                    lm?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
+            }.getOrDefault(false)
+        }
         val gpsAge = if (identity.lastGpsObservedAt > 0L) now - identity.lastGpsObservedAt else Long.MAX_VALUE
-        val gpsState=when{
-            !gpsEnabled->"متوقف"
-            gpsAge < 5*60_000L -> {
-                val label = when(identity.lastGpsState) {
-                    OfflineGeoMonitor.STATE_INSIDE -> "داخل نطاق التعرف"
-                    OfflineGeoMonitor.STATE_NEAR -> "قريب من نطاق التعرف"
-                    OfflineGeoMonitor.STATE_OUTSIDE -> "خارج نطاق التعرف"
-                    else -> "قراءة غير محددة"
-                }
-                "$label • ${identity.lastGpsDistanceMeters}م • دقة ±${identity.lastGpsAccuracyMeters}م • منذ ${gpsAge/1000}ث • للمراقبة فقط"
+        val gpsHealthy = gpsEnabled && gpsAge < 5 * 60_000L
+        val gpsState = when {
+            !gpsEnabled -> t("متوقف", "Off")
+            gpsAge < 5 * 60_000L -> when (identity.lastGpsState) {
+                OfflineGeoMonitor.STATE_INSIDE -> t("داخل نطاق المحل", "Inside Store range")
+                OfflineGeoMonitor.STATE_NEAR -> t("قريب من النطاق", "Near Store range")
+                OfflineGeoMonitor.STATE_OUTSIDE -> t("خارج النطاق", "Outside Store range")
+                else -> t("قراءة حديثة", "Recent reading")
             }
-            identity.isTrustedStoreGpsConfigured->"مفعّل للتعرّف على قرب الهاتف فقط • لا يسجل حضورًا"
-            else->"مفعّل • موقع المحل غير محفوظ"
+            identity.isTrustedStoreGpsConfigured -> t("مهيأ • بانتظار قراءة", "Configured • waiting for reading")
+            else -> t("موقع المحل غير محفوظ", "Store location not configured")
         }
-        val diagnosticText = buildString {
-            appendLine("خدمة الخلفية: ${if(serviceAlive) "تعمل ✓ • آخر نبض ${serviceAge/1000}ث" else "غير مؤكدة/متوقفة"}")
-            appendLine("Bluetooth Adapter: ${if(bt?.isEnabled==true) "ON" else "OFF"}")
-            appendLine("صلاحيات BLE: ${if(blePermissions) "ممنوحة ✓" else "ناقصة"}")
-            appendLine("Advertising: ${identity.lastBleAdvertisingState.ifBlank { if(serviceAlive) "لا توجد نتيجة إعلان بعد" else "الخدمة غير مؤكدة" }}")
-            appendLine("GATT: $ble")
-            appendLine("LAN: $lan")
-            appendLine("Server: $serverState")
-            appendLine("GPS: $gpsState")
-            appendLine("آخر حالة BLE: ${identity.lastBleDirectState.ifBlank { "لا توجد" }}")
-            append("آخر حالة LAN: ${identity.lastLanState.ifBlank { "لا توجد" }}")
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 10)
+            )
         }
-        AlertDialog.Builder(this).setTitle("تشخيص الاتصال الحقيقي").setMessage(diagnosticText)
-            .setPositiveButton("حسنًا",null).show()
+
+        content.addView(UiKit.subtitle(this, p, t(
+            "هذه الشاشة تعرض القناة الفعلية بين هاتفك وجهاز المحل.",
+            "This screen shows the actual connection path between your phone and the Store device."
+        )).apply {
+            gravity = Gravity.CENTER
+            textSize = 12.3f
+        })
+
+        fun statusCard(
+            title: String,
+            state: String,
+            description: String,
+            healthy: Boolean
+        ) = UiKit.card(this, p, 8).apply {
+            addView(UiKit.title(this@MainActivity, p, title, 14.5f))
+            addView(UiKit.statusBadge(this@MainActivity, p, state, healthy))
+            addView(UiKit.subtitle(this@MainActivity, p, description).apply {
+                textSize = 11.2f
+                maxLines = 3
+            })
+        }
+
+        content.addView(statusCard(
+            "Bluetooth",
+            bleState,
+            t(
+                "آخر ACK: ${if (identity.lastBleDirectSeenAt > 0L) "${directAge / 1000}ث" else "—"} • الخدمة: ${if (serviceAlive) "تعمل" else "غير مؤكدة"}",
+                "Last ACK: ${if (identity.lastBleDirectSeenAt > 0L) "${directAge / 1000}s" else "—"} • service: ${if (serviceAlive) "running" else "not confirmed"}"
+            ),
+            bleHealthy
+        ))
+
+        content.addView(statusCard(
+            t("Wi-Fi / نقطة اتصال", "Wi-Fi / Hotspot"),
+            lanState,
+            t(
+                "يعمل محليًا دون إنترنت عند وجود ACK من جهاز المحل.",
+                "Works locally without Internet when the Store ACK is present."
+            ),
+            lanHealthy
+        ))
+
+        content.addView(statusCard(
+            t("الخادم", "Server"),
+            serverState,
+            t(
+                "آخر نجاح: ${serverTime(server.lastSuccessAt)} • HTTP ${server.lastHttpStatus}",
+                "Last success: ${serverTime(server.lastSuccessAt)} • HTTP ${server.lastHttpStatus}"
+            ),
+            serverHealthy
+        ))
+
+        content.addView(statusCard(
+            "GPS",
+            gpsState,
+            if (gpsHealthy)
+                t(
+                    "المسافة: ${identity.lastGpsDistanceMeters}م • الدقة ±${identity.lastGpsAccuracyMeters}م • للمراقبة فقط",
+                    "Distance: ${identity.lastGpsDistanceMeters}m • accuracy ±${identity.lastGpsAccuracyMeters}m • monitoring only"
+                )
+            else
+                t("GPS لا يسجل الحضور وحده.", "GPS never records attendance by itself."),
+            gpsHealthy
+        ))
+
+        val technical = buildString {
+            appendLine("BLE permissions: ${if (blePermissions) "OK" else "MISSING"}")
+            appendLine("BLE state: ${identity.lastBleDirectState.ifBlank { "none" }}")
+            appendLine("LAN state: ${identity.lastLanState.ifBlank { "none" }}")
+            appendLine("Server path: ${server.lastSuccessPath.ifBlank { server.lastPath }}")
+            append("Service heartbeat: ${if (serviceAlive) "${serviceAge / 1000}s" else "stale"}")
+        }
+        content.addView(UiKit.button(this, p, t("عرض التفاصيل التقنية", "Technical details"), false).apply {
+            setOnClickListener { AlertDialog.Builder(this@MainActivity)
+                .setTitle(t("تفاصيل الاتصال", "Connection details"))
+                .setMessage(technical)
+                .setPositiveButton(t("إغلاق", "Close"), null)
+                .show()
+            }
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle(t("حالة الاتصال بالمحل", "Store connection status"))
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton(t("إغلاق", "Close"), null)
+            .show()
     }
 
     private fun showReadinessCheck() {
