@@ -767,6 +767,61 @@ class ReportReceiverStore(context: Context) {
         return true
     }
     @Synchronized
+    fun applyNearbyLiveSnapshot(
+        storeId: String,
+        payload: String
+    ): Boolean {
+        if (storeId.isBlank() || !payload.startsWith("APMIRROR2:")) return false
+        val o = runCatching { JSONObject(payload.removePrefix("APMIRROR2:")) }.getOrNull() ?: return false
+
+        fun people(key: String): List<CentralServerClient.RemoteDashboardPerson> {
+            val a = o.optJSONArray(key) ?: JSONArray()
+            return (0 until a.length()).mapNotNull { i -> runCatching {
+                val x = a.getJSONObject(i)
+                CentralServerClient.RemoteDashboardPerson(
+                    employeeId = x.optString("employeeId", ""),
+                    employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                    branchId = x.optString("branchId", ""),
+                    lastSeenAt = x.optLong("lastSeenAt", 0L),
+                    method = x.optString("method", ""),
+                    timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+                )
+            }.getOrNull() }.filter { it.employeeId.isNotBlank() }
+        }
+
+        val recentArray = o.optJSONArray("recent") ?: JSONArray()
+        val recent = (0 until recentArray.length()).mapNotNull { i -> runCatching {
+            val x = recentArray.getJSONObject(i)
+            CentralServerClient.RemoteDashboardEvent(
+                employeeId = x.optString("employeeId", ""),
+                employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                action = x.optString("action", ""),
+                method = x.optString("method", ""),
+                timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+            )
+        }.getOrNull() }
+
+        val dashboard = CentralServerClient.RemoteDashboard(
+            storeId = o.optString("storeId", storeId).ifBlank { storeId },
+            storeName = o.optString("storeName", "ATTEND PRO"),
+            branchId = o.optString("branchId", "MAIN"),
+            revision = o.optLong("revision", System.currentTimeMillis()),
+            serverNow = o.optLong("serverNow", System.currentTimeMillis()),
+            checkIns = o.optInt("checkIns", 0),
+            checkOuts = o.optInt("checkOuts", 0),
+            todayEvents = o.optInt("todayEvents", 0),
+            presentCount = o.optInt("presentCount", 0),
+            connectedCount = o.optInt("connectedCount", 0),
+            lastSeen = o.optString("lastSeen", ""),
+            present = people("present"),
+            connected = people("connected"),
+            recent = recent
+        )
+        cacheLiveDashboard(storeId, dashboard)
+        return true
+    }
+
+    @Synchronized
     fun applyNearbyLiveEvent(
         storeId: String,
         storeName: String,
