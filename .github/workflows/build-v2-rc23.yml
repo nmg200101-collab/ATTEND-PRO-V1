@@ -230,7 +230,7 @@ jobs:
           grep -q 'آخر حركة' "$RECEIVER"
           grep -q 'اتصال هاتف الاستلام بالمحل:' "$RECEIVER"
           grep -q 'liveTransportLabel' "$RECEIVER"
-          grep -q 'receiver.markLiveTransport(storeId, "SERVER"' "$RECEIVER"
+          grep -q 'if (usedExactMirror) "الخادم • مرآة المحل"' "$RECEIVER"
           grep -q 'if (repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return' "$MAIN"
           grep -q 'if (!repo.reportAutoSync || syncInProgress' "$MAIN"
           grep -q 'connectedCount' "$CENTRAL"
