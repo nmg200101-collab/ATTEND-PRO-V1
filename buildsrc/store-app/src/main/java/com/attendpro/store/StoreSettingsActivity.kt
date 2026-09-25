@@ -154,6 +154,7 @@ class StoreSettingsActivity : Activity() {
         StoreMessagePoll1975.schedule(this)
         window.statusBarColor = p.bg
         val root = baseRoot()
+        val layoutMode = UiKit.currentLayout(this)
         val employees = repo.employees().filter { it.active }
         val linked = employees.count { it.companionEnabled }
 
@@ -171,8 +172,12 @@ class StoreSettingsActivity : Activity() {
         header.addView(UiKit.subtitle(this, p, "إدارة المحل • ${employees.size} موظف • $linked هاتف مفعّل").apply { gravity = Gravity.CENTER; setTextColor(android.graphics.Color.argb(225,255,255,255)) })
         root.addView(header)
 
-        val hint = UiKit.card(this, p, 10)
-        hint.addView(UiKit.subtitle(this, p, "هذه شاشة جميع إعدادات مدير المحل. اختر القسم المطلوب، أو افتح «الإعدادات المتقدمة» من قائمة ⋮ لعرض كل الخيارات التفصيلية القديمة.").apply { gravity = Gravity.CENTER })
+        val hint = UiKit.card(this, p, 9)
+        hint.addView(UiKit.sectionLabel(this, p, t("اختر ما تريد إدارته", "Choose what to manage")))
+        hint.addView(UiKit.subtitle(this, p, t(
+            "الأقسام الأساسية أمامك مباشرة. الخيارات الأقل استخدامًا موجودة في قائمة ⋮ ضمن الإعدادات المتقدمة.",
+            "The main sections are available directly. Less common options are under ⋮ > Advanced settings."
+        )).apply { gravity = Gravity.CENTER })
         root.addView(hint)
 
         fun largeSection(title: String, subtitle: String, action: () -> Unit): LinearLayout = UiKit.card(this, p, 12).apply {
@@ -182,12 +187,50 @@ class StoreSettingsActivity : Activity() {
             setOnClickListener { action() }
         }
 
-        root.addView(largeSection("الموظفون", "إضافة موظف، تعديل بياناته، وتجهيز طرق التحقق") {
-            startActivity(Intent(this, MainActivity::class.java).putExtra(MainActivity.EXTRA_EMPLOYEE_MANAGER, true).putExtra(MainActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken))
-        })
-        root.addView(largeSection("الحضور والتشغيل", "طرق الحضور، الدوام، الموقع، والبصمة الخارجية") { showStoreOperations1976() })
-        root.addView(largeSection("الصوت والرسائل", "التحكم الصوتي، إشعارات المحل، ورسائل الموظفين") { showStoreCommunication1976() })
-        root.addView(largeSection("التقارير والحماية", "التقارير، الصلاحيات، حماية الإدارة، وجاهزية المحل") { showStoreReportsSecurity1976() })
+        val employeesSection = largeSection(t("الموظفون", "Employees"), t(
+            "إضافة موظف وتعديل بياناته وطرق التحقق",
+            "Add employees and manage profiles and verification"
+        )) {
+            startActivity(Intent(this, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_EMPLOYEE_MANAGER, true)
+                .putExtra(MainActivity.EXTRA_STORE_ADMIN_SESSION, sessionToken))
+        }
+        val attendanceSection = largeSection(t("الحضور والتشغيل", "Attendance & operations"), t(
+            "طرق الحضور والدوام والموقع والبصمة الخارجية",
+            "Attendance methods, shifts, location and fingerprint reader"
+        )) { showStoreOperations1976() }
+        val communicationSection = largeSection(t("الصوت والرسائل", "Voice & messages"), t(
+            "التحكم الصوتي والإشعارات ورسائل الموظفين",
+            "Voice controls, notifications and employee messages"
+        )) { showStoreCommunication1976() }
+        val securitySection = largeSection(t("التقارير والحماية", "Reports & security"), t(
+            "التقارير والصلاحيات وحماية الإدارة والجاهزية",
+            "Reports, permissions, management security and readiness"
+        )) { showStoreReportsSecurity1976() }
+
+        fun addSectionPair(first: LinearLayout, second: LinearLayout) {
+            if (layoutMode == UiKit.LayoutMode.ORGANIZED) {
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    layoutDirection = if (AppLanguage.isEnglish(this@StoreSettingsActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+                    gravity = Gravity.TOP
+                }
+                first.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginEnd = UiKit.dp(this@StoreSettingsActivity, 4)
+                }
+                second.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    marginStart = UiKit.dp(this@StoreSettingsActivity, 4)
+                }
+                row.addView(first)
+                row.addView(second)
+                root.addView(row)
+            } else {
+                root.addView(first)
+                root.addView(second)
+            }
+        }
+        addSectionPair(employeesSection, attendanceSection)
+        addSectionPair(communicationSection, securitySection)
 
         val footer = UiKit.card(this, p, 8)
         footer.addView(UiKit.subtitle(this, p, if (repo.isCentralActivationActive()) "● الخادم المركزي متصل والتفعيل نشط" else "● يحتاج التفعيل المركزي إلى مراجعة").apply { gravity = Gravity.CENTER })
