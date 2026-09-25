@@ -2476,142 +2476,97 @@ class MainActivity : Activity() {
         title: String,
         subtitle: String,
         choices: List<ProfessionalChoice>,
-        compactGrid: Boolean = false
+        mediumStrips: Boolean = false
     ) {
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutDirection = if (AppLanguage.isEnglish(this@MainActivity))
                 View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
             setPadding(
-                UiKit.dp(this@MainActivity, if (compactGrid) 8 else 12),
+                UiKit.dp(this@MainActivity, if (mediumStrips) 8 else 12),
                 UiKit.dp(this@MainActivity, 6),
-                UiKit.dp(this@MainActivity, if (compactGrid) 8 else 12),
+                UiKit.dp(this@MainActivity, if (mediumStrips) 8 else 12),
                 UiKit.dp(this@MainActivity, 8)
             )
         }
 
         content.addView(UiKit.subtitle(this, p, subtitle).apply {
             gravity = Gravity.CENTER
-            textSize = if (compactGrid) 11.5f else 12.5f
-            maxLines = if (compactGrid) 2 else 3
-            setPadding(0, 0, 0, UiKit.dp(this@MainActivity, 6))
+            textSize = if (mediumStrips) 11.3f else 12.5f
+            maxLines = 2
+            setPadding(0, 0, 0, UiKit.dp(this@MainActivity, 5))
         })
 
         lateinit var dialog: AlertDialog
 
-        fun choiceCard(choice: ProfessionalChoice, compact: Boolean): LinearLayout {
-            return UiKit.card(this, p, if (compact) 7 else 9).apply {
+        choices.forEach { choice ->
+            val card = UiKit.card(this, p, if (mediumStrips) 7 else 9).apply {
                 isClickable = true
                 isFocusable = true
-                minimumHeight = UiKit.dp(this@MainActivity, if (compact) 112 else 76)
+                minimumHeight = UiKit.dp(this@MainActivity, if (mediumStrips) 68 else 76)
                 setOnClickListener {
                     dialog.dismiss()
                     choice.action()
                 }
-
-                if (compact) {
-                    gravity = Gravity.CENTER
-                    addView(TextView(this@MainActivity).apply {
-                        text = choice.icon
-                        textSize = 22f
-                        gravity = Gravity.CENTER
-                        setTextColor(p.primary)
-                        background = UiKit.round(p.surface2, 13, this@MainActivity, p.divider)
-                        layoutParams = LinearLayout.LayoutParams(
-                            UiKit.dp(this@MainActivity, 42),
-                            UiKit.dp(this@MainActivity, 42)
-                        ).apply { gravity = Gravity.CENTER_HORIZONTAL }
-                    })
-                    addView(UiKit.title(this@MainActivity, p, choice.title, 13.2f).apply {
-                        gravity = Gravity.CENTER
-                        maxLines = 2
-                    })
-                    addView(UiKit.subtitle(this@MainActivity, p, choice.subtitle).apply {
-                        gravity = Gravity.CENTER
-                        textSize = 9.8f
-                        maxLines = 2
-                    })
-                    if (choice.statusText.isNotBlank()) {
-                        addView(UiKit.statusBadge(this@MainActivity, p, choice.statusText, true).apply {
-                            textSize = 9.5f
-                            layoutParams = LinearLayout.LayoutParams(
-                                ViewGroup.LayoutParams.WRAP_CONTENT,
-                                ViewGroup.LayoutParams.WRAP_CONTENT
-                            ).apply {
-                                gravity = Gravity.CENTER_HORIZONTAL
-                                topMargin = UiKit.dp(this@MainActivity, 3)
-                            }
-                        })
-                    }
-                } else {
-                    val row = LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.HORIZONTAL
-                        layoutDirection = if (AppLanguage.isEnglish(this@MainActivity))
-                            View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-                        gravity = Gravity.CENTER_VERTICAL
-                    }
-                    row.addView(TextView(this@MainActivity).apply {
-                        text = choice.icon
-                        textSize = 26f
-                        gravity = Gravity.CENTER
-                        setTextColor(p.primary)
-                        background = UiKit.round(p.surface2, 16, this@MainActivity, p.divider)
-                        layoutParams = LinearLayout.LayoutParams(
-                            UiKit.dp(this@MainActivity, 58),
-                            UiKit.dp(this@MainActivity, 58)
-                        ).apply { marginEnd = UiKit.dp(this@MainActivity, 10) }
-                    })
-                    row.addView(LinearLayout(this@MainActivity).apply {
-                        orientation = LinearLayout.VERTICAL
-                        layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                        addView(UiKit.title(this@MainActivity, p, choice.title, 15.5f))
-                        addView(UiKit.subtitle(this@MainActivity, p, choice.subtitle).apply {
-                            textSize = 11.7f
-                            maxLines = 2
-                        })
-                        if (choice.statusText.isNotBlank()) {
-                            addView(UiKit.statusBadge(this@MainActivity, p, choice.statusText, true).apply {
-                                layoutParams = LinearLayout.LayoutParams(
-                                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                                    ViewGroup.LayoutParams.WRAP_CONTENT
-                                ).apply { topMargin = UiKit.dp(this@MainActivity, 5) }
-                            })
-                        }
-                    })
-                    addView(row)
-                }
             }
-        }
 
-        if (compactGrid) {
-            choices.chunked(2).forEach { pair ->
-                val row = LinearLayout(this).apply {
-                    orientation = LinearLayout.HORIZONTAL
-                    layoutDirection = if (AppLanguage.isEnglish(this@MainActivity))
-                        View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
-                    gravity = Gravity.TOP
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = if (AppLanguage.isEnglish(this@MainActivity))
+                    View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+
+            row.addView(TextView(this).apply {
+                text = choice.icon
+                textSize = if (mediumStrips) 20f else 26f
+                gravity = Gravity.CENTER
+                setTextColor(p.primary)
+                background = UiKit.round(
+                    p.surface2,
+                    if (mediumStrips) 12 else 16,
+                    this@MainActivity,
+                    p.divider
+                )
+                layoutParams = LinearLayout.LayoutParams(
+                    UiKit.dp(this@MainActivity, if (mediumStrips) 46 else 58),
+                    UiKit.dp(this@MainActivity, if (mediumStrips) 46 else 58)
+                ).apply {
+                    marginEnd = UiKit.dp(this@MainActivity, if (mediumStrips) 8 else 10)
                 }
-                pair.forEachIndexed { index, choice ->
-                    val card = choiceCard(choice, true)
-                    card.layoutParams = LinearLayout.LayoutParams(
-                        0,
+            })
+
+            row.addView(LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                addView(UiKit.title(
+                    this@MainActivity,
+                    p,
+                    choice.title,
+                    if (mediumStrips) 14.2f else 15.5f
+                ).apply {
+                    maxLines = 1
+                })
+                addView(UiKit.subtitle(this@MainActivity, p, choice.subtitle).apply {
+                    textSize = if (mediumStrips) 10.3f else 11.7f
+                    maxLines = if (mediumStrips) 1 else 2
+                })
+            })
+
+            if (choice.statusText.isNotBlank()) {
+                row.addView(UiKit.statusBadge(this, p, choice.statusText, true).apply {
+                    textSize = if (mediumStrips) 9.5f else 10.5f
+                    layoutParams = LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT,
-                        1f
+                        ViewGroup.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        marginStart = UiKit.dp(this@MainActivity, if (index == 0) 0 else 3)
-                        marginEnd = UiKit.dp(this@MainActivity, if (index == 0) 3 else 0)
+                        marginStart = UiKit.dp(this@MainActivity, 6)
                     }
-                    row.addView(card)
-                }
-                if (pair.size == 1) {
-                    row.addView(View(this).apply {
-                        layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-                    })
-                }
-                content.addView(row)
+                })
             }
-        } else {
-            choices.forEach { content.addView(choiceCard(it, false)) }
+
+            card.addView(row)
+            content.addView(card)
         }
 
         dialog = AlertDialog.Builder(this)
@@ -2686,7 +2641,7 @@ class MainActivity : Activity() {
                 "${actionLabel} — choose an enabled verification method."
             ),
             choices,
-            compactGrid = true
+            mediumStrips = true
         )
     }
 
