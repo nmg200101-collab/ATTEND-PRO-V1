@@ -4318,75 +4318,209 @@ class MainActivity : Activity() {
     }
 
     private fun showConnectionCenter() {
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(UiKit.dp(this@MainActivity, 18), UiKit.dp(this@MainActivity, 8), UiKit.dp(this@MainActivity, 18), 0)
-        }
         val now = System.currentTimeMillis()
         val employees = repo.employees().filter { it.active }
-        val live = nearby.filterValues { now - it.seenAt <= 8_000L }
         val actuallyConnected = employees.filter { isEmployeeActuallyConnected(it.employeeId, now) }
         val serverDiag = ServerDiagnostics.snapshot()
-        fun diagTime(value: Long): String = if (value <= 0L) "لا يوجد" else SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(value))
-        val serverText = when {
-            serverDiag.isFresh(now) -> "متصل فعليًا • HTTP ${serverDiag.lastHttpStatus} • آخر نجاح ${diagTime(serverDiag.lastSuccessAt)} • ${serverDiag.lastSuccessPath.ifBlank { serverDiag.lastPath }}${if (serverDiag.lastErrorAt > 0L) " • آخر خطأ سابق ${diagTime(serverDiag.lastErrorAt)}" else ""}"
-            repo.hasCentralCredentials() -> "غير مؤكد الآن • آخر نجاح ${diagTime(serverDiag.lastSuccessAt)} • آخر خطأ ${diagTime(serverDiag.lastErrorAt)}${serverDiag.lastError.takeIf { it.isNotBlank() }?.let { " • $it" }.orEmpty()}${serverDiag.lastErrorPath.takeIf { it.isNotBlank() }?.let { " • $it" }.orEmpty()}"
-            else -> "غير مهيأ"
-        }
         val btAdapter = getSystemService(BluetoothManager::class.java)?.adapter
         val blePermissions = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) true else
             checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN) == PackageManager.PERMISSION_GRANTED &&
-            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        val gpsText = if (repo.gpsRecognitionEnabled && repo.isGpsConfigured) "مفعّل للتعرّف على وجود هاتف الموظف • نطاق ${repo.gpsRadiusMeters}م • لا يسجل الحضور وحده" else "غير مهيأ"
-        box.addView(UiKit.statusBadge(this, p, if (actuallyConnected.isEmpty()) "لا توجد أجهزة متصلة فعليًا" else "${actuallyConnected.size} جهاز متصل فعليًا", actuallyConnected.isNotEmpty()))
-        val diagnosticText = buildString {
-            appendLine("Bluetooth Adapter: ${if (btAdapter?.isEnabled == true) "ON" else "OFF"} • صلاحيات BLE: ${if (blePermissions) "ممنوحة" else "ناقصة"}")
-            val pairing = activePairingBeacon
-            appendLine("Advertising: ${when { pairing?.isAdvertising() == true -> "يعمل للربط"; pairing?.isRunning() == true -> "الربط نشط لكن الإعلان غير مؤكد"; else -> "غير مطلوب الآن (يعمل عند ربط موظف)" }}")
-            appendLine("Scan: ${if (scanner.isScanning()) "يعمل" else "متوقف"} • GATT: ${if (actuallyConnected.any { isDirectBleUiConnected(it.employeeId, now) }) "ACK مؤكد" else "لا يوجد ACK"}")
-            appendLine("LAN Listener: ${if (networkListener.isRunning()) "يعمل" else "متوقف"} • LAN ACK: ${if (actuallyConnected.any { isLanConnected(it.employeeId, now) }) "مؤكد" else "لا يوجد"}")
-            appendLine("Server: $serverText • أجهزة Heartbeat حديثة: ${employees.count { isServerPresenceConnected(it.employeeId, now) }}")
-            append("GPS: $gpsText")
+                checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+
+        fun diagTime(value: Long): String =
+            if (value <= 0L) t("لا يوجد", "None")
+            else SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(value))
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+            setPadding(
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 8),
+                UiKit.dp(this@MainActivity, 12),
+                UiKit.dp(this@MainActivity, 10)
+            )
         }
-        box.addView(UiKit.subtitle(this, p, diagnosticText).apply { gravity = Gravity.CENTER })
-        box.addView(UiKit.sectionLabel(this, p, "الأجهزة الحالية"))
-        val detailIds = employees.map { it.employeeId }.filter { id -> live.containsKey(id) || (serverGpsSeenAt[id]?.let { now - it <= GPS_RECOGNITION_FRESH_MILLIS } == true) }
-        val detail = if (detailIds.isEmpty()) "لا يوجد هاتف موظف مكتشف الآن، ولا قراءة GPS حديثة." else detailIds.joinToString("\n\n") { id ->
-            val phone = live[id]
-            val employee = employees.firstOrNull { it.employeeId == id }
-            val name = employee?.displayName ?: id
-            val discovered = phone?.channelTimes?.filterValues { now - it <= 12_000L }?.keys?.joinToString(" + ").orEmpty().ifBlank { "لا يوجد اكتشاف محلي حديث" }
-            val actual = buildList {
-                if (isAuthenticatedPresenceConnected(id, now)) add("Presence HMAC • موثق")
-                if (isDirectBleUiConnected(id, now)) add("Bluetooth GATT • ACK")
-                if (isLanConnected(id, now)) add("Wi‑Fi/Hotspot • ACK")
-                if (isServerPresenceConnected(id, now)) add("Server • Heartbeat")
-            }.joinToString(" + ").ifBlank { "لا يوجد اتصال موثق حديث" }
-            val time = phone?.seenAt?.let { SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it)) } ?: "—"
-            val state = when {
-                isEmployeeActuallyConnected(id, now) -> "● متصل فعليًا"
-                isGpsRecognizedFresh(id, now) -> "◎ مرصود عبر GPS فقط"
-                else -> "◌ مكتشف فقط"
+
+        content.addView(
+            UiKit.statusBadge(
+                this,
+                p,
+                if (actuallyConnected.isEmpty())
+                    t("لا توجد أجهزة متصلة فعليًا", "No actively connected devices")
+                else
+                    t("${actuallyConnected.size} جهاز متصل فعليًا", "${actuallyConnected.size} active device(s)"),
+                actuallyConnected.isNotEmpty()
+            )
+        )
+
+        fun channelCard(
+            title: String,
+            state: String,
+            subtitle: String,
+            healthy: Boolean
+        ): LinearLayout = UiKit.card(this, p, 8).apply {
+            minimumHeight = UiKit.dp(this@MainActivity, 86)
+            addView(UiKit.title(this@MainActivity, p, title, 14.5f).apply {
+                gravity = Gravity.CENTER
+            })
+            addView(UiKit.statusBadge(this@MainActivity, p, state, healthy).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { gravity = Gravity.CENTER_HORIZONTAL }
+            })
+            addView(UiKit.subtitle(this@MainActivity, p, subtitle).apply {
+                gravity = Gravity.CENTER
+                textSize = 10.8f
+                maxLines = 2
+            })
+        }
+
+        val bluetoothConnected = actuallyConnected.any {
+            isDirectBleUiConnected(it.employeeId, now) || isAuthenticatedPresenceConnected(it.employeeId, now)
+        }
+        val lanConnected = actuallyConnected.any { isLanConnected(it.employeeId, now) }
+        val serverConnected = serverDiag.isFresh(now)
+        val gpsReady = repo.gpsRecognitionEnabled && repo.isGpsConfigured
+
+        fun addChannelPair(first: LinearLayout, second: LinearLayout) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                layoutDirection = if (AppLanguage.isEnglish(this@MainActivity)) View.LAYOUT_DIRECTION_LTR else View.LAYOUT_DIRECTION_RTL
+                gravity = Gravity.TOP
             }
-            buildString {
-                append("$state • $name\n")
-                append("GATT: ${directBle.diagnosticState(id)}\n")
-                append("ACK: $actual\n")
-                append("مكتشف عبر: $discovered • آخر ظهور $time")
-                if (phone != null && phone.rssi > -127) append(" • ${phone.rssi} dBm")
-                if (serverGpsSeenAt.containsKey(id)) append("\n${gpsRecognitionLine(id, now)}")
+            first.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = UiKit.dp(this@MainActivity, 3)
+            }
+            second.layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = UiKit.dp(this@MainActivity, 3)
+            }
+            row.addView(first)
+            row.addView(second)
+            content.addView(row)
+        }
+
+        addChannelPair(
+            channelCard(
+                "Bluetooth",
+                if (bluetoothConnected) t("متصل ✓", "Connected ✓") else if (btAdapter?.isEnabled == true) t("جاهز", "Ready") else t("متوقف", "Off"),
+                t(
+                    "ACK/GATT: ${if (bluetoothConnected) "مؤكد" else "بانتظار جهاز"}",
+                    "ACK/GATT: ${if (bluetoothConnected) "confirmed" else "waiting for device"}"
+                ),
+                bluetoothConnected
+            ),
+            channelCard(
+                "Wi-Fi / Hotspot",
+                if (lanConnected) t("متصل ✓", "Connected ✓") else t("بانتظار ACK", "Waiting for ACK"),
+                t("اتصال محلي بدون إنترنت عند توفره", "Local offline connection when available"),
+                lanConnected
+            )
+        )
+
+        addChannelPair(
+            channelCard(
+                t("الخادم", "Server"),
+                if (serverConnected) t("متصل ✓", "Connected ✓") else t("غير مؤكد", "Not confirmed"),
+                if (serverConnected)
+                    t("HTTP ${serverDiag.lastHttpStatus} • ${diagTime(serverDiag.lastSuccessAt)}", "HTTP ${serverDiag.lastHttpStatus} • ${diagTime(serverDiag.lastSuccessAt)}")
+                else
+                    t("آخر نجاح: ${diagTime(serverDiag.lastSuccessAt)}", "Last success: ${diagTime(serverDiag.lastSuccessAt)}"),
+                serverConnected
+            ),
+            channelCard(
+                "GPS",
+                if (gpsReady) t("مهيأ", "Configured") else t("غير مهيأ", "Not configured"),
+                if (gpsReady)
+                    t("نطاق ${repo.gpsRadiusMeters}م • للتعرّف فقط", "${repo.gpsRadiusMeters}m radius • recognition only")
+                else
+                    t("يمكن ضبطه من إدارة المحل", "Configure it from Store Management"),
+                gpsReady
+            )
+        )
+
+        content.addView(UiKit.sectionLabel(this, p, t("الأجهزة الحالية", "Current devices")))
+        if (employees.isEmpty()) {
+            content.addView(UiKit.subtitle(this, p, t("لا يوجد موظفون نشطون.", "No active employees.")))
+        } else {
+            employees.forEach { employee ->
+                val id = employee.employeeId
+                val phone = nearby[id]
+                val connected = isEmployeeActuallyConnected(id, now)
+                val gpsOnly = !connected && isGpsRecognizedFresh(id, now)
+                val actual = buildList {
+                    if (isAuthenticatedPresenceConnected(id, now)) add(t("Bluetooth موثق", "Authenticated Bluetooth"))
+                    if (isDirectBleUiConnected(id, now)) add("GATT ACK")
+                    if (isLanConnected(id, now)) add("Wi-Fi/LAN ACK")
+                    if (isServerPresenceConnected(id, now)) add(t("الخادم", "Server"))
+                }.joinToString(" + ")
+
+                val deviceCard = UiKit.card(this, p, 8).apply {
+                    addView(UiKit.title(this@MainActivity, p, employee.displayName.ifBlank { id }, 14.5f))
+                    addView(UiKit.statusBadge(
+                        this@MainActivity,
+                        p,
+                        when {
+                            connected -> t("● متصل الآن", "● Connected now")
+                            gpsOnly -> t("◎ مرصود عبر GPS", "◎ Seen by GPS")
+                            else -> t("○ غير متصل الآن", "○ Not connected now")
+                        },
+                        connected
+                    ))
+                    addView(UiKit.subtitle(this@MainActivity, p, buildString {
+                        append(t("المسار: ", "Path: "))
+                        append(actual.ifBlank { t("لا يوجد اتصال موثق حديث", "No recent authenticated connection") })
+                        phone?.seenAt?.takeIf { it > 0L }?.let {
+                            append("\n")
+                            append(t("آخر ظهور: ", "Last seen: "))
+                            append(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(it)))
+                        }
+                    }).apply {
+                        textSize = 11.3f
+                    })
+                }
+                content.addView(deviceCard)
             }
         }
-        box.addView(TextView(this).apply { text = detail; textSize = 15f; setTextColor(p.text); setPadding(0, UiKit.dp(this@MainActivity, 8), 0, UiKit.dp(this@MainActivity, 12)) })
-        box.addView(UiKit.button(this, p, "إعادة تشغيل اكتشاف الأجهزة", false).apply { setOnClickListener {
-            runCatching { scanner.stop() }; runCatching { networkListener.stop() }
-            runCatching { scanner.start() }; runCatching { networkListener.start() }
-            status.text = "يعمل البحث عبر Bluetooth وWi‑Fi/Hotspot"
-            refreshDashboard()
-        } })
-        box.addView(UiKit.button(this, p, "عرض سجل الاتصال والحضور", false).apply { setOnClickListener { showConnectionAttendanceHistory() } })
-        AlertDialog.Builder(this).setTitle("مركز الاتصال والأجهزة").setView(ScrollView(this).apply { addView(box) }).setPositiveButton("إغلاق", null).show()
+
+        val technicalDetails = buildString {
+            appendLine("Bluetooth Adapter: ${if (btAdapter?.isEnabled == true) "ON" else "OFF"}")
+            appendLine("BLE permissions: ${if (blePermissions) "OK" else "MISSING"}")
+            appendLine("Scan: ${if (scanner.isScanning()) "ON" else "OFF"}")
+            appendLine("LAN listener: ${if (networkListener.isRunning()) "ON" else "OFF"}")
+            appendLine("Server path: ${serverDiag.lastSuccessPath.ifBlank { serverDiag.lastPath }}")
+            appendLine("Server last success: ${diagTime(serverDiag.lastSuccessAt)}")
+            append("GPS: ${if (gpsReady) "configured • radius ${repo.gpsRadiusMeters}m" else "not configured"}")
+        }
+
+        content.addView(UiKit.button(this, p, t("عرض التفاصيل التقنية", "Technical details"), false).apply {
+            setOnClickListener {
+                info(t("تفاصيل الاتصال", "Connection details"), technicalDetails)
+            }
+        })
+        content.addView(UiKit.button(this, p, t("إعادة تشغيل اكتشاف الأجهزة", "Restart device discovery"), false).apply {
+            setOnClickListener {
+                runCatching { scanner.stop() }
+                runCatching { networkListener.stop() }
+                runCatching { scanner.start() }
+                runCatching { networkListener.start() }
+                status.text = t(
+                    "يعمل البحث عبر Bluetooth وWi-Fi/Hotspot",
+                    "Discovery is running over Bluetooth and Wi-Fi/Hotspot"
+                )
+                refreshDashboard()
+            }
+        })
+        content.addView(UiKit.button(this, p, t("عرض سجل الاتصال والحضور", "Connection & attendance history"), false).apply {
+            setOnClickListener { showConnectionAttendanceHistory() }
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle(t("مركز الاتصال والأجهزة", "Connection & devices"))
+            .setView(ScrollView(this).apply { addView(content) })
+            .setPositiveButton(t("إغلاق", "Close"), null)
+            .show()
     }
 
     private fun shareTodayCsv(){val events=repo.events().filter{it.timestampEpochMillis>=dayStartMillis()};val fmt=SimpleDateFormat("yyyy-MM-dd HH:mm:ss",Locale.US);val csv=buildString{append("employee_id,employee_name,branch,time,action,method,synced\n");events.forEach{e->append("${e.employeeId},\"${e.employeeName.replace("\"","\"\"")}\",${e.branchId},${fmt.format(Date(e.timestampEpochMillis))},${e.action.name},${e.method.name},${e.synced}\n")}};startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_SUBJECT,"ATTEND PRO - تقرير اليوم");putExtra(Intent.EXTRA_TEXT,csv)},"مشاركة تقرير اليوم"))}
