@@ -1077,6 +1077,133 @@ object CentralServerClient {
         )
     }
 
+
+    private fun liveSnapshotJson(dashboard: RemoteDashboard): JSONObject {
+        fun people(items: List<RemoteDashboardPerson>): JSONArray = JSONArray().apply {
+            items.forEach { p -> put(JSONObject().apply {
+                put("employeeId", p.employeeId)
+                put("employeeName", p.employeeName)
+                put("branchId", p.branchId)
+                put("lastSeenAt", p.lastSeenAt)
+                put("method", p.method)
+                put("timeEpochMillis", p.timeEpochMillis)
+            }) }
+        }
+        return JSONObject().apply {
+            put("storeId", dashboard.storeId)
+            put("storeName", dashboard.storeName)
+            put("branchId", dashboard.branchId)
+            put("revision", dashboard.revision)
+            put("serverNow", dashboard.serverNow)
+            put("checkIns", dashboard.checkIns)
+            put("checkOuts", dashboard.checkOuts)
+            put("todayEvents", dashboard.todayEvents)
+            put("presentCount", dashboard.presentCount)
+            put("connectedCount", dashboard.connectedCount)
+            put("lastSeen", dashboard.lastSeen)
+            put("present", people(dashboard.present))
+            put("connected", people(dashboard.connected))
+            put("recent", JSONArray().apply {
+                dashboard.recent.forEach { e -> put(JSONObject().apply {
+                    put("employeeId", e.employeeId)
+                    put("employeeName", e.employeeName)
+                    put("action", e.action)
+                    put("method", e.method)
+                    put("timeEpochMillis", e.timeEpochMillis)
+                }) }
+            })
+        }
+    }
+
+    private fun parseLiveSnapshot(o: JSONObject, fallbackStoreId: String): RemoteDashboard {
+        fun people(key: String): List<RemoteDashboardPerson> {
+            val a = o.optJSONArray(key) ?: JSONArray()
+            return (0 until a.length()).mapNotNull { i -> runCatching {
+                val x = a.getJSONObject(i)
+                RemoteDashboardPerson(
+                    employeeId = x.optString("employeeId", ""),
+                    employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                    branchId = x.optString("branchId", ""),
+                    lastSeenAt = x.optLong("lastSeenAt", 0L),
+                    method = x.optString("method", ""),
+                    timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+                )
+            }.getOrNull() }.filter { it.employeeId.isNotBlank() }
+        }
+        val recentJson = o.optJSONArray("recent") ?: JSONArray()
+        val recent = (0 until recentJson.length()).mapNotNull { i -> runCatching {
+            val x = recentJson.getJSONObject(i)
+            RemoteDashboardEvent(
+                employeeId = x.optString("employeeId", ""),
+                employeeName = x.optString("employeeName", x.optString("employeeId", "")),
+                action = x.optString("action", ""),
+                method = x.optString("method", ""),
+                timeEpochMillis = x.optLong("timeEpochMillis", 0L)
+            )
+        }.getOrNull() }
+        return RemoteDashboard(
+            storeId = o.optString("storeId", fallbackStoreId),
+            storeName = o.optString("storeName", "ATTEND PRO"),
+            branchId = o.optString("branchId", "MAIN"),
+            revision = o.optLong("revision", 0L),
+            serverNow = o.optLong("serverNow", 0L),
+            checkIns = o.optInt("checkIns", 0),
+            checkOuts = o.optInt("checkOuts", 0),
+            todayEvents = o.optInt("todayEvents", 0),
+            presentCount = o.optInt("presentCount", 0),
+            connectedCount = o.optInt("connectedCount", 0),
+            lastSeen = o.optString("lastSeen", ""),
+            present = people("present"),
+            connected = people("connected"),
+            recent = recent
+        )
+    }
+
+    fun publishReceiverLiveSnapshot(
+        serverUrl: String,
+        storeToken: String,
+        storeId: String,
+        identity: DeviceIdentity,
+        dashboard: RemoteDashboard
+    ): Result<Unit> = runCatching {
+        requireHttps(serverUrl)
+        request(
+            serverUrl,
+            "/api/v1/store/receiver-live-snapshot",
+            "POST",
+            JSONObject().put("snapshot", liveSnapshotJson(dashboard)),
+            bearer = storeToken,
+            deviceIdentity = identity,
+            storeId = storeId,
+            connectTimeoutMs = 2_500,
+            readTimeoutMs = 3_500
+        )
+        Unit
+    }
+
+    fun remoteLiveSnapshot(
+        serverUrl: String,
+        receiverId: String,
+        secret: String,
+        storeId: String = ""
+    ): Result<RemoteDashboard?> = runCatching {
+        requireHttps(serverUrl)
+        val o = request(
+            serverUrl,
+            "/api/v1/monitor/live-snapshot",
+            "POST",
+            JSONObject().apply {
+                put("receiverId", receiverId)
+                put("secret", secret)
+                if (storeId.isNotBlank()) put("storeId", storeId)
+            },
+            connectTimeoutMs = 2_000,
+            readTimeoutMs = 2_500
+        )
+        if (!o.optBoolean("available", false)) null
+        else parseLiveSnapshot(o.optJSONObject("snapshot") ?: JSONObject(), storeId)
+    }
+
     fun syncAttendanceEventImmediate(
         serverUrl: String,
         storeToken: String,
