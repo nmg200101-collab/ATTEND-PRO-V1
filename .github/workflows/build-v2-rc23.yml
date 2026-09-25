@@ -12,6 +12,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
+      - name: Enforce comprehensive V157 functional lock
+        run: |
+          set -euo pipefail
+          ANCHOR="575f4dddc77ae025574caba3321d6990e102c216"
+          git cat-file -e "$ANCHOR^{commit}"
+          failed=0
+          for commit in $(git rev-list --reverse "$ANCHOR"..HEAD); do
+            changed="$(git diff-tree --no-commit-id --name-only -r "$commit" -- buildsrc .source_patches tools || true)"
+            [ -z "$changed" ] && continue
+            message="$(git log -1 --pretty=%B "$commit")"
+            if ! printf '%s\n' "$message" | grep -Fxq 'USER-DIRECT-APPROVAL: YES'; then
+              echo "::error::Locked functional code changed in $commit without USER-DIRECT-APPROVAL: YES"
+              printf '%s\n' "$changed"
+              failed=1
+            fi
+            if ! printf '%s\n' "$message" | grep -Fxq 'LOCK-WARNING-SHOWN: YES'; then
+              echo "::error::Locked functional code changed in $commit without LOCK-WARNING-SHOWN: YES"
+              failed=1
+            fi
+            scope="$(printf '%s\n' "$message" | sed -n 's/^LOCK-SCOPE:[[:space:]]*//p' | head -n1)"
+            if [ -z "$scope" ]; then
+              echo "::error::Locked functional code changed in $commit without LOCK-SCOPE"
+              failed=1
+            else
+              echo "Authorized locked change $commit — scope: $scope"
+            fi
+          done
+          test "$failed" -eq 0
+          test -f ALL-SECTIONS-FINAL-LOCK-V157.md
+          test -f BLUETOOTH-FINAL-LOCK-V157.md
+          test -f RECEIVER-FINAL-LOCK-V149.md
+          test -f CONNECTION_CORE_FINAL_LOCK_RC29.md
       - name: Apply V156 targeted source patch
         run: |
           set -euo pipefail
