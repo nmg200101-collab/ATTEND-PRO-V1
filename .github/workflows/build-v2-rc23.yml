@@ -42,7 +42,7 @@ jobs:
           test -f buildsrc/core/src/main/java/com/attendpro/core/ReverseBlePresenceProtocolV157.kt
           test -f buildsrc/core/src/test/java/com/attendpro/core/ReverseBlePresenceProtocolV157Test.kt
           test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
-          test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceStateV157.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/ReverseBluetoothPresenceStateV157.kt
           test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
           test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
           test -f RELEASE-NOTES-V157.md
