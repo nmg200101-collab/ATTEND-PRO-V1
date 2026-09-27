@@ -215,7 +215,7 @@ jobs:
             buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
             buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
             buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
-            buildsrc/store-app/src/main/java/com/attendpro/store/PresenceProofReceiver.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/PresenceProofControlActivity.kt
             buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessagePoll1975.kt
             buildsrc/employee-app/src/main/AndroidManifest.xml
             buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
