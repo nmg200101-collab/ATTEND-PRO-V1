@@ -146,7 +146,28 @@ jobs:
       - name: Apply V161 compact Store Management and sequential back patch
         run: |
           set -euxo pipefail
-          cat .source_patches/v161/source.patch.xz.b64.part{0,1,2,3} | tr -d '\r\n\t ' > /tmp/v161-source.patch.xz.b64
+          EXPECTED_PARTS=(
+            b29e16dd45dec848d865a652456f8825dbaabf4e788ae6fbdcf9c7cd26654db4
+            ec870e91f985a87614675474937941e2be65c943e57032ac8c3e3ad1ac7ab7d2
+            7c6382c6653748423df273e4ff0990a1a6acc78c6e40b0c001d70f0f42fd2b7a
+            1234f705719b65c2fed5e4de1996a1d486714ee1938355b16720c431c0452811
+            04fdbe794f1bc81b877f222dbcf6dc4af8d8dd955bbba7f897c179c81a6595f3
+            b4c7b051d2cbf2306626befa4c4b1a3f0912dd25759751207a6c98faca79b5de
+            56dc3354578a1d80290515ca745d6dc3ecfcd0fe4d0d543f8346239c3232afa7
+            aee9b7a2f385388c55b23754d1debf268dd8baa756281e4c3eb831cf5498ce14
+            72b3d1fe71cf0ecd7925c0db1a28b6b4199cafecd6dc7c0be4b4fe6e7ee47190
+            a2344ef18e6f1734dacb57f47696b6b74a52236465f10be304ad53c97c8dc356
+            5e7b8ecd531f7c8a936cee92b73f89375796c9c129f5aa46e4d343db432f20cd
+            c742ac0e0ed917acd7810eb342ace1515e6cabce4e02100ee0456b893adb9e0e
+          )
+          : > /tmp/v161-source.patch.xz.b64
+          for i in $(seq 0 11); do
+            P=".source_patches/v161/exact.part$(printf '%02d' "$i")"
+            NORMALIZED="/tmp/v161-part-$i"
+            tr -d '\r\n\t ' < "$P" > "$NORMALIZED"
+            test "$(sha256sum "$NORMALIZED" | awk '{print $1}')" = "${EXPECTED_PARTS[$i]}"
+            cat "$NORMALIZED" >> /tmp/v161-source.patch.xz.b64
+          done
           test "$(sha256sum /tmp/v161-source.patch.xz.b64 | awk '{print $1}')" = "5933c7745267294858818a551aec764104ac11e94bab1794fe196e8cb5869ca6"
           base64 -d /tmp/v161-source.patch.xz.b64 | xz -d > /tmp/v161-source.patch
           test "$(sha256sum /tmp/v161-source.patch | awk '{print $1}')" = "6636c433697573d3991df0a5d438bf307eea4ba9913dda583d3c46d126714af3"
