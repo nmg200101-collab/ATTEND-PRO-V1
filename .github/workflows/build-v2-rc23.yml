@@ -1,7 +1,7 @@
-name: Build ATTEND-PRO V160 Store Management Routes Fix
+name: Build ATTEND-PRO V161 Store Management Compact Back
 on:
   push:
-    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux, attend-pro-v159-store-management-entry-fix, attend-pro-v160-store-management-routes-fix]
+    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux, attend-pro-v159-store-management-entry-fix, attend-pro-v160-store-management-routes-fix, attend-pro-v161-store-management-compact-back]
   workflow_dispatch:
 permissions:
   contents: read
@@ -143,6 +143,26 @@ jobs:
           test "$(grep -c 'showStoreOwnerHub()' "$MAIN")" -eq 1
           test -f RELEASE-NOTES-V160.md
           test -f V160-STORE-MANAGEMENT-ROUTES-FIX.md
+      - name: Apply V161 compact Store Management and sequential back patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v161/source.patch.xz.b64 /tmp/v161-source.patch.xz.b64
+          test "$(sha256sum /tmp/v161-source.patch.xz.b64 | awk '{print $1}')" = "5933c7745267294858818a551aec764104ac11e94bab1794fe196e8cb5869ca6"
+          base64 -d /tmp/v161-source.patch.xz.b64 | xz -d > /tmp/v161-source.patch
+          test "$(sha256sum /tmp/v161-source.patch | awk '{print $1}')" = "6636c433697573d3991df0a5d438bf307eea4ba9913dda583d3c46d126714af3"
+          patch -p1 --forward --batch < /tmp/v161-source.patch
+          grep -q 'versionCode = 161' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 161' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/employee-app/build.gradle.kts
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'private enum class StorePageV161' "$SETTINGS"
+          grep -q 'private fun compactRowV161' "$SETTINGS"
+          grep -q 'private fun settingsGroupV161' "$SETTINGS"
+          grep -q 'private fun returnOneLevelV161' "$SETTINGS"
+          grep -q 'renderCurrentPageV161()' "$SETTINGS"
+          test -f RELEASE-NOTES-V161.md
+          test -f V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -158,7 +178,7 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.11.1' }
-      - name: Verify V160 Store Management routes and protected locks
+      - name: Verify V161 compact Store Management, function routes and protected locks
         run: |
           set -euxo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
@@ -448,29 +468,65 @@ jobs:
           grep -q 'ResilientHttp.execute' "$ADMIN"
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
-          # V160 release identity, all Store Management routes, and V158 organized UX markers.
-          grep -q 'versionCode = 160' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 160' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX"' buildsrc/employee-app/build.gradle.kts
+          # V161 release identity, compact settings UI, sequential back and V160 entry-route locks.
+          grep -q 'versionCode = 161' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 161' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/employee-app/build.gradle.kts
           grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' "$MAIN"
           grep -q 'row.addView(tab("الإدارة") { requireStoreOwner("إدارة المحل") { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) } })' "$MAIN"
           grep -q 'requireStoreOwner(t("إدارة المحل", "Store Management")) { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) }' "$MAIN"
           grep -q '"all_settings" -> startActivity(Intent(this, StoreSettingsActivity::class.java))' "$MAIN"
           test "$(grep -c 'showStoreOwnerHub()' "$MAIN")" -eq 1
-          grep -q '1. إعدادات المحل' "$SETTINGS"
-          grep -q '2. الموظفون والدوام' "$SETTINGS"
-          grep -q '3. الاتصال والأجهزة' "$SETTINGS"
-          grep -q '4. التقارير والاستلام' "$SETTINGS"
-          grep -q '5. الرسائل والتواصل' "$SETTINGS"
-          grep -q '6. النسخ والحماية والنظام' "$SETTINGS"
-          grep -q 'الإعدادات المتقدمة' "$SETTINGS"
+
+          # Compact settings-style presentation.
+          grep -q 'private data class SettingItemV161' "$SETTINGS"
+          grep -q 'private data class SettingGroupV161' "$SETTINGS"
+          grep -q 'private fun compactRowV161' "$SETTINGS"
+          grep -q 'minimumHeight = UiKit.dp(this@StoreSettingsActivity, 58)' "$SETTINGS"
+          grep -q 'private fun settingsGroupV161' "$SETTINGS"
+          grep -q 'setBackgroundColor(p.divider)' "$SETTINGS"
+          grep -q 'الإعدادات الأساسية' "$SETTINGS"
+          grep -q 'المظهر واللغة' "$SETTINGS"
+          grep -q 'المساعدة والمعلومات' "$SETTINGS"
+          grep -q 'الحضور والدوام' "$SETTINGS"
+          grep -q 'الحالة والفحص' "$SETTINGS"
+
+          # Sequential internal back stack and persistence.
+          grep -q 'private enum class StorePageV161' "$SETTINGS"
+          grep -q 'private val pageHistoryV161' "$SETTINGS"
+          grep -q 'private fun navigateToPageV161' "$SETTINGS"
+          grep -q 'private fun returnOneLevelV161' "$SETTINGS"
+          grep -q 'storePageHistoryV161' "$SETTINGS"
+          grep -q 'if (authenticated || !repo.hasStoreAdminPin) renderCurrentPageV161()' "$SETTINGS"
+          grep -q 'if (!returnOneLevelV161()) super.onBackPressed()' "$SETTINGS"
+
+          # Existing option-to-function routing remains intact.
+          grep -q 'editStoreProfile()' "$SETTINGS"
+          grep -q 'gpsSettings()' "$SETTINGS"
+          grep -q 'showAppLockSettings()' "$SETTINGS"
+          grep -q 'changeStorePin()' "$SETTINGS"
+          grep -q 'UiKit.showAppearancePicker(this)' "$SETTINGS"
+          grep -q 'AppLanguage.showPicker(this)' "$SETTINGS"
+          grep -q 'showStoreUserGuide1976()' "$SETTINGS"
+          grep -q 'PrivacyDataActivity::class.java' "$SETTINGS"
+          grep -q 'EXTRA_EMPLOYEE_MANAGER' "$SETTINGS"
+          grep -q 'attendanceMethodsSettings()' "$SETTINGS"
+          grep -q 'shiftSettings()' "$SETTINGS"
+          grep -q 'fingerprintSettings()' "$SETTINGS"
+          grep -q 'healthCheck()' "$SETTINGS"
+          grep -q 'ReportsActivity::class.java' "$SETTINGS"
+          grep -q 'StoreMessages1975Activity::class.java' "$SETTINGS"
+          grep -q 'StoreVoiceControl1975Activity::class.java' "$SETTINGS"
+          grep -q 'showBackupCenter()' "$SETTINGS"
+          grep -q 'SystemSettingsActivity::class.java' "$SETTINGS"
+
           test -f V158-STORE-MANAGEMENT-UX.md
-          test -f RELEASE-NOTES-V158.md
           test -f V159-STORE-MANAGEMENT-ENTRY-FIX.md
-          test -f RELEASE-NOTES-V159.md
           test -f V160-STORE-MANAGEMENT-ROUTES-FIX.md
           test -f RELEASE-NOTES-V160.md
+          test -f RELEASE-NOTES-V161.md
+          test -f V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md
 
           # Preserve V154 final visual ergonomics acceptance markers.
           test -f V154-FINAL-VISUAL-ERGONOMICS.md
@@ -614,10 +670,10 @@ jobs:
             :store-app:bundlePlayRelease \
             :employee-app:bundlePlayRelease \
             --stacktrace
-      - name: Enforce V160 lint gate
+      - name: Enforce V161 lint gate
         run: |
           set -euo pipefail
-          ERRORS=/tmp/v160-lint-errors.txt
+          ERRORS=/tmp/v161-lint-errors.txt
           : > "$ERRORS"
           while IFS= read -r report; do
             grep -E ' Error: ' "$report" >> "$ERRORS" || true
@@ -634,14 +690,14 @@ jobs:
                 echo "::notice::Pre-existing lint finding in immutable RC29/V149 source: $line"
                 ;;
               *)
-                echo "::error::V160 lint error outside immutable lock: $line"
+                echo "::error::V161 lint error outside immutable lock: $line"
                 BAD=1
                 ;;
             esac
           done < "$ERRORS"
           test "$BAD" -eq 0
 
-      - name: Sign V160 APKs and Play AABs
+      - name: Sign V161 APKs and Play AABs
         env:
           ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
           ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
@@ -657,13 +713,13 @@ jobs:
             if [ "$APP" = employee ]; then
               MOD=employee-app
               PKG=com.attendpro.employee
-              APK_OUT=ATTEND-PRO-Employee-V160.apk
-              AAB_OUT=ATTEND-PRO-Employee-V160-PLAY.aab
+              APK_OUT=ATTEND-PRO-Employee-V161.apk
+              AAB_OUT=ATTEND-PRO-Employee-V161-PLAY.aab
             else
               MOD=store-app
               PKG=com.attendpro.store
-              APK_OUT=ATTEND-PRO-Store-V160.apk
-              AAB_OUT=ATTEND-PRO-Store-V160-PLAY.aab
+              APK_OUT=ATTEND-PRO-Store-V161.apk
+              AAB_OUT=ATTEND-PRO-Store-V161-PLAY.aab
             fi
 
             U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
@@ -681,7 +737,7 @@ jobs:
             "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
             CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
             test "$CERT" = "$EXPECTED"
-            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='160' versionName='2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX'"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='161' versionName='2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK'"
 
             BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
             test -n "$BUNDLE"
@@ -694,23 +750,23 @@ jobs:
             jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
           done
 
-          cp RELEASE-NOTES-V160.md signed/RELEASE-NOTES-V160.md
+          cp RELEASE-NOTES-V161.md signed/RELEASE-NOTES-V161.md
+          cp V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md signed/V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md
           cp V160-STORE-MANAGEMENT-ROUTES-FIX.md signed/V160-STORE-MANAGEMENT-ROUTES-FIX.md
-          cp V158-STORE-MANAGEMENT-UX.md signed/V158-STORE-MANAGEMENT-UX.md
           cp ALL-SECTIONS-FINAL-LOCK-V157.md signed/ALL-SECTIONS-FINAL-LOCK-V157.md
           cp BLUETOOTH-FINAL-LOCK-V157.md signed/BLUETOOTH-FINAL-LOCK-V157.md
           cp RECEIVER-FINAL-LOCK-V149.md signed/RECEIVER-FINAL-LOCK-V149.md
-          cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/CONNECTION_CORE_FINAL-LOCK-RC29.md 2>/dev/null || cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/CONNECTION_CORE_FINAL_LOCK_RC29.md
-          zip -qr signed/ATTEND-PRO-V160-SOURCE.zip . \
+          cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/CONNECTION_CORE_FINAL_LOCK_RC29.md
+          zip -qr signed/ATTEND-PRO-V161-SOURCE.zip . \
             -x '.git/*' 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
 
-          cat > signed/V160-AUTOMATED-QA.txt <<EOF
-          ATTEND-PRO V160 — AUTOMATED QA
+          cat > signed/V161-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V161 — AUTOMATED QA
           Commit: $GITHUB_SHA
           Branch: $GITHUB_REF_NAME
-          Version code: 160
-          Version name: 2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX
-          Scope: all Store Management visual entry routes + V158 organized UX
+          Version code: 161
+          Version name: 2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK
+          Scope: compact Store Management presentation + sequential back navigation + static function-route audit
           V157 Bluetooth dual-path baseline: LOCKED
           V149 Receiver baseline: LOCKED
           RC29 protected connection sources: LOCKED
@@ -718,14 +774,14 @@ jobs:
           Android lint (Direct + Play): reports audited; no errors outside immutable RC29/V149 sources
           Direct APK build/signature/package verification: PASSED
           Play AAB build/signature verification: PASSED
-          FIELD DEVICE GATE: every normal Store Management entry must open the organized six-section screen; locked connectivity regression still requires real-device confirmation.
+          FIELD DEVICE GATE: verify compact layout, each option route, section-preserving return, and locked connectivity behavior before approval.
           EOF
 
-          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V160.md V160-STORE-MANAGEMENT-ROUTES-FIX.md V158-STORE-MANAGEMENT-UX.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md V160-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
-          echo "===== V160 SHA-256 ====="
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V161.md V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md V160-STORE-MANAGEMENT-ROUTES-FIX.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md CONNECTION_CORE_FINAL_LOCK_RC29.md V161-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          echo "===== V161 SHA-256 ====="
           cat signed/ALL-SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: ATTEND-PRO-V160-STORE-MANAGEMENT-ROUTES-FIX-SIGNED
+          name: ATTEND-PRO-V161-STORE-MANAGEMENT-COMPACT-BACK-SIGNED
           path: signed/
           retention-days: 90
