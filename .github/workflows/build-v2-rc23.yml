@@ -147,7 +147,7 @@ jobs:
         run: |
           set -euxo pipefail
           cp .source_patches/v161/source.patch.xz.b64 /tmp/v161-source.patch.xz.b64
-          test "$(sha256sum /tmp/v161-source.patch.xz.b64 | awk '{print $1}')" = "5933c7745267294858818a551aec764104ac11e94bab1794fe196e8cb5869ca6"
+          test "$(sha256sum /tmp/v161-source.patch.xz.b64 | awk '{print $1}')" = "706026eaf1ff9dfd26a924b5f0222c1e3a2dcad6061eac0d5aa4a0a7783e8d4b"
           base64 -d /tmp/v161-source.patch.xz.b64 | xz -d > /tmp/v161-source.patch
           test "$(sha256sum /tmp/v161-source.patch | awk '{print $1}')" = "6636c433697573d3991df0a5d438bf307eea4ba9913dda583d3c46d126714af3"
           patch -p1 --forward --batch < /tmp/v161-source.patch
