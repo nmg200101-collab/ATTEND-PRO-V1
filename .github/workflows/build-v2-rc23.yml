@@ -592,10 +592,10 @@ jobs:
           grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
 
           # V162 release identity over the field-approved V161 navigation/compact baseline.
-          grep -q 'versionCode = 162' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V162-STORE-MANAGEMENT-VISUAL-STATUS"' buildsrc/store-app/build.gradle.kts
-          grep -q 'versionCode = 162' buildsrc/employee-app/build.gradle.kts
-          grep -q 'versionName = "2.0.0-RC29-V162-STORE-MANAGEMENT-VISUAL-STATUS"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 163' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V163-STORE-PROFILE-BRANDING"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 163' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V163-STORE-PROFILE-BRANDING"' buildsrc/employee-app/build.gradle.kts
           grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' "$MAIN"
           grep -q 'row.addView(tab("الإدارة") { requireStoreOwner("إدارة المحل") { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) } })' "$MAIN"
           grep -q 'requireStoreOwner(t("إدارة المحل", "Store Management")) { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) }' "$MAIN"
