@@ -360,25 +360,6 @@ jobs:
         with: { gradle-version: '8.11.1' }
       - name: Verify V165 branding modes, designer, background readiness and protected locks
         run: |
-          # V165 branding-only acceptance markers.
-          BRAND_REPO=buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
-          grep -q 'var storeHeaderBrandMode' "$BRAND_REPO"
-          grep -q 'var storeHeaderTheme' "$BRAND_REPO"
-          grep -q 'storeHeaderBrandMode == "COVER"' "$MAIN"
-          grep -q 'ImageView.ScaleType.CENTER_CROP' "$MAIN"
-          grep -q 'val height = UiKit.dp(this, 72)' "$MAIN"
-          grep -q 'applyHeaderThemeV165' "$MAIN"
-          test "$(grep -c 'buildStoreHeaderBannerV165(isEnglish, dir)' "$MAIN")" -ge 3
-          grep -q 'showStoreHeaderModePickerV165' "$SETTINGS"
-          grep -q 'showStoreHeaderThemePickerV165' "$SETTINGS"
-          grep -q 'showQuickLogoDesignerV165' "$SETTINGS"
-          grep -q 'createStoreLogoFromDesignerV165' "$SETTINGS"
-          grep -q 'Cover mode requires a valid logo image' "$SETTINGS"
-          grep -q 'Branch ${repo.branchId}' "$SETTINGS"
-          grep -q 'Branch ${repo.branchId}' "$MAIN"
-          test -f RELEASE-NOTES-V165.md
-          test -f V165-BRANDING-LOCK-AUDIT.md
-
           set -euxo pipefail
           REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
           CENTER=buildsrc/store-app/src/main/java/com/attendpro/store/StoreReceiverPermissionsActivity.kt
@@ -402,6 +383,25 @@ jobs:
           STORE_BG=buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
           EMP_BG=buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
           EMP_PRESENCE=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # V165 branding-only acceptance markers.
+          BRAND_REPO=buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'var storeHeaderBrandMode' "$BRAND_REPO"
+          grep -q 'var storeHeaderTheme' "$BRAND_REPO"
+          grep -q 'storeHeaderBrandMode == "COVER"' "$MAIN"
+          grep -q 'ImageView.ScaleType.CENTER_CROP' "$MAIN"
+          grep -q 'val height = UiKit.dp(this, 72)' "$MAIN"
+          grep -q 'applyHeaderThemeV165' "$MAIN"
+          test "$(grep -c 'buildStoreHeaderBannerV165(isEnglish, dir)' "$MAIN")" -ge 3
+          grep -q 'showStoreHeaderModePickerV165' "$SETTINGS"
+          grep -q 'showStoreHeaderThemePickerV165' "$SETTINGS"
+          grep -q 'showQuickLogoDesignerV165' "$SETTINGS"
+          grep -q 'createStoreLogoFromDesignerV165' "$SETTINGS"
+          grep -q 'Cover mode requires a valid logo image' "$SETTINGS"
+          grep -q 'Branch ${repo.branchId}' "$SETTINGS"
+          grep -q 'Branch ${repo.branchId}' "$MAIN"
+          test -f RELEASE-NOTES-V165.md
+          test -f V165-BRANDING-LOCK-AUDIT.md
 
           # V163 store profile identity and logo persistence.
           grep -q 'var storeLogoMode' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
