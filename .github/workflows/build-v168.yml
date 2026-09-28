@@ -1062,7 +1062,7 @@ jobs:
           set -euxo pipefail
           PATCH_B64=.source_patches/v168/source.patch.xz.b64
           test -f "$PATCH_B64"
-          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "b9dff35f83f2437dbeaa8c7b75f20383e3e9a3ff656f77f5c29a6551875424da"
+          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "b8f2ee2992d55f82b8188789f0c2e685dd941b1dc6ffd64d298e7b2b1b3e608d"
           base64 -d "$PATCH_B64" | xz -d > /tmp/v168-source.patch
           test "$(sha256sum /tmp/v168-source.patch | awk '{print $1}')" = "dcee842e1d7b001ccc5c8e82842c191cf76832b6153741d538be782f989b35b3"
 
