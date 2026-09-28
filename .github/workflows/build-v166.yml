@@ -1,0 +1,1077 @@
+name: Build ATTEND-PRO V166 Employee Management Security
+on:
+  push:
+    branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux, attend-pro-v159-store-management-entry-fix, attend-pro-v160-store-management-routes-fix, attend-pro-v161-store-management-compact-back, attend-pro-v162-store-management-visual-status, attend-pro-v163-store-profile-branding, attend-pro-v164-store-logo-import-header-compact, attend-pro-v165-store-branding-modes-designer, attend-pro-v166-employee-management-security]
+  pull_request:
+    branches: [attend-pro-v165-store-branding-modes-designer]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-test-sign:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Enforce comprehensive V157 functional lock
+        run: |
+          set -euo pipefail
+          ANCHOR="575f4dddc77ae025574caba3321d6990e102c216"
+          git cat-file -e "$ANCHOR^{commit}"
+          failed=0
+          for commit in $(git rev-list --reverse "$ANCHOR"..HEAD); do
+            changed="$(git diff-tree --no-commit-id --name-only -r "$commit" -- buildsrc .source_patches tools || true)"
+            [ -z "$changed" ] && continue
+            message="$(git log -1 --pretty=%B "$commit")"
+            if ! printf '%s\n' "$message" | grep -Fxq 'USER-DIRECT-APPROVAL: YES'; then
+              echo "::error::Locked functional code changed in $commit without USER-DIRECT-APPROVAL: YES"
+              printf '%s\n' "$changed"
+              failed=1
+            fi
+            if ! printf '%s\n' "$message" | grep -Fxq 'LOCK-WARNING-SHOWN: YES'; then
+              echo "::error::Locked functional code changed in $commit without LOCK-WARNING-SHOWN: YES"
+              failed=1
+            fi
+            scope="$(printf '%s\n' "$message" | sed -n 's/^LOCK-SCOPE:[[:space:]]*//p' | head -n1)"
+            if [ -z "$scope" ]; then
+              echo "::error::Locked functional code changed in $commit without LOCK-SCOPE"
+              failed=1
+            else
+              echo "Authorized locked change $commit — scope: $scope"
+            fi
+          done
+          test "$failed" -eq 0
+          test -f ALL-SECTIONS-FINAL-LOCK-V157.md
+          test -f BLUETOOTH-FINAL-LOCK-V157.md
+          test -f RECEIVER-FINAL-LOCK-V149.md
+          test -f CONNECTION_CORE_FINAL_LOCK_RC29.md
+      - name: Apply V156 targeted source patch
+        run: |
+          set -euo pipefail
+          cat .source_patches/v156/source.patch.xz.b64.part{0,1,2,3,4,5} > /tmp/v156-source.patch.xz.b64
+          test "$(sha256sum /tmp/v156-source.patch.xz.b64 | awk '{print $1}')" = "7e07f7fb7901c628a4e725f363b684ad2fc13ee4c5c732603070b4432cfb66d9"
+          base64 -d /tmp/v156-source.patch.xz.b64 | xz -d > /tmp/v156-source.patch
+          patch -p1 --forward --batch < /tmp/v156-source.patch
+          cp .source_patches/v156/lock-fix.patch.xz.b64 /tmp/v156-lock-fix.patch.xz.b64
+          test "$(sha256sum /tmp/v156-lock-fix.patch.xz.b64 | awk '{print $1}')" = "7a627cae04fb7b49375c81d8bd99e2250d4a30f56d660b37c12fc64483f22d26"
+          base64 -d /tmp/v156-lock-fix.patch.xz.b64 | xz -d > /tmp/v156-lock-fix.patch
+          patch -p1 --forward --batch < /tmp/v156-lock-fix.patch
+          grep -q 'versionCode = 156' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 156' buildsrc/employee-app/build.gradle.kts
+          test -f buildsrc/core/src/main/java/com/attendpro/core/LanLocalMessageProtocolV156.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreLanMessagingRuntimeV156.kt
+          test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeLanMessagingRuntimeV156.kt
+          test -f buildsrc/core/src/main/java/com/attendpro/core/MessageHistoryClientV156.kt
+      - name: Apply V157 Bluetooth dual-path stability patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v157/source.patch.xz.b64 /tmp/v157-source.patch.xz.b64
+          test "$(sha256sum /tmp/v157-source.patch.xz.b64 | awk '{print $1}')" = "d0c046895e41aef87282e3187dc82d8497e465b8ad69ba047ea6b8e40bcaed1f"
+          base64 -d /tmp/v157-source.patch.xz.b64 | xz -d > /tmp/v157-source.patch
+          test "$(sha256sum /tmp/v157-source.patch | awk '{print $1}')" = "8e0e8b93438365404c764e4af2164320fc6059d28cdb864fddb8d8b62722f660"
+          patch -p1 --forward --batch < /tmp/v157-source.patch
+          grep -q 'versionCode = 157' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 157' buildsrc/employee-app/build.gradle.kts
+          test -f buildsrc/core/src/main/java/com/attendpro/core/ReverseBlePresenceProtocolV157.kt
+          test -f buildsrc/core/src/test/java/com/attendpro/core/ReverseBlePresenceProtocolV157Test.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/ReverseBluetoothPresenceStateV157.kt
+          test -f buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
+          test -f buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+          test -f RELEASE-NOTES-V157.md
+          test -f V157-BLUETOOTH-DUAL-PATH-STABILITY.md
+          cp .source_patches/v157/lint-fix.patch.xz.b64 /tmp/v157-lint-fix.patch.xz.b64
+          test "$(sha256sum /tmp/v157-lint-fix.patch.xz.b64 | awk '{print $1}')" = "4e58ac6c6a97aa07bfa5cfabaa674710e08fb5d5333655598da92a73e35951ba"
+          base64 -d /tmp/v157-lint-fix.patch.xz.b64 | xz -d > /tmp/v157-lint-fix.patch
+          test "$(sha256sum /tmp/v157-lint-fix.patch | awk '{print $1}')" = "92913195cb2a7fcfcb88ce04a4ad0c9968e36524e1a2d0fca665ada88743a926"
+          patch -p1 --forward --batch < /tmp/v157-lint-fix.patch
+          grep -q 'val canConnect = Build.VERSION.SDK_INT < Build.VERSION_CODES.S' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+      - name: Apply V158 Store Management UX patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v158/source.patch.xz.b64 /tmp/v158-source.patch.xz.b64
+          test "$(sha256sum /tmp/v158-source.patch.xz.b64 | awk '{print $1}')" = "706405037c5c8dbfbff698498bf9e767ce22cb6cd2700a9f05a6f3a6db43bfb9"
+          base64 -d /tmp/v158-source.patch.xz.b64 | xz -d > /tmp/v158-source.patch
+          test "$(sha256sum /tmp/v158-source.patch | awk '{print $1}')" = "518e8ba14ef98cc7366549bf717485133a81341df2b9d14072fc9558b7d5636a"
+          patch -p1 --forward --batch < /tmp/v158-source.patch
+          grep -q 'versionCode = 158' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 158' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'showStoreSettingsV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showEmployeesAndShiftV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showConnectionReadinessV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showReportsReceptionV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showCommunicationV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'showBackupSystemV158' buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          test -f RELEASE-NOTES-V158.md
+          test -f V158-STORE-MANAGEMENT-UX.md
+      - name: Apply V159 Store Management entry fix patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v159/source.patch.xz.b64 /tmp/v159-source.patch.xz.b64
+          test "$(sha256sum /tmp/v159-source.patch.xz.b64 | awk '{print $1}')" = "627aa0dd3edc94b849085b8c4d9d33d8498dbf25ad2d705281dddb9dc937f7e2"
+          base64 -d /tmp/v159-source.patch.xz.b64 | xz -d > /tmp/v159-source.patch
+          test "$(sha256sum /tmp/v159-source.patch | awk '{print $1}')" = "c7025ce72681fc08ba94c057ab86071b2e024dcf373e980bf6f814ab1f02bce4"
+          patch -p1 --forward --batch < /tmp/v159-source.patch
+          sed -i 's/versionCode = 158/versionCode = 159/' buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"/versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"/' buildsrc/store-app/build.gradle.kts
+          sed -i 's/versionCode = 158/versionCode = 159/' buildsrc/employee-app/build.gradle.kts
+          sed -i 's/versionName = "2.0.0-RC29-V158-STORE-MANAGEMENT-UX"/versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"/' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionCode = 159' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 159' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V159-STORE-MANAGEMENT-ENTRY-FIX"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          test -f RELEASE-NOTES-V159.md
+          test -f V159-STORE-MANAGEMENT-ENTRY-FIX.md
+      - name: Apply V160 Store Management routes fix patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v160/source.patch.xz.b64 /tmp/v160-source.patch.xz.b64
+          test "$(sha256sum /tmp/v160-source.patch.xz.b64 | awk '{print $1}')" = "1286b911bbff9f379cf9813216b69007dee64aaea33d6bf129a3e15b81f0122c"
+          base64 -d /tmp/v160-source.patch.xz.b64 | xz -d > /tmp/v160-source.patch
+          test "$(sha256sum /tmp/v160-source.patch | awk '{print $1}')" = "cccac77fdf9743e3f110f25da0d8ccfef62e798afc38038a6f8ce329479263da"
+          patch -p1 --forward --batch < /tmp/v160-source.patch
+          grep -q 'versionCode = 160' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 160' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V160-STORE-MANAGEMENT-ROUTES-FIX"' buildsrc/employee-app/build.gradle.kts
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'row.addView(tab("الإدارة") { requireStoreOwner("إدارة المحل") { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) } })' "$MAIN"
+          grep -q 'requireStoreOwner(t("إدارة المحل", "Store Management")) { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) }' "$MAIN"
+          grep -q '"all_settings" -> startActivity(Intent(this, StoreSettingsActivity::class.java))' "$MAIN"
+          test "$(grep -c 'showStoreOwnerHub()' "$MAIN")" -eq 1
+          test -f RELEASE-NOTES-V160.md
+          test -f V160-STORE-MANAGEMENT-ROUTES-FIX.md
+      - name: Apply V161 compact Store Management and sequential back patch
+        run: |
+          set -euxo pipefail
+          EXPECTED_PARTS=(
+            b29e16dd45dec848d865a652456f8825dbaabf4e788ae6fbdcf9c7cd26654db4
+            ec870e91f985a87614675474937941e2be65c943e57032ac8c3e3ad1ac7ab7d2
+            7c6382c6653748423df273e4ff0990a1a6acc78c6e40b0c001d70f0f42fd2b7a
+            1234f705719b65c2fed5e4de1996a1d486714ee1938355b16720c431c0452811
+            04fdbe794f1bc81b877f222dbcf6dc4af8d8dd955bbba7f897c179c81a6595f3
+            b4c7b051d2cbf2306626befa4c4b1a3f0912dd25759751207a6c98faca79b5de
+            56dc3354578a1d80290515ca745d6dc3ecfcd0fe4d0d543f8346239c3232afa7
+            aee9b7a2f385388c55b23754d1debf268dd8baa756281e4c3eb831cf5498ce14
+            72b3d1fe71cf0ecd7925c0db1a28b6b4199cafecd6dc7c0be4b4fe6e7ee47190
+            a2344ef18e6f1734dacb57f47696b6b74a52236465f10be304ad53c97c8dc356
+            5e7b8ecd531f7c8a936cee92b73f89375796c9c129f5aa46e4d343db432f20cd
+            c742ac0e0ed917acd7810eb342ace1515e6cabce4e02100ee0456b893adb9e0e
+          )
+          : > /tmp/v161-source.patch.xz.b64
+          for i in $(seq 0 11); do
+            P=".source_patches/v161/exact.part$(printf '%02d' "$i")"
+            NORMALIZED="/tmp/v161-part-$i"
+            tr -d '\r\n\t ' < "$P" > "$NORMALIZED"
+            test "$(sha256sum "$NORMALIZED" | awk '{print $1}')" = "${EXPECTED_PARTS[$i]}"
+            cat "$NORMALIZED" >> /tmp/v161-source.patch.xz.b64
+          done
+          test "$(sha256sum /tmp/v161-source.patch.xz.b64 | awk '{print $1}')" = "5933c7745267294858818a551aec764104ac11e94bab1794fe196e8cb5869ca6"
+          base64 -d /tmp/v161-source.patch.xz.b64 | xz -d > /tmp/v161-source.patch
+          test "$(sha256sum /tmp/v161-source.patch | awk '{print $1}')" = "6636c433697573d3991df0a5d438bf307eea4ba9913dda583d3c46d126714af3"
+          patch -p1 --forward --batch < /tmp/v161-source.patch
+          grep -q 'versionCode = 161' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 161' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V161-STORE-MANAGEMENT-COMPACT-BACK"' buildsrc/employee-app/build.gradle.kts
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'private enum class StorePageV161' "$SETTINGS"
+          grep -q 'private fun compactRowV161' "$SETTINGS"
+          grep -q 'private fun settingsGroupV161' "$SETTINGS"
+          grep -q 'private fun returnOneLevelV161' "$SETTINGS"
+          grep -q 'renderCurrentPageV161()' "$SETTINGS"
+          test -f RELEASE-NOTES-V161.md
+          test -f V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md
+      - name: Apply V162 Store Management visual status patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v162/source.patch.xz.b64 /tmp/v162-source.patch.xz.b64
+          tr -d '\r\n\t ' < /tmp/v162-source.patch.xz.b64 > /tmp/v162-source.patch.normalized.b64
+          test "$(sha256sum /tmp/v162-source.patch.normalized.b64 | awk '{print $1}')" = "f0ef266ba032fa273764d28b01317e5e9aa5c050fe36f0cd69555c4290127c22"
+          base64 -d /tmp/v162-source.patch.normalized.b64 | xz -d > /tmp/v162-source.patch
+          test "$(sha256sum /tmp/v162-source.patch | awk '{print $1}')" = "ea8804d962e8a4641bfde4bf33a77659736966f63293dd6a1db005b2f7df8144"
+          patch -p1 --forward --batch < /tmp/v162-source.patch
+          grep -q 'versionCode = 162' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V162-STORE-MANAGEMENT-VISUAL-STATUS"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 162' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V162-STORE-MANAGEMENT-VISUAL-STATUS"' buildsrc/employee-app/build.gradle.kts
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'private enum class StatusToneV162' "$SETTINGS"
+          grep -q 'private fun settingIconV162' "$SETTINGS"
+          grep -q 'private fun statusChipV162' "$SETTINGS"
+          grep -q 'private fun sectionSummaryV162' "$SETTINGS"
+          grep -q 'private fun bluetoothRadioStatusV162' "$SETTINGS"
+          grep -q 'private fun wifiStatusV162' "$SETTINGS"
+          grep -q 'private fun connectionSummaryV162' "$SETTINGS"
+          test -f RELEASE-NOTES-V162.md
+          test -f V162-STORE-MANAGEMENT-STATUS-AUDIT.md
+      - name: Snapshot V162 background runtime before V163
+        run: |
+          set -euo pipefail
+          BG_FILES=(
+            buildsrc/store-app/src/main/AndroidManifest.xml
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/PresenceProofControlActivity.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessagePoll1975.kt
+            buildsrc/employee-app/src/main/AndroidManifest.xml
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessageFastPoller142.kt
+          )
+          sha256sum "${BG_FILES[@]}" > /tmp/v163-background-before.sha256
+      - name: Apply V163 store profile branding patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v163/source.patch.xz.b64 /tmp/v163-source.patch.xz.b64
+          tr -d '\r\n\t ' < /tmp/v163-source.patch.xz.b64 > /tmp/v163-source.patch.normalized.b64
+          test "$(sha256sum /tmp/v163-source.patch.normalized.b64 | awk '{print $1}')" = "24cea14a1ac2d8427262a41fd6f12325b62d5c2973439e4eff44be500da96a3f"
+          base64 -d /tmp/v163-source.patch.normalized.b64 | xz -d > /tmp/v163-source.patch
+          test "$(sha256sum /tmp/v163-source.patch | awk '{print $1}')" = "8e1b8fc7b7fffc5b1ccdccb1705b8726ea69cd0cb7294d5805cc7b157887c49a"
+          patch -p1 --forward --batch < /tmp/v163-source.patch
+          grep -q 'versionCode = 163' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V163-STORE-PROFILE-BRANDING"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 163' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V163-STORE-PROFILE-BRANDING"' buildsrc/employee-app/build.gradle.kts
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          REPO=buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'var storeLogoMode' "$REPO"
+          grep -q 'var storeLogoPath' "$REPO"
+          grep -q 'var storeLogoSymbol' "$REPO"
+          grep -q 'showStoreBrandingV163' "$SETTINGS"
+          grep -q 'saveStoreLogoFromUriV163' "$SETTINGS"
+          grep -q 'ACTION_OPEN_DOCUMENT' "$SETTINGS"
+          grep -q 'addStoreIdentityToHeroV163' "$MAIN"
+          grep -q 'storeBrandViewV163' "$MAIN"
+          sha256sum -c /tmp/v163-background-before.sha256
+          test -f RELEASE-NOTES-V163.md
+          test -f V163-BACKGROUND-READINESS-AUDIT.md
+      - name: Apply V164 store logo import and compact header patch
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v164/source.patch.xz.b64 /tmp/v164-source.patch.xz.b64
+          tr -d '\r\n\t ' < /tmp/v164-source.patch.xz.b64 > /tmp/v164-source.patch.normalized.b64
+          test "$(sha256sum /tmp/v164-source.patch.normalized.b64 | awk '{print $1}')" = "3977ba55a13daeff967f95fb3694f01c30f593b1972f8c4a198f47dc937061ec"
+          base64 -d /tmp/v164-source.patch.normalized.b64 | xz -d > /tmp/v164-source.patch
+          test "$(sha256sum /tmp/v164-source.patch | awk '{print $1}')" = "4f05c230e666d8e436bf0383e273e0cc42eccbee0bb92e86c9fbd8692fa911cc"
+          patch -p1 --forward --batch < /tmp/v164-source.patch
+          grep -q 'versionCode = 164' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V164-STORE-LOGO-IMPORT-HEADER-COMPACT"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 164' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V164-STORE-LOGO-IMPORT-HEADER-COMPACT"' buildsrc/employee-app/build.gradle.kts
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'ACTION_GET_CONTENT' "$SETTINGS"
+          grep -q 'store_logo_import.tmp' "$SETTINGS"
+          grep -q 'input.copyTo(output, 64 \* 1024)' "$SETTINGS"
+          grep -q 'storeIdentityInlineV164' "$MAIN"
+          ! grep -q 'addStoreIdentityToHeroV163' "$MAIN"
+          sha256sum -c /tmp/v163-background-before.sha256
+          test -f RELEASE-NOTES-V164.md
+          test -f V164-STORE-LOGO-HEADER-AUDIT.md
+      - name: Apply V164 logo import lint fix
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v164/lint-fix.patch.xz.b64 /tmp/v164-lint.patch.xz.b64
+          tr -d '\r\n\t ' < /tmp/v164-lint.patch.xz.b64 > /tmp/v164-lint.patch.normalized.b64
+          test "$(sha256sum /tmp/v164-lint.patch.normalized.b64 | awk '{print $1}')" = "00bf2c341f2a0028de8747c2c8e3427aa37c39a495578dc2d88ea8ff096f40b6"
+          base64 -d /tmp/v164-lint.patch.normalized.b64 | xz -d > /tmp/v164-lint.patch
+          test "$(sha256sum /tmp/v164-lint.patch | awk '{print $1}')" = "8d6f4888f0e7048cbe235097878452d6d98401591c6ae41de0d64be37e9061ff"
+          patch -p1 --forward --batch < /tmp/v164-lint.patch
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          ! grep -q 'takePersistableUriPermission' "$SETTINGS"
+          grep -q 'ACTION_GET_CONTENT' "$SETTINGS"
+          grep -q 'store_logo_import.tmp' "$SETTINGS"
+          sha256sum -c /tmp/v163-background-before.sha256
+      - name: Snapshot locked runtime before V165 branding
+        run: |
+          set -euo pipefail
+          V165_LOCKED=(
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt
+          )
+          sha256sum "${V165_LOCKED[@]}" > /tmp/v165-locked-before.sha256
+      - name: Apply V165 branding modes and built-in designer patch
+        run: |
+          set -euxo pipefail
+          PATCH_B64=.source_patches/v165/source.patch.xz.b64
+          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "eb9e55e4f4132101cc9916a27e49f4ccee168a346215d6994555a559ead2ed29"
+          base64 -d "$PATCH_B64" | xz -d > /tmp/v165-source.patch
+          test "$(sha256sum /tmp/v165-source.patch | awk '{print $1}')" = "08b28acecfa8c1eed214aa6e6ebbcbe9384e749777f96c9eff95b8cdf17ff513"
+
+          grep '^+++ b/' /tmp/v165-source.patch | sed 's#^+++ b/##' | sort -u > /tmp/v165-actual-paths.txt
+          cat > /tmp/v165-allowed-paths.txt <<'EOF'
+          buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          buildsrc/employee-app/build.gradle.kts
+          buildsrc/store-app/build.gradle.kts
+          buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/v165-allowed-paths.txt
+          sort -o /tmp/v165-allowed-paths.txt /tmp/v165-allowed-paths.txt
+          diff -u /tmp/v165-allowed-paths.txt /tmp/v165-actual-paths.txt
+
+          patch -p1 --forward --batch < /tmp/v165-source.patch
+
+          REPO=buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          grep -q 'versionCode = 165' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V165-STORE-BRANDING-MODES-DESIGNER"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 165' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V165-STORE-BRANDING-MODES-DESIGNER"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'var storeHeaderBrandMode' "$REPO"
+          grep -q 'var storeHeaderTheme' "$REPO"
+          grep -q 'buildStoreHeaderBannerV165' "$MAIN"
+          grep -q 'val height = UiKit.dp(this, 72)' "$MAIN"
+          grep -q 'ImageView.ScaleType.CENTER_CROP' "$MAIN"
+          grep -q 'showQuickLogoDesignerV165' "$SETTINGS"
+          grep -q 'createStoreLogoFromDesignerV165' "$SETTINGS"
+          grep -q 'ids = arrayOf("SMALL", "COVER")' "$SETTINGS"
+          grep -q 'ids = arrayOf("DEFAULT", "BUSINESS", "GLASS", "NIGHT")' "$SETTINGS"
+          sha256sum -c /tmp/v165-locked-before.sha256
+          test -f RELEASE-NOTES-V165.md
+          test -f V165-BRANDING-LOCK-AUDIT.md
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Install Android SDK
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 -print -quit || true)
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.11.1' }
+      - name: Verify V165 branding modes, designer, background readiness and protected locks
+        run: |
+          set -euxo pipefail
+          REPORTS=buildsrc/store-app/src/main/java/com/attendpro/store/ReportsActivity.kt
+          CENTER=buildsrc/store-app/src/main/java/com/attendpro/store/StoreReceiverPermissionsActivity.kt
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          RECEIVER=buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt
+          ADMIN=buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt
+          CENTRAL=buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          PROTOCOL=buildsrc/core/src/main/java/com/attendpro/core/ReportProtocol.kt
+          OFFLINE_PROTOCOL=buildsrc/core/src/main/java/com/attendpro/core/ReceiverOfflineReportProtocol.kt
+          LAN_REPORT=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportLanTransport.kt
+          BLE_REPORT=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportBleTransport.kt
+          SERVICE=buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
+          DNS=buildsrc/core/src/main/java/com/attendpro/core/ResilientHttp.kt
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          MANIFEST=buildsrc/store-app/src/main/AndroidManifest.xml
+          EMP_MAIN=buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          EMP_BOOT=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt
+          EMP_FAST=buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessageFastPoller142.kt
+          STORE_MESSAGES=buildsrc/store-app/src/main/java/com/attendpro/store/StoreMessages1975Activity.kt
+          EMP_MESSAGES=buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeMessages1975Activity.kt
+          STORE_BG=buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+          EMP_BG=buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+          EMP_PRESENCE=buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # V165 branding-only acceptance markers.
+          BRAND_REPO=buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'var storeHeaderBrandMode' "$BRAND_REPO"
+          grep -q 'var storeHeaderTheme' "$BRAND_REPO"
+          grep -q 'storeHeaderBrandMode == "COVER"' "$MAIN"
+          grep -q 'ImageView.ScaleType.CENTER_CROP' "$MAIN"
+          grep -q 'val height = UiKit.dp(this, 72)' "$MAIN"
+          grep -q 'applyHeaderThemeV165' "$MAIN"
+          test "$(grep -c 'buildStoreHeaderBannerV165(isEnglish, dir)' "$MAIN")" -ge 3
+          grep -q 'showStoreHeaderModePickerV165' "$SETTINGS"
+          grep -q 'showStoreHeaderThemePickerV165' "$SETTINGS"
+          grep -q 'showQuickLogoDesignerV165' "$SETTINGS"
+          grep -q 'createStoreLogoFromDesignerV165' "$SETTINGS"
+          grep -q 'Cover mode requires a valid logo image' "$SETTINGS"
+          grep -q 'Branch ${repo.branchId}' "$SETTINGS"
+          grep -q 'Branch ${repo.branchId}' "$MAIN"
+          test -f RELEASE-NOTES-V165.md
+          test -f V165-BRANDING-LOCK-AUDIT.md
+
+          # V163 store profile identity and logo persistence.
+          grep -q 'var storeLogoMode' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'clearStoreLogoBranding' buildsrc/core/src/main/java/com/attendpro/core/LocalStores.kt
+          grep -q 'showStoreBrandingV163' "$SETTINGS"
+          grep -q 'REQUEST_STORE_LOGO_PICK_V163' "$SETTINGS"
+          grep -q 'BitmapFactory.Options' "$SETTINGS"
+          grep -q 'store_logo.png' "$SETTINGS"
+          grep -q 'storeIdentityInlineV164' "$MAIN"
+          grep -q 'storeBrandViewV163' "$MAIN"
+          grep -q 'versionCode = 165' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 165' buildsrc/employee-app/build.gradle.kts
+          test -f RELEASE-NOTES-V163.md
+          test -f V163-BACKGROUND-READINESS-AUDIT.md
+          grep -q 'ACTION_GET_CONTENT' "$SETTINGS"
+          grep -q 'store_logo_import.tmp' "$SETTINGS"
+          ! grep -q 'takePersistableUriPermission' "$SETTINGS"
+          grep -q 'BitmapFactory.decodeFile(imported.absolutePath' "$SETTINGS"
+          grep -q 'storeIdentityInlineV164' "$MAIN"
+          ! grep -q 'addStoreIdentityToHeroV163' "$MAIN"
+          test -f RELEASE-NOTES-V164.md
+          test -f V164-STORE-LOGO-HEADER-AUDIT.md
+
+          # Background readiness wiring: verify, do not redesign.
+          grep -q 'RECEIVE_BOOT_COMPLETED' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_CONNECTED_DEVICE' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'StoreReverseBluetoothPresenceServiceV157' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'StoreReverseBluetoothBootReceiverV157' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'ReceiverReportService' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'ReceiverReportBootReceiver' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'StoreMessagePoll1975' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'PresenceProofReceiver' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'START_STICKY' "$STORE_BG"
+          grep -q 'START_STICKY' buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
+          grep -q 'RECEIVE_BOOT_COMPLETED' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_LOCATION' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'PresenceBootReceiver' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'EmployeeReverseBluetoothPresenceServiceV157' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'START_STICKY' "$EMP_PRESENCE"
+          grep -q 'START_STICKY' "$EMP_BG"
+
+          # Single Store-side navigation path: Reports -> receiver center.
+          grep -q 'هواتف الاستلام' "$REPORTS"
+          grep -q 'StoreReceiverPermissionsActivity::class.java' "$REPORTS"
+          ! grep -q 'StoreReceiverPermissionsActivity::class.java' "$SETTINGS"
+          grep -q 'StoreReceiverPermissionsActivity' "$MANIFEST"
+
+          # V152 preserves the V149 receiver center.
+          grep -q 'private enum class Tab { OVERVIEW, PHONES, ADD_PHONE }' "$CENTER"
+          grep -q 'نظرة عامة' "$CENTER"
+          grep -q 'الهواتف' "$CENTER"
+          grep -q 'إضافة هاتف' "$CENTER"
+          ! grep -q 'Tab.PERMISSIONS' "$CENTER"
+          ! grep -q 'private fun permissionsTab' "$CENTER"
+          grep -q 'تعديل صلاحيات هذا الهاتف' "$CENTER"
+          grep -q 'deleteReceiverBinding' "$CENTER"
+          grep -q 'META_PENDING_DELETES' "$CENTER"
+          grep -q '1/5 تم التعرف على QR الهاتف' "$CENTER"
+          grep -q 'اكتشاف هاتف قريب' "$CENTER"
+          grep -q 'discoverNearbyReceiver' "$CENTER"
+          grep -q 'deliverNearbyGrantAsync' "$CENTER"
+          grep -q 'pending_receiver_syncs_v140' "$CENTER"
+          grep -q 'تم حفظ الهاتف فورًا' "$CENTER"
+          test "$(grep -c 'setContentView(' "$CENTER")" -eq 1
+          ! grep -q 'buildUi' "$CENTER"
+
+          # Receiver Activity: render/state/network/navigation are separated.
+          grep -q 'enum class Section' "$RECEIVER"
+          grep -q 'capabilitiesGeneration' "$RECEIVER"
+          grep -q 'reportsGeneration' "$RECEIVER"
+          grep -q 'messagesGeneration' "$RECEIVER"
+          grep -q 'capabilitiesInFlight' "$RECEIVER"
+          grep -q 'reportsInFlight' "$RECEIVER"
+          grep -q 'messagesInFlight' "$RECEIVER"
+          grep -q 'isFinishing' "$RECEIVER"
+          grep -q 'isDestroyed' "$RECEIVER"
+          test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
+          ! grep -q 'buildUi' "$RECEIVER"
+          ! grep -q 'receiverStoreSettings' "$RECEIVER"
+          ! grep -q 'store-settings' "$RECEIVER"
+
+          # V152 preserves V149 multi-store isolation and receiver permissions.
+          grep -q 'Section { STORES, STATUS, REPORTS, MESSAGES, ARCHIVE }' "$RECEIVER"
+          ! grep -q 'Section.EMPLOYEES' "$RECEIVER"
+          ! grep -q 'ReceiverEmployeeAdminClient' "$RECEIVER"
+          ! grep -q 'إدارة الموظفين' "$CENTER"
+          ! grep -q 'Employee management' "$CENTER"
+          grep -q 'savePermissions(phone, reports.isChecked, messages.isChecked)' "$CENTER"
+          grep -q 'phone.receiverId, reports, messages, false' "$CENTER"
+          grep -q '!remote.canManageStore' "$CENTER"
+          grep -q 'canManageStore = false' "$RECEIVER"
+          grep -q 'var canManageStore: Boolean get() = false' "$PROTOCOL"
+          grep -q 'renderStores' "$RECEIVER"
+          grep -q 'refreshStoreBindings' "$RECEIVER"
+          grep -q 'queueServerUnlink' "$RECEIVER"
+          grep -q 'switchStore' "$RECEIVER"
+          grep -q 'actionGeneration' "$RECEIVER"
+          grep -q 'receivedReports(storeId)' "$RECEIVER"
+          grep -q '/api/v1/monitor/stores' "$CENTRAL"
+          grep -q '/api/v1/monitor/stores/unlink' "$CENTRAL"
+          grep -q 'data class ReceiverStoreBinding' "$PROTOCOL"
+          grep -q 'storeBindingsV138' "$PROTOCOL"
+          grep -q 'activeStoreIdV138' "$PROTOCOL"
+          grep -q 'storeId: String = ""' "$PROTOCOL"
+          test "$(grep -c 'setContentView(' "$RECEIVER")" -eq 1
+          ! grep -q 'buildUi' "$RECEIVER"
+
+          # V152 preserves V149 nearby report delivery independent from employee BLE pairing.
+          test -f "$OFFLINE_PROTOCOL"
+          test -f "$LAN_REPORT"
+          test -f "$BLE_REPORT"
+          grep -q 'ReceiverOfflineReportProtocol' "$REPORTS"
+          grep -q 'ReceiverReportLanClient.send' "$REPORTS"
+          grep -q 'ReceiverReportBleClient.send' "$REPORTS"
+          test -f "$SERVICE"
+          grep -q 'ReceiverReportService.ensureStarted' "$RECEIVER"
+          grep -q 'ReceiverReportLanServer' "$SERVICE"
+          grep -q 'ReceiverReportBleServer' "$SERVICE"
+          grep -q 'pollServerReports' "$SERVICE"
+          grep -q 'confirmRemoteReport' "$SERVICE"
+          grep -q 'pollServerMessages' "$SERVICE"
+          grep -q 'cacheMessageReplies' "$SERVICE"
+          grep -q 'receivedMessageReplies' "$RECEIVER"
+          grep -q 'receiverMessageRepliesV141' "$PROTOCOL"
+          grep -q 'nearbyPairingActive' "$SERVICE"
+          grep -q 'acceptNearbyGrant' "$SERVICE"
+          grep -q '0000f139-0000-1000-8000-00805f9b34fb' "$BLE_REPORT"
+          grep -q 'BLUETOOTH_SCAN' "$MANIFEST"
+          grep -q 'BLUETOOTH_CONNECT' "$MANIFEST"
+          grep -q 'BLUETOOTH_ADVERTISE' "$MANIFEST"
+          grep -q 'DISCOVERY_PORT = 47730' "$LAN_REPORT"
+          grep -q 'REPORT_PORT = 47731' "$LAN_REPORT"
+          grep -q 'APRL1:' "$OFFLINE_PROTOCOL"
+          grep -q 'APACK1' "$OFFLINE_PROTOCOL"
+          grep -q 'APGR1:' "$OFFLINE_PROTOCOL"
+          grep -q 'nearbyProbe' "$OFFLINE_PROTOCOL"
+          grep -q 'nearbyGrantAck' "$OFFLINE_PROTOCOL"
+          grep -q 'ReceiverReportService' "$MANIFEST"
+          grep -q 'FOREGROUND_SERVICE_CONNECTED_DEVICE' "$MANIFEST"
+          grep -q 'foregroundServiceType="connectedDevice"' "$MANIFEST"
+          grep -q 'sendNearbyGrant' "$LAN_REPORT"
+          grep -q 'sendNearbyGrant' "$BLE_REPORT"
+          grep -q 'INVITE_UUID' "$BLE_REPORT"
+
+          # V152 preserves the V149 receiver final lock.
+          grep -q 'ACTION_DATA_CHANGED' "$SERVICE"
+          grep -q 'ACTION_SYNC_NOW' "$SERVICE"
+          grep -q 'REPORT_POLL_MS = 1_500L' "$SERVICE"
+          grep -q 'MESSAGE_POLL_MS = 2_500L' "$SERVICE"
+          grep -q 'OUTBOX_POLL_MS = 750L' "$SERVICE"
+          grep -q 'launchReportPoll' "$SERVICE"
+          grep -q 'launchMessagePoll' "$SERVICE"
+          grep -q 'launchOutbox' "$SERVICE"
+          grep -q 'flushOutgoingMessages' "$SERVICE"
+          grep -q 'broadcastChanged(KIND_REPORTS' "$SERVICE"
+          grep -q 'broadcastChanged(KIND_MESSAGES' "$SERVICE"
+          grep -q 'queueOutgoingMessage' "$RECEIVER"
+          grep -q 'requestImmediateSync' "$RECEIVER"
+          grep -q 'registerReceiver(dataEventsReceiver' "$RECEIVER"
+          grep -q 'receiverOutgoingMessagesV142' "$PROTOCOL"
+          grep -q 'retryOutgoingMessage' "$PROTOCOL"
+          grep -q 'clientMessageId' "$CENTRAL"
+          grep -q 'connectTimeoutMs = 3_500' "$CENTRAL"
+          test -f "$EMP_FAST"
+          grep -q 'NORMAL_POLL_MS = 1_000L' "$EMP_FAST"
+          grep -q 'LIVE_DASHBOARD_POLL_MS = 1_250L' "$SERVICE"
+          grep -q 'EMPLOYEE_POLL_MS = 2_000L' "$SERVICE"
+          grep -q 'launchLiveDashboardPoll' "$SERVICE"
+          grep -q 'pollLiveDashboard' "$SERVICE"
+          grep -q 'remoteDashboard(' "$SERVICE"
+          ! grep -q 'remoteReport(' "$SERVICE"
+          grep -q 'cacheLiveDashboard' "$SERVICE"
+          grep -q 'cachedLiveDashboard' "$PROTOCOL"
+          grep -q 'receiverLiveDashboardV145' "$PROTOCOL"
+          grep -q 'KIND_LIVE_DASHBOARD' "$SERVICE"
+          grep -q 'KIND_LIVE_DASHBOARD' "$RECEIVER"
+          grep -q 'المراقبة المباشرة' "$RECEIVER"
+          grep -q 'الموظفون الحاضرون' "$RECEIVER"
+          grep -q 'الأجهزة المتصلة' "$RECEIVER"
+          grep -q 'أرشيف التقارير اليدوية' "$RECEIVER"
+          grep -q 'Section.ARCHIVE' "$RECEIVER"
+          grep -q 'private fun renderArchive()' "$RECEIVER"
+          grep -q 'أرشيف التقارير اليدوية' "$RECEIVER"
+          grep -q 'العودة للمراقبة المباشرة' "$RECEIVER"
+          grep -q 'V${BuildConfig.VERSION_CODE} LIVE' "$RECEIVER"
+          grep -q 'remoteDashboardRevision' "$CENTRAL"
+          grep -q 'liveDashboardProbeToken' "$PROTOCOL"
+          grep -q 'receiverLiveDashboardProbeV146' "$PROTOCOL"
+          grep -q 'remoteDashboardRevision' "$SERVICE"
+          grep -q 'APLIVE1:' "$MAIN"
+          grep -q 'deliverAttendanceEventToReceiversNearby' "$MAIN"
+          grep -q 'sendFastEvent' "$MAIN"
+          grep -q 'discoveryWindowMs = 1_350L' "$MAIN"
+          grep -q 'connectTimeoutMs = 1_800' "$MAIN"
+          grep -q 'applyNearbyLiveEvent' "$PROTOCOL"
+          grep -q 'receiverLiveEventIdsV146' "$PROTOCOL"
+          grep -q 'applyNearbyLiveEvent' "$SERVICE"
+          grep -q 'ADVERTISE_MODE_LOW_LATENCY' "$BLE_REPORT"
+          grep -q 'ADVERTISE_TX_POWER_HIGH' "$BLE_REPORT"
+          grep -q 'fun sendFastEvent' "$BLE_REPORT"
+          ! grep -q 'التقارير المستلمة' "$RECEIVER"
+          ! grep -q 'Received reports:' "$RECEIVER"
+          grep -q 'RemoteDashboardPerson' "$CENTRAL"
+          grep -q 'presentCount' "$CENTRAL"
+          # V152 preserves the V149 resilient live dashboard fallback.
+          grep -q 'nextFullDashboardFallbackAt' "$SERVICE"
+          grep -q 'remoteDashboardRevision' "$SERVICE"
+          grep -q 'receiver.markLiveTransport(storeId, "SERVER"' "$SERVICE"
+          grep -q 'acceptOfflineReport(envelope, "LAN")' "$SERVICE"
+          grep -q 'acceptOfflineReport(envelope, "BLE")' "$SERVICE"
+          grep -q 'receiverLiveTransportV147' "$PROTOCOL"
+          grep -q 'APMIRROR2:' "$PROTOCOL"
+          grep -q 'remoteLiveSnapshot' "$SERVICE"
+          grep -q 'publishReceiverLiveSnapshot' buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+          grep -q 'buildReceiverLiveMirror' "$MAIN"
+          grep -q 'receiverRequestPresenceProof' "$CENTRAL"
+          grep -q 'receiverPresenceProofStatus' "$CENTRAL"
+          grep -q 'requestReceiverPresenceProof' "$RECEIVER"
+          grep -q 'طلب إثبات الحضور' "$RECEIVER"
+          grep -q 'showQuickMessageDialog' "$RECEIVER"
+          grep -q 'إرسال كمهمة' "$RECEIVER"
+          test -f RECEIVER-FINAL-LOCK-V149.md
+          grep -q 'اتصال هاتف الاستلام بالمحل' "$RECEIVER"
+          grep -q 'LivePanel { PRESENT, CONNECTED, DAILY, RECENT }' "$RECEIVER"
+          grep -q 'الموظفون الحاضرون' "$RECEIVER"
+          grep -q 'الأجهزة المتصلة' "$RECEIVER"
+          grep -q 'التقرير اليومي' "$RECEIVER"
+          grep -q 'آخر حركة' "$RECEIVER"
+          grep -q 'اتصال هاتف الاستلام بالمحل:' "$RECEIVER"
+          grep -q 'liveTransportLabel' "$RECEIVER"
+          grep -q 'if (usedExactMirror) "الخادم • مرآة المحل"' "$RECEIVER"
+          grep -q 'if (repo.serverUrl.isBlank() || !repo.isCentralActivationActive()) return' "$MAIN"
+          grep -q 'if (!repo.reportAutoSync || syncInProgress' "$MAIN"
+          grep -q 'connectedCount' "$CENTRAL"
+          grep -q 'receiverEmployeesV143' "$PROTOCOL"
+          grep -q 'cacheEmployees' "$SERVICE"
+          grep -q 'KIND_EMPLOYEES' "$SERVICE"
+          grep -q 'KIND_EMPLOYEES' "$RECEIVER"
+          grep -q 'loadCachedEmployees' "$RECEIVER"
+          grep -q 'resolvedReceiverName' "$PROTOCOL"
+          grep -q 'resolvedReceiverName()' "$RECEIVER"
+          grep -q 'triggerImmediateAttendanceSync(event: AttendanceEvent)' "$MAIN"
+          grep -q 'syncAttendanceEventImmediate' "$MAIN"
+          grep -q 'syncAttendanceEventImmediate' "$CENTRAL"
+          grep -q 'connectTimeoutMs = 2_500' "$CENTRAL"
+          grep -q 'readTimeoutMs = 3_500' "$CENTRAL"
+          ! grep -q 'nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 850L)' "$MAIN"
+          ! grep -q 'nearbyRefreshHandler.postDelayed({ autoSyncIfReady() }, 1_900L)' "$MAIN"
+          grep -q 'Section.REPORTS' "$RECEIVER"
+          grep -q 'binding.canReceiveReports -> Section.REPORTS' "$RECEIVER"
+          grep -q 'binding.canMessageEmployees -> Section.MESSAGES' "$RECEIVER"
+          grep -q 'loadCachedEmployees(binding.storeId)' "$RECEIVER"
+          grep -q 'receiver.receivedMessageReplies(binding.storeId)' "$RECEIVER"
+          grep -q 'تظهر هنا موظفو هذا المحل فقط' "$RECEIVER"
+          grep -q 'فتح تقارير هذا المحل' "$RECEIVER"
+          grep -q 'LinkedBlockingQueue' "$CENTER"
+          grep -q 'Searching automatically over Wi‑Fi and Bluetooth' "$CENTER"
+          grep -q 'ReceiverReportLanClient.discoverNearbyInvite(timeoutMs = 2_200L)' "$CENTER"
+          grep -q 'ReceiverReportBleClient.discoverNearbyInvite(this)' "$CENTER"
+          grep -q 'enableNearbyPairing(this, 180_000L)' "$RECEIVER"
+          grep -q 'اسم الهاتف:' "$CENTER"
+          ! grep -q '"المعرف: ${phone.receiverId}' "$CENTER"
+          grep -q 'EmployeeMessageFastPoller142.start(this)' "$EMP_MAIN"
+          grep -q 'EmployeeMessageFastPoller142.start(context)' "$EMP_BOOT"
+          ! git diff --quiet 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # No receiver-side employee management survives in the receiver Activity.
+          ! grep -q 'employee_links' "$RECEIVER"
+
+          # Existing Store employee synchronization remains untouched for the main Store app.
+          grep -q 'syncReceiverEmployeeSnapshot' "$CENTRAL"
+          grep -q 'pullReceiverEmployeeCommands' "$CENTRAL"
+          grep -q 'ackReceiverEmployeeCommand' "$CENTRAL"
+          grep -q 'syncReceiverEmployeeCommandsIfDue' "$MAIN"
+          grep -q 'applyReceiverEmployeeCommand' "$MAIN"
+          grep -q 'RECEIVER_EMPLOYEE_SYNC_INTERVAL_MS = 20_000L' "$MAIN"
+          test "$(grep -c 'syncReceiverEmployeeCommandsIfDue()' "$MAIN")" -eq 1
+          grep -q 'syncReceiverEmployeeCommandsIfDue(force = true)' "$MAIN"
+          ! grep -q 'syncRemoteControlIfDue()' "$MAIN"
+
+          # Activation recovery remains the established three-stage path.
+          grep -q 'استعادة التفعيل تلقائيًا' "$MAIN"
+          grep -q 'startAutomaticActivationRecovery' "$MAIN"
+          grep -q 'forceCentralActivationRecovery' "$MAIN"
+          grep -q 'restoreCentralActivationSmart' "$MAIN"
+          grep -q '1/3 التحقق من التفعيل المحفوظ' "$MAIN"
+          grep -q '2/3 فحص طلب التفعيل السابق' "$MAIN"
+          grep -q '3/3 التعرف على الجهاز من الخادم' "$MAIN"
+          grep -q 'CentralServerClient.validateStore' "$MAIN"
+          grep -q 'CentralServerClient.activationStatus' "$MAIN"
+          grep -q 'CentralServerClient.recoverActivation' "$MAIN"
+
+          # HTTPS resilient transport: system DNS, IPv4 first, encrypted fallback, TLS hostname retained.
+          test -f "$DNS"
+          grep -q 'Dns.SYSTEM' "$DNS"
+          grep -q 'SecureFallbackDns' "$DNS"
+          grep -q 'ipv4First' "$DNS"
+          grep -q 'Inet4Address' "$DNS"
+          grep -q 'https://cloudflare-dns.com/dns-query' "$DNS"
+          grep -q 'https://dns.google/resolve' "$DNS"
+          grep -q '104.21.44.99' "$DNS"
+          grep -q '172.67.198.135' "$DNS"
+          grep -q 'isRetryableNetworkFailure' "$DNS"
+          grep -q 'ResilientHttp.execute' "$CENTRAL"
+          grep -q 'ResilientHttp.execute' "$ADMIN"
+          grep -q 'com.squareup.okhttp3:okhttp:4.12.0' buildsrc/core/build.gradle.kts
+
+          # V162 release identity over the field-approved V161 navigation/compact baseline.
+          grep -q 'versionCode = 165' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V165-STORE-BRANDING-MODES-DESIGNER"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 165' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V165-STORE-BRANDING-MODES-DESIGNER"' buildsrc/employee-app/build.gradle.kts
+          grep -q 'requireStoreOwner("إدارة المحل"){startActivity(Intent(this@MainActivity,StoreSettingsActivity::class.java))}' "$MAIN"
+          grep -q 'row.addView(tab("الإدارة") { requireStoreOwner("إدارة المحل") { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) } })' "$MAIN"
+          grep -q 'requireStoreOwner(t("إدارة المحل", "Store Management")) { startActivity(Intent(this@MainActivity, StoreSettingsActivity::class.java)) }' "$MAIN"
+          grep -q '"all_settings" -> startActivity(Intent(this, StoreSettingsActivity::class.java))' "$MAIN"
+          test "$(grep -c 'showStoreOwnerHub()' "$MAIN")" -eq 1
+
+          # Compact settings-style presentation.
+          grep -q 'private data class SettingItemV161' "$SETTINGS"
+          grep -q 'private data class SettingGroupV161' "$SETTINGS"
+          grep -q 'private fun compactRowV161' "$SETTINGS"
+          grep -q 'minimumHeight = UiKit.dp(this@StoreSettingsActivity, 58)' "$SETTINGS"
+          grep -q 'private fun settingsGroupV161' "$SETTINGS"
+          grep -q 'setBackgroundColor(p.divider)' "$SETTINGS"
+          grep -q 'الإعدادات الأساسية' "$SETTINGS"
+          grep -q 'المظهر واللغة' "$SETTINGS"
+          grep -q 'المساعدة والمعلومات' "$SETTINGS"
+          grep -q 'الحضور والدوام' "$SETTINGS"
+          grep -q 'الحالة والفحص' "$SETTINGS"
+
+          # V162 visual status polish: icons, bounded status badges and read-only summaries.
+          grep -q 'private enum class StatusToneV162' "$SETTINGS"
+          grep -q 'private fun settingIconV162' "$SETTINGS"
+          grep -q 'private fun statusToneV162' "$SETTINGS"
+          grep -q 'private fun statusChipV162' "$SETTINGS"
+          grep -q 'private fun sectionSummaryV162' "$SETTINGS"
+          grep -q 'private fun bluetoothRadioStatusV162' "$SETTINGS"
+          grep -q 'private fun wifiStatusV162' "$SETTINGS"
+          grep -q 'private fun connectionSummaryV162' "$SETTINGS"
+          grep -q 'NetworkCapabilities.TRANSPORT_WIFI' "$SETTINGS"
+          grep -q 'setStroke(UiKit.dp(this@StoreSettingsActivity, 1), statusColorV162(tone))' "$SETTINGS"
+          test -f RELEASE-NOTES-V162.md
+          test -f V162-STORE-MANAGEMENT-STATUS-AUDIT.md
+
+          # Sequential internal back stack and persistence.
+          grep -q 'private enum class StorePageV161' "$SETTINGS"
+          grep -q 'private val pageHistoryV161' "$SETTINGS"
+          grep -q 'private fun navigateToPageV161' "$SETTINGS"
+          grep -q 'private fun returnOneLevelV161' "$SETTINGS"
+          grep -q 'storePageHistoryV161' "$SETTINGS"
+          grep -q 'if (authenticated || !repo.hasStoreAdminPin) renderCurrentPageV161()' "$SETTINGS"
+          grep -q 'if (!returnOneLevelV161()) super.onBackPressed()' "$SETTINGS"
+
+          # Existing option-to-function routing remains intact.
+          grep -q 'editStoreProfile()' "$SETTINGS"
+          grep -q 'gpsSettings()' "$SETTINGS"
+          grep -q 'showAppLockSettings()' "$SETTINGS"
+          grep -q 'changeStorePin()' "$SETTINGS"
+          grep -q 'UiKit.showAppearancePicker(this)' "$SETTINGS"
+          grep -q 'AppLanguage.showPicker(this)' "$SETTINGS"
+          grep -q 'showStoreUserGuide1976()' "$SETTINGS"
+          grep -q 'PrivacyDataActivity::class.java' "$SETTINGS"
+          grep -q 'EXTRA_EMPLOYEE_MANAGER' "$SETTINGS"
+          grep -q 'attendanceMethodsSettings()' "$SETTINGS"
+          grep -q 'shiftSettings()' "$SETTINGS"
+          grep -q 'fingerprintSettings()' "$SETTINGS"
+          grep -q 'healthCheck()' "$SETTINGS"
+          grep -q 'ReportsActivity::class.java' "$SETTINGS"
+          grep -q 'StoreMessages1975Activity::class.java' "$SETTINGS"
+          grep -q 'StoreVoiceControl1975Activity::class.java' "$SETTINGS"
+          grep -q 'showBackupCenter()' "$SETTINGS"
+          grep -q 'SystemSettingsActivity::class.java' "$SETTINGS"
+
+          test -f V158-STORE-MANAGEMENT-UX.md
+          test -f V159-STORE-MANAGEMENT-ENTRY-FIX.md
+          test -f V160-STORE-MANAGEMENT-ROUTES-FIX.md
+          test -f RELEASE-NOTES-V160.md
+          test -f RELEASE-NOTES-V161.md
+          test -f V161-STORE-MANAGEMENT-FUNCTION-AUDIT.md
+
+          # Preserve V154 final visual ergonomics acceptance markers.
+          test -f V154-FINAL-VISUAL-ERGONOMICS.md
+          grep -q 'ProfessionalChoice' "$MAIN"
+          grep -q 'showProfessionalChoiceDialog' "$MAIN"
+          grep -q 'mediumStrips = true' "$MAIN"
+          grep -q 'attend-history-v153' "$MAIN"
+          grep -q 'lastUiMaintenanceAt' "$MAIN"
+          grep -q 'eventsByEmployee' "$MAIN"
+          grep -q 'historyLoadGeneration' "$MAIN"
+          grep -q 'minimumHeight = UiKit.dp(this@MainActivity, 74)' "$MAIN"
+          grep -q 'UiKit.dp(this@MainActivity, 40)' "$MAIN"
+          grep -q 'setStroke(UiKit.dp(this@MainActivity, 2), p.accent)' "$MAIN"
+          grep -q 'تسجيل حضور' "$MAIN"
+          grep -q 'تسجيل انصراف' "$MAIN"
+          grep -q 'minimumHeight = UiKit.dp(this@MainActivity, if (classic) 156 else 148)' "$MAIN"
+          grep -q 'اختصارات إضافية' "$MAIN"
+          ! grep -q 'addStoreTabs1978(root)' "$MAIN"
+          # V156 intentionally replaces V152's flat-message renderers with conversation history.
+          grep -q 'private fun showInbox' "$STORE_MESSAGES"
+          grep -q 'private fun showConversation' "$STORE_MESSAGES"
+          grep -q 'StoreDirectLinkBridge1977.isConnected' "$STORE_MESSAGES"
+          grep -q 'StoreLanMessagingRuntimeV156.isAvailable' "$STORE_MESSAGES"
+          grep -q 'MessageHistoryClientV156.storeHistory' "$STORE_MESSAGES"
+          grep -q 'private fun renderConversation' "$EMP_MESSAGES"
+          grep -q 'EmployeeDirectReplyBridge1977.isAvailable' "$EMP_MESSAGES"
+          grep -q 'EmployeeLanMessagingRuntimeV156.isAvailable' "$EMP_MESSAGES"
+          grep -q 'MessageHistoryClientV156.employeeHistory' "$EMP_MESSAGES"
+          grep -q 'EmployeeUiChoice' "$EMP_MAIN"
+          grep -q 'showEmployeeChoiceDialog' "$EMP_MAIN"
+
+          # V149 Receiver Final Lock must remain byte-identical in V152.
+          git diff --exit-code bf20500742cbfa71ad10958bb536a94ee9f41956 -- \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReportReceiverActivity.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportLanTransport.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportBleTransport.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReceiverPermissionsActivity.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReportProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReceiverOfflineReportProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/ReceiverEmployeeAdminClient.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/CentralServerClient.kt
+
+          # RC29 field-proven pairing/direct-link files remain immutable in V152.
+          git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # V156 release-hardening guards: preserve the effective RC29 runtime build path.
+          git diff --exit-code 7c9c8aeb8316da5334096820bf3fe16f45f8a630 -- buildsrc/build.gradle.kts
+          grep -q 'compileSdk = 36' buildsrc/store-app/build.gradle.kts
+          grep -q 'targetSdk = 36' buildsrc/store-app/build.gradle.kts
+          grep -q 'compileSdk = 36' buildsrc/employee-app/build.gradle.kts
+          grep -q 'targetSdk = 36' buildsrc/employee-app/build.gradle.kts
+          grep -q 'usesCleartextTraffic="false"' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'usesCleartextTraffic="false"' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_CONNECTED_DEVICE' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'foregroundServiceType="connectedDevice"' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'FOREGROUND_SERVICE_LOCATION' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'foregroundServiceType="connectedDevice|location"' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'ACCESS_BACKGROUND_LOCATION' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'REQUEST_INSTALL_PACKAGES' buildsrc/store-app/src/play/AndroidManifest.xml
+          grep -q 'tools:node="remove"' buildsrc/store-app/src/play/AndroidManifest.xml
+          grep -q 'REQUEST_INSTALL_PACKAGES' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'tools:node="remove"' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'isMonitoringTool' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'enterprise_management' buildsrc/employee-app/src/play/AndroidManifest.xml
+          grep -q 'يجمع ATTEND PRO بيانات الموقع' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'ACCESS_BACKGROUND_LOCATION' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'supportsDirectInstall' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          grep -q 'verifyPackageAndSigner' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          grep -q 'MessageDigest' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          test -f RELEASE-NOTES-V156.md
+          test -f V156-BLUETOOTH-PROOF-MESSAGING.md
+          grep -q 'abortOnError = false' buildsrc/store-app/build.gradle.kts
+          grep -q 'abortOnError = false' buildsrc/employee-app/build.gradle.kts
+          grep -q 'uninstallConnectionRecovery1927' "$MAIN"
+          grep -q 'unregisterNetworkCallback' "$MAIN"
+          grep -q 'archiveVersionCode != expectedVersionCode' buildsrc/core/src/main/java/com/attendpro/core/AppUpdateManager.kt
+          # V157 permanent Bluetooth regression gate: RC29 protected transport remains byte-identical to V156.
+          git diff --exit-code b5c65e993453f720f2c73663413b90462941b1ca -- \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PairingDiscovery.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/PairingBeacon.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleDirectProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/BleProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingAckProtocol.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BlePresenceAdvertiser.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/BleDirectLinkServer.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleEmployeeScanner.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/BleDirectLinkClient.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+
+          # V157 dual-path layer must remain wired into lifecycle and UI.
+          grep -q 'StoreReverseBluetoothPresenceServiceV157' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'StoreReverseBluetoothBootReceiverV157' buildsrc/store-app/src/main/AndroidManifest.xml
+          grep -q 'EmployeeReverseBluetoothPresenceServiceV157' buildsrc/employee-app/src/main/AndroidManifest.xml
+          grep -q 'EmployeeReverseBluetoothPresenceServiceV157' "$EMP_MAIN"
+          grep -q 'EmployeeReverseBluetoothPresenceServiceV157' "$EMP_BOOT"
+          grep -q 'ReverseBluetoothPresenceStateV157' "$MAIN"
+          grep -q 'Bluetooth ثنائي الاتجاه' "$MAIN"
+          grep -q 'StoreReverseBluetoothPresenceServiceV157' "$MAIN"
+          grep -q 'ReverseBlePresenceProtocolV157' buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+          grep -q 'ReverseBlePresenceProtocolV157' buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+      - name: Snapshot V165 protected runtime before V166
+        run: |
+          set -euo pipefail
+          V166_PROTECTED=(
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt
+          )
+          sha256sum "${V166_PROTECTED[@]}" > /tmp/v166-protected-before.sha256
+
+      - name: Apply and verify V166 Employee Management Security patch
+        run: |
+          set -euxo pipefail
+          PATCH_B64=.source_patches/v166/source.patch.xz.b64
+          test -f "$PATCH_B64"
+          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "59c1af5916760f346d61e37dce06fcd566aa977990cf962a838011ba46d3dbb9"
+          base64 -d "$PATCH_B64" | xz -d > /tmp/v166-source.patch
+          test "$(sha256sum /tmp/v166-source.patch | awk '{print $1}')" = "22fa3bfd7b57d9eb50ff58b62f9cb801bc8104b806205e40ecefccf15a079571"
+
+          cat > /tmp/v166-allowed.txt <<'EOF'
+          buildsrc/employee-app/build.gradle.kts
+          buildsrc/store-app/build.gradle.kts
+          buildsrc/store-app/src/main/java/com/attendpro/store/EmployeeVerificationSecurityV166.kt
+          buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/v166-allowed.txt
+          grep '^+++ b/' /tmp/v166-source.patch | sed 's#^+++ b/##' | sort -u > /tmp/v166-actual.txt
+          sort -u /tmp/v166-allowed.txt -o /tmp/v166-allowed.txt
+          diff -u /tmp/v166-allowed.txt /tmp/v166-actual.txt
+
+          patch -p1 --forward --batch < /tmp/v166-source.patch
+
+          grep -q 'versionCode = 166' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-SECURITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 166' buildsrc/employee-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-SECURITY"' buildsrc/employee-app/build.gradle.kts
+
+          MAIN=buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          SECURITY=buildsrc/store-app/src/main/java/com/attendpro/store/EmployeeVerificationSecurityV166.kt
+          test -f "$SECURITY"
+          grep -q 'showEmployeeEditorAdvanced(draft, draftNew = existing == null)' "$MAIN"
+          grep -q 'CredentialHash1980.hash(newPassword)' "$MAIN"
+          grep -q 'CredentialHash1980.verify(entered, employee.secretHash)' "$MAIN"
+          grep -q 'showEmployeeVerificationTestsV166' "$MAIN"
+          grep -q 'completePendingVerificationTestV166' "$MAIN"
+          grep -q 'pendingVerificationTestMethodV166 == AttendanceMethod.VOICE_PHRASE' "$MAIN"
+          grep -q 'class EmployeeVerificationSecurityV166' "$SECURITY"
+          grep -q 'MAX_FAILURES = 5' "$SECURITY"
+          grep -Fq 'MAX_BLOCK_MS = 10L * 60L * 1000L' "$SECURITY"
+          test -f RELEASE-NOTES-V166.md
+          test -f V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md
+
+          sha256sum -c /tmp/v166-protected-before.sha256
+
+      - name: Verify secure DNS bootstrap
+        run: |
+          set -euo pipefail
+          HOST='attend-pro-central.nmg200101.workers.dev'
+          OUT=$(curl -fsS --connect-timeout 8 --max-time 12 -H 'accept: application/dns-json' "https://1.1.1.1/dns-query?name=$HOST&type=A")
+          printf '%s' "$OUT" | grep -q '"data":"104.21.44.99"'
+          printf '%s' "$OUT" | grep -q '"data":"172.67.198.135"'
+          CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:104.21.44.99" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
+          if [ "$CODE" = "000" ] || [ -z "$CODE" ]; then
+            CODE=$(curl -sS --connect-timeout 8 --max-time 12 --resolve "$HOST:443:172.67.198.135" -o /dev/null -w '%{http_code}' "https://$HOST/" || true)
+          fi
+          test -n "$CODE"
+          test "$CODE" != "000"
+
+      - name: Unit test, lint and build Direct + Play
+        run: |
+          gradle -p buildsrc \
+            :core:testDebugUnitTest \
+            :foundation:testDebugUnitTest \
+            :store-app:testDirectDebugUnitTest \
+            :employee-app:testDirectDebugUnitTest \
+            :store-app:lintDirectRelease \
+            :employee-app:lintDirectRelease \
+            :store-app:lintPlayRelease \
+            :employee-app:lintPlayRelease \
+            :store-app:assembleDirectRelease \
+            :employee-app:assembleDirectRelease \
+            :store-app:bundlePlayRelease \
+            :employee-app:bundlePlayRelease \
+            --stacktrace
+      - name: Enforce V166 lint gate
+        run: |
+          set -euo pipefail
+          ERRORS=/tmp/v166-lint-errors.txt
+          : > "$ERRORS"
+          while IFS= read -r report; do
+            grep -E ' Error: ' "$report" >> "$ERRORS" || true
+          done < <(find buildsrc -type f -name 'lint-results-*.txt' -print | sort)
+
+          echo "===== Android lint errors (if any) ====="
+          cat "$ERRORS" || true
+
+          BAD=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in
+              *"PairingDiscovery.kt:"*|              *"PairingBeacon.kt:"*|              *"BleDirectProtocol.kt:"*|              *"BleProtocol.kt:"*|              *"PairingAckProtocol.kt:"*|              *"PairingProtocol.kt:"*|              *"BlePresenceAdvertiser.kt:"*|              *"BleDirectLinkServer.kt:"*|              *"BleEmployeeScanner.kt:"*|              *"BleDirectLinkClient.kt:"*|              *"PresenceService.kt:"*|              *"ReportReceiverActivity.kt:"*|              *"ReceiverReportService.kt:"*|              *"ReceiverReportLanTransport.kt:"*|              *"ReceiverReportBleTransport.kt:"*|              *"StoreReceiverPermissionsActivity.kt:"*|              *"ReportProtocol.kt:"*|              *"ReceiverOfflineReportProtocol.kt:"*|              *"ReceiverEmployeeAdminClient.kt:"*|              *"CentralServerClient.kt:"*)
+                echo "::notice::Pre-existing lint finding in immutable RC29/V149 source: $line"
+                ;;
+              *)
+                echo "::error::V166 lint error outside immutable lock: $line"
+                BAD=1
+                ;;
+            esac
+          done < "$ERRORS"
+          test "$BAD" -eq 0
+
+      - name: Sign V166 APKs and Play AABs
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir signed
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode >/tmp/a.jks
+          EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then
+              MOD=employee-app; PKG=com.attendpro.employee
+              APK_OUT=ATTEND-PRO-Employee-V166.apk; AAB_OUT=ATTEND-PRO-Employee-V166-PLAY.aab
+            else
+              MOD=store-app; PKG=com.attendpro.store
+              APK_OUT=ATTEND-PRO-Store-V166.apk; AAB_OUT=ATTEND-PRO-Store-V166-PLAY.aab
+            fi
+            U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit)
+            test -n "$U"
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$U" /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks /tmp/a.jks --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass env:ATTEND_PRO_STORE_PASSWORD --key-pass env:ATTEND_PRO_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$APK_OUT /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
+            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f)
+            test "$CERT" = "$EXPECTED"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='166' versionName='2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-SECURITY'"
+            BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit)
+            test -n "$BUNDLE"
+            jarsigner -keystore /tmp/a.jks -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -signedjar signed/$AAB_OUT "$BUNDLE" "$ATTEND_PRO_KEY_ALIAS"
+            jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
+          done
+          cp RELEASE-NOTES-V166.md signed/
+          cp V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md signed/
+          cp ALL-SECTIONS-FINAL-LOCK-V157.md signed/
+          cp BLUETOOTH-FINAL-LOCK-V157.md signed/
+          cp RECEIVER-FINAL-LOCK-V149.md signed/
+          cp CONNECTION_CORE_FINAL_LOCK_RC29.md signed/
+          zip -qr signed/ATTEND-PRO-V166-SOURCE.zip . -x '.git/*' 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
+          cat > signed/V166-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V166 — AUTOMATED QA
+          Commit: $GITHUB_SHA
+          Branch: $GITHUB_REF_NAME
+          Version code: 166
+          Version name: 2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-SECURITY
+          Scope: Employee Management correctness, safe verification tests, credential hardening and readiness diagnostics only
+          V165 effective baseline: PRESERVED AS FIELD FALLBACK
+          V161 sequential back: PRESERVED
+          V157 Bluetooth dual-path baseline: LOCKED
+          V149 Receiver baseline: LOCKED
+          RC29 protected connection sources: LOCKED
+          Protected V166 runtime snapshot: BYTE-IDENTICAL
+          V166 patch exact-path allowlist: PASSED
+          Unit tests and Android lint: PASSED before this file was generated
+          Direct APK and Play AAB signature/package/version verification: PASSED
+          FIELD DEVICE GATE: verify quick-to-advanced employee data continuity, password/voice/face TEST_ONLY paths, external fingerprint reader diagnostic, phone link diagnostic, real attendance afterward, and all prior Bluetooth/Receiver/RC29 functions.
+          EOF
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V166.md V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md V166-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+          cat signed/ALL-SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V166-EMPLOYEE-MANAGEMENT-SECURITY-SIGNED
+          path: signed/
+          retention-days: 90
