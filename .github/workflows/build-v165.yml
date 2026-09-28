@@ -2,6 +2,8 @@ name: Build ATTEND-PRO V165 Store Branding Modes Designer
 on:
   push:
     branches: [attend-pro-v157-bluetooth-dual-path-stability, attend-pro-v158-store-management-ux, attend-pro-v159-store-management-entry-fix, attend-pro-v160-store-management-routes-fix, attend-pro-v161-store-management-compact-back, attend-pro-v162-store-management-visual-status, attend-pro-v163-store-profile-branding, attend-pro-v164-store-logo-import-header-compact, attend-pro-v165-store-branding-modes-designer]
+  pull_request:
+    branches: [attend-pro-v164-store-logo-import-header-compact]
   workflow_dispatch:
 permissions:
   contents: read
