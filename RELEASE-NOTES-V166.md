@@ -1,49 +1,44 @@
-# ATTEND PRO V166 — Employee Management Core & Security
+# ATTEND-PRO V166 — Employee Management & Security Hardening
 
 ## Scope
-V166 is limited to Store-side employee management correctness, verification readiness, credential hardening and safe verification testing. It does not change the field-proven RC29 connection core, V149 Receiver runtime, V157 Bluetooth dual-path runtime, Wi-Fi/LAN/hotspot transport, GPS engine, central-server transport, activation or backup protocols.
+V166 is a focused Employee Management release built on the V165 source baseline. It does not alter the locked RC29 connection core, V149 Receiver, V157 Bluetooth dual-path runtime, GPS engine, attendance transport, message transport, activation, backup, or central server transport.
 
-## Functional corrections
-- Quick employee entry now carries the in-progress employee data into **Advanced Settings** instead of reopening the stale pre-edit object.
-- A new employee remains a new draft while Advanced Settings are open: employee ID validation and duplicate checks still run as a creation flow, and nothing is persisted until Save.
-- Employee details now distinguish **allowed**, **configured** and **tested/ready** verification methods instead of treating a checked option as automatically ready.
-- Voice enrollment wording is aligned with the existing five-sample enrollment flow.
+## Employee data continuity
+- Fixes the quick-entry -> Advanced Settings handoff so the values entered in the compact employee form are carried into the same employee draft instead of reopening the previous/empty object.
+- The draft is not persisted merely by opening Advanced Settings; cancelling does not create an incomplete employee.
+- New-draft validation, duplicate employee-ID validation, shifts, methods and existing employee fields remain in the same save path.
 
-## Verification Test Center
-A Store-side test center was added for the selected employee. Test operations are explicitly separated from attendance recording.
-- Password test.
-- Voice phrase test through the existing voice-template/challenge flow.
-- Shared-device face test through the existing face template, recognition and liveness flow.
-- External fingerprint reader TCP connectivity test, with an explicit limitation: reader connectivity and configured employee ID do not prove biometric template matching without the vendor device driver/API.
-- Employee phone link test, with an explicit limitation: authenticated phone connectivity does not claim that the phone biometric itself passed.
+## Authentication and readiness
+- Separates **Allowed** from **Ready** for employee verification methods.
+- Readiness is derived from the actual prerequisites for password, voice, shared-device face, paired-phone biometric/proximity, and external fingerprint reader mapping.
+- Adds an employee verification center with explicit test-only operations.
+- Voice and face tests do not create attendance/checkout events.
+- Voice enrollment/help text is normalized to the actual five-sample implementation.
 
-A successful TEST_ONLY operation is consumed before attendance commit, so it cannot create an IN/OUT event by mistake.
+## Password hardening
+- New employee passwords use the existing `CredentialHash1980` PBKDF2-HMAC-SHA256 salted format.
+- Legacy password hashes remain verifiable and are upgraded after a successful verification.
+- Employee App local credentials support both the new and legacy formats and upgrade legacy hashes after successful verification.
+- Repeated authentication failures are throttled; five failures inside a short window cause a temporary lock.
 
-## Security hardening
-- New employee passwords use the existing salted **PBKDF2-HMAC-SHA256** credential format in `CredentialHash1980`.
-- Existing legacy password hashes remain compatible and are automatically upgraded after a successful verification.
-- Normalized voice challenge hashes use the same salted credential primitive for new enrollments.
-- Verification failure throttling is scoped per employee/method. Five failures inside the configured window activate a temporary delay that increases for repeated failures and is capped.
-- Verification readiness timestamps and throttle counters contain no password, PIN, voice sample, face template or biometric secret.
-- Permission cancellation/denial clears pending TEST_ONLY state so a future verification cannot inherit a stale test.
+## Verification diagnostics
+- Adds readable status for each verification method: disabled/not allowed, allowed but not ready, or ready.
+- External fingerprint testing is honest about scope: TCP reachability and employee mapping are checked; a live fingerprint match still requires the configured reader-model driver and is not inferred from a TCP connection.
 
-## Compatibility and lock guarantees
-The V166 source patch is restricted to four effective files:
-1. `buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt`
-2. `buildsrc/store-app/src/main/java/com/attendpro/store/EmployeeVerificationSecurityV166.kt`
-3. `buildsrc/store-app/build.gradle.kts`
-4. `buildsrc/employee-app/build.gradle.kts`
+## Version
+- Store App: versionCode 166
+- Employee App: versionCode 166
+- versionName: `2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-SECURITY`
 
-Protected RC29/V149/V157 runtime sources are required to remain byte-identical by CI.
-
-## Field-device acceptance gate
-Before V166 becomes the field baseline, verify on a real Store device:
-- Quick employee fields survive transition to Advanced Settings and save correctly.
-- Existing employee edit remains correct.
-- Password test succeeds/fails without creating attendance and legacy password upgrade remains transparent.
-- Voice test uses the enrolled five-sample profile and never creates attendance in TEST_ONLY mode.
-- Face test completes recognition/liveness and never creates attendance in TEST_ONLY mode.
-- External fingerprint reader test reports only reader connectivity unless a vendor biometric API is available.
-- Phone link test does not falsely report biometric success.
-- Real attendance still works after the tests.
-- Bluetooth V157, Receiver V149, RC29 pairing, Wi-Fi/LAN, GPS and existing reports/messages continue unchanged.
+## Field acceptance gate
+V166 must not be declared field-approved until a real-device test confirms:
+1. quick employee data survives opening Advanced Settings;
+2. cancelling Advanced Settings does not persist an incomplete draft;
+3. save/restart preserves employee data;
+4. legacy and new password credentials both verify, with legacy upgrade;
+5. lockout activates after repeated failed attempts and clears after the lock period/success;
+6. voice five-sample enrollment and test-only verification work without an attendance event;
+7. face/liveness test-only verification works without an attendance event;
+8. paired-phone test works through the existing locked connection layer;
+9. external-reader reachability/mapping diagnostics are accurate;
+10. V157 Bluetooth, V149 Receiver, RC29 pairing and previous attendance flows remain regression-free.
