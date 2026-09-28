@@ -1069,7 +1069,7 @@ jobs:
             c4e2af386b7e7918f03dd865eda613875579e58cadd19af4722c4007325ae9c4
             35b65bb5eefa5917f3806e5903879e0fd7134666699d4a212875832cfcc02357
             e16f0460df3a92ea61dd300e3292a2f40a404d75da45683fa8eb3d7ecd0a7f35
-            76127f2a3b309b58e18972cc4a6b12d0df6f30556db3234dd79d95e74739caae
+            d4e970f9b29e9e37dfcd98f64e6454197a41ca8fbcc7c423c3dbb11993d89e4b
           )
           : > /tmp/v168-source.patch.xz.b64
           for i in $(seq 0 8); do
@@ -1078,7 +1078,7 @@ jobs:
             test "$(sha256sum "$P" | awk '{print $1}')" = "${EXPECTED_PARTS[$i]}"
             cat "$P" >> /tmp/v168-source.patch.xz.b64
           done
-          test "$(sha256sum /tmp/v168-source.patch.xz.b64 | awk '{print $1}')" = "b9dff35f83f2437dbeaa8c7b75f20383e3e9a3ff656f77f5c29a6551875424da"
+          test "$(sha256sum /tmp/v168-source.patch.xz.b64 | awk '{print $1}')" = "e1d4f4abdab7f10e06fa0eba19c0a4cc13ae9fc9d66c2e9d5fbea4e76780b088"
           base64 -d /tmp/v168-source.patch.xz.b64 | xz -d > /tmp/v168-source.patch
           test "$(sha256sum /tmp/v168-source.patch | awk '{print $1}')" = "dcee842e1d7b001ccc5c8e82842c191cf76832b6153741d538be782f989b35b3"
 
