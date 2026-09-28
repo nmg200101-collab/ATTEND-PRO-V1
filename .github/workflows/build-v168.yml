@@ -1060,10 +1060,26 @@ jobs:
       - name: Apply and verify V168 Noise Robust Voice patch
         run: |
           set -euxo pipefail
-          PATCH_B64=.source_patches/v168/source.patch.xz.b64
-          test -f "$PATCH_B64"
-          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "b8f2ee2992d55f82b8188789f0c2e685dd941b1dc6ffd64d298e7b2b1b3e608d"
-          base64 -d "$PATCH_B64" | xz -d > /tmp/v168-source.patch
+          EXPECTED_PARTS=(
+            c1140c5ec4fc5488f7dc2832404e6f6e89d952a30d5f0ef7c4937569d48a4a02
+            b3773e7994cad2a81b83a22b558f92b9ba9ff2a187dc74eed066bd5f508d073e
+            085c1c6370324e6db3108eeb9e90daf15efca3807ecdd824f66cc4274fcda7fd
+            6fe0e28a16d4950c6b25df8108d3a7b69207b38ad63b63d1738424eaa09ac5f5
+            8d893560dc67c43ae1f73128b64f94b71746912a75c03ef9d17f86b70a342cbd
+            c4e2af386b7e7918f03dd865eda613875579e58cadd19af4722c4007325ae9c4
+            35b65bb5eefa5917f3806e5903879e0fd7134666699d4a212875832cfcc02357
+            e16f0460df3a92ea61dd300e3292a2f40a404d75da45683fa8eb3d7ecd0a7f35
+            76127f2a3b309b58e18972cc4a6b12d0df6f30556db3234dd79d95e74739caae
+          )
+          : > /tmp/v168-source.patch.xz.b64
+          for i in $(seq 0 8); do
+            P=$(printf '.source_patches/v168/source.patch.xz.b64.part%02d' "$i")
+            test -f "$P"
+            test "$(sha256sum "$P" | awk '{print $1}')" = "${EXPECTED_PARTS[$i]}"
+            cat "$P" >> /tmp/v168-source.patch.xz.b64
+          done
+          test "$(sha256sum /tmp/v168-source.patch.xz.b64 | awk '{print $1}')" = "b9dff35f83f2437dbeaa8c7b75f20383e3e9a3ff656f77f5c29a6551875424da"
+          base64 -d /tmp/v168-source.patch.xz.b64 | xz -d > /tmp/v168-source.patch
           test "$(sha256sum /tmp/v168-source.patch | awk '{print $1}')" = "dcee842e1d7b001ccc5c8e82842c191cf76832b6153741d538be782f989b35b3"
 
           cat > /tmp/v168-allowed.txt <<'EOF'
