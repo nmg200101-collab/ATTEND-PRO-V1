@@ -947,8 +947,8 @@ jobs:
           grep -q 'completePendingVerificationTestV166' "$MAIN"
           grep -q 'pendingVerificationTestMethodV166 == AttendanceMethod.VOICE_PHRASE' "$MAIN"
           grep -q 'class EmployeeVerificationSecurityV166' "$SECURITY"
-          grep -q 'MAX_FAILURES = 5' "$SECURITY"
-          grep -Fq 'MAX_BLOCK_MS = 10L * 60L * 1000L' "$SECURITY"
+          grep -q 'FAILURE_LIMIT = 5' "$SECURITY"
+          grep -Fq 'MAX_BLOCK_MS = 10 * 60_000L' "$SECURITY"
           test -f RELEASE-NOTES-V166.md
           test -f V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md
 
