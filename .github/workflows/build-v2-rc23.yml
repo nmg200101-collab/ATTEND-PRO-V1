@@ -246,7 +246,7 @@ jobs:
           grep -q 'showStoreBrandingV163' "$SETTINGS"
           grep -q 'saveStoreLogoFromUriV163' "$SETTINGS"
           grep -q 'ACTION_OPEN_DOCUMENT' "$SETTINGS"
-          grep -q 'addStoreIdentityToHeroV163' "$MAIN"
+          grep -q 'storeIdentityInlineV164' "$MAIN"
           grep -q 'storeBrandViewV163' "$MAIN"
           sha256sum -c /tmp/v163-background-before.sha256
           test -f RELEASE-NOTES-V163.md
