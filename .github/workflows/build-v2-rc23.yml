@@ -274,6 +274,20 @@ jobs:
           sha256sum -c /tmp/v163-background-before.sha256
           test -f RELEASE-NOTES-V164.md
           test -f V164-STORE-LOGO-HEADER-AUDIT.md
+      - name: Apply V164 logo import lint fix
+        run: |
+          set -euxo pipefail
+          cp .source_patches/v164/lint-fix.patch.xz.b64 /tmp/v164-lint.patch.xz.b64
+          tr -d '\r\n\t ' < /tmp/v164-lint.patch.xz.b64 > /tmp/v164-lint.patch.normalized.b64
+          test "$(sha256sum /tmp/v164-lint.patch.normalized.b64 | awk '{print $1}')" = "00bf2c341f2a0028de8747c2c8e3427aa37c39a495578dc2d88ea8ff096f40b6"
+          base64 -d /tmp/v164-lint.patch.normalized.b64 | xz -d > /tmp/v164-lint.patch
+          test "$(sha256sum /tmp/v164-lint.patch | awk '{print $1}')" = "8d6f4888f0e7048cbe235097878452d6d98401591c6ae41de0d64be37e9061ff"
+          patch -p1 --forward --batch < /tmp/v164-lint.patch
+          SETTINGS=buildsrc/store-app/src/main/java/com/attendpro/store/StoreSettingsActivity.kt
+          ! grep -q 'takePersistableUriPermission' "$SETTINGS"
+          grep -q 'ACTION_GET_CONTENT' "$SETTINGS"
+          grep -q 'store_logo_import.tmp' "$SETTINGS"
+          sha256sum -c /tmp/v163-background-before.sha256
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '17' }
       - name: Install Android SDK
@@ -329,8 +343,8 @@ jobs:
           test -f RELEASE-NOTES-V163.md
           test -f V163-BACKGROUND-READINESS-AUDIT.md
           grep -q 'ACTION_GET_CONTENT' "$SETTINGS"
-          grep -q 'FLAG_GRANT_READ_URI_PERMISSION' "$SETTINGS"
           grep -q 'store_logo_import.tmp' "$SETTINGS"
+          ! grep -q 'takePersistableUriPermission' "$SETTINGS"
           grep -q 'BitmapFactory.decodeFile(imported.absolutePath' "$SETTINGS"
           grep -q 'storeIdentityInlineV164' "$MAIN"
           ! grep -q 'addStoreIdentityToHeroV163' "$MAIN"
