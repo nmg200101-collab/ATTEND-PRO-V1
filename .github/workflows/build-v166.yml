@@ -1,0 +1,186 @@
+name: Build ATTEND-PRO V166 Employee Management Core Security
+on:
+  push:
+    branches: [attend-pro-v166-employee-management-core-security]
+  pull_request:
+    branches: [attend-pro-v165-store-branding-modes-designer]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-test-sign:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore exact successful V165 source baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          mkdir -p "$RUNNER_TEMP/v166-delivery" "$RUNNER_TEMP/v165-artifact" "$RUNNER_TEMP/v166src"
+          cp -a .source_patches/v166 "$RUNNER_TEMP/v166-delivery/"
+          cp RELEASE-NOTES-V166.md V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md "$RUNNER_TEMP/v166-delivery/"
+          gh api "/repos/$GITHUB_REPOSITORY/actions/artifacts/10954375090/zip" > "$RUNNER_TEMP/v165-artifact.zip"
+          unzip -q "$RUNNER_TEMP/v165-artifact.zip" -d "$RUNNER_TEMP/v165-artifact"
+          test "$(sha256sum "$RUNNER_TEMP/v165-artifact/ATTEND-PRO-V165-SOURCE.zip" | awk '{print $1}')" = "d3155cd12a2d9f9bc18a8d48291eb24248e80f6f6045e736644253897046e3a1"
+          unzip -q "$RUNNER_TEMP/v165-artifact/ATTEND-PRO-V165-SOURCE.zip" -d "$RUNNER_TEMP/v166src"
+          cp -a "$RUNNER_TEMP/v166-delivery/v166" "$RUNNER_TEMP/v166src/.source_patches/"
+          cp "$RUNNER_TEMP/v166-delivery/RELEASE-NOTES-V166.md" "$RUNNER_TEMP/v166-delivery/V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md" "$RUNNER_TEMP/v166src/"
+          echo "V166_ROOT=$RUNNER_TEMP/v166src" >> "$GITHUB_ENV"
+
+      - name: Verify V165 baseline and apply V166 patch under lock
+        run: |
+          set -euxo pipefail
+          cd "$V166_ROOT"
+          grep -q 'versionCode = 165' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V165-STORE-BRANDING-MODES-DESIGNER"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 165' buildsrc/employee-app/build.gradle.kts
+          test "$(sha256sum buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt | awk '{print $1}')" = "89113fe392417c6b986047cf538a14e45e8adfa01ff3a3106d41fe4ddfd1f8f1"
+          test "$(sha256sum buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt | awk '{print $1}')" = "dcc5a6d9884dc0777ed6d0ebbe1b32816cfbc65d7be609e7b8868e34180d1a6e"
+          test "$(sha256sum buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt | awk '{print $1}')" = "a6ca2c062874da66210a610778489519cc61af6d3488d139c0956b8c7f404b8f"
+          test "$(sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt | awk '{print $1}')" = "24b78cff4088671d15659ebaa347fa99ef6edaaff4d9ae73440c06c8ce6f6f94"
+          test "$(sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt | awk '{print $1}')" = "dcf853efc8628b8de80e206d205c1a247bec270fe4747cf4f61e01ab64fa354b"
+          test "$(sha256sum buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt | awk '{print $1}')" = "330c8111446fbfeafb4df500f6dfb94ba146ec9c5688b67e3cf4c78fdce74ebd"
+          test "$(sha256sum buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt | awk '{print $1}')" = "fb509472000295cc0c5d1b2455cd961dbeca350f3efb8d45c7191969fbf995c4"
+          sha256sum \
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothPresenceServiceV157.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/StoreReverseBluetoothBootReceiverV157.kt \
+            buildsrc/store-app/src/main/java/com/attendpro/store/ReceiverReportService.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceService.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/EmployeeReverseBluetoothPresenceServiceV157.kt \
+            buildsrc/employee-app/src/main/java/com/attendpro/employee/PresenceBootReceiver.kt \
+            buildsrc/core/src/main/java/com/attendpro/core/PairingProtocol.kt > /tmp/v166-locked-before.sha256
+
+          cat .source_patches/v166/source.patch.xz.b64.part{0,1,2,3} > /tmp/v166-source.patch.xz.b64
+          test "$(sha256sum /tmp/v166-source.patch.xz.b64 | awk '{print $1}')" = "f1dead604e86c671675da0750d548c4751a6aaec0f98b1f80a75b6e99bdb3c74"
+          base64 -d /tmp/v166-source.patch.xz.b64 | xz -d > /tmp/v166-source.patch
+          test "$(sha256sum /tmp/v166-source.patch | awk '{print $1}')" = "a3f3aa987a8c244402dad12a1e835f777da795a199887cd2350ad2631e908698"
+          grep '^+++ b/' /tmp/v166-source.patch | sed 's#^+++ b/##' | sort -u > /tmp/v166-actual-paths.txt
+          cat > /tmp/v166-allowed-paths.txt <<'EOF'
+          buildsrc/core/src/main/java/com/attendpro/core/EmployeeSecurityV166.kt
+          buildsrc/employee-app/build.gradle.kts
+          buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          buildsrc/store-app/build.gradle.kts
+          buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          EOF
+          sed -i 's/^[[:space:]]*//' /tmp/v166-allowed-paths.txt
+          sort -o /tmp/v166-allowed-paths.txt /tmp/v166-allowed-paths.txt
+          diff -u /tmp/v166-allowed-paths.txt /tmp/v166-actual-paths.txt
+          patch -p1 --forward --batch < /tmp/v166-source.patch
+          sha256sum -c /tmp/v166-locked-before.sha256
+          grep -q 'versionCode = 166' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionName = "2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-CORE-SECURITY"' buildsrc/store-app/build.gradle.kts
+          grep -q 'versionCode = 166' buildsrc/employee-app/build.gradle.kts
+          grep -q 'showEmployeeVerificationCenterV166' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'employeeReadinessPercentV166' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'pendingVoiceVerificationTestOnly' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'pendingFaceVerificationTestOnly' buildsrc/store-app/src/main/java/com/attendpro/store/MainActivity.kt
+          grep -q 'CredentialHash1980.verify' buildsrc/employee-app/src/main/java/com/attendpro/employee/MainActivity.kt
+          grep -q 'class EmployeeCredentialGuardV166' buildsrc/core/src/main/java/com/attendpro/core/EmployeeSecurityV166.kt
+          grep -q 'class EmployeeSecurityAuditV166' buildsrc/core/src/main/java/com/attendpro/core/EmployeeSecurityV166.kt
+
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Install Android SDK
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager -perm -111 -print -quit || true)
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.11.1' }
+
+      - name: Unit test, lint and build Direct + Play
+        run: |
+          set -euo pipefail
+          cd "$V166_ROOT"
+          gradle -p buildsrc \
+            :core:testDebugUnitTest \
+            :foundation:testDebugUnitTest \
+            :store-app:testDirectDebugUnitTest \
+            :employee-app:testDirectDebugUnitTest \
+            :store-app:lintDirectRelease \
+            :employee-app:lintDirectRelease \
+            :store-app:lintPlayRelease \
+            :employee-app:lintPlayRelease \
+            :store-app:assembleDirectRelease \
+            :employee-app:assembleDirectRelease \
+            :store-app:bundlePlayRelease \
+            :employee-app:bundlePlayRelease \
+            --stacktrace
+
+      - name: Enforce V166 lint gate
+        run: |
+          set -euo pipefail
+          cd "$V166_ROOT"
+          ERRORS=/tmp/v166-lint-errors.txt
+          : > "$ERRORS"
+          while IFS= read -r report; do grep -E ' Error: ' "$report" >> "$ERRORS" || true; done < <(find buildsrc -type f -name 'lint-results-*.txt' -print | sort)
+          cat "$ERRORS" || true
+          BAD=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            case "$line" in
+              *"PairingDiscovery.kt:"*|*"PairingBeacon.kt:"*|*"BleDirectProtocol.kt:"*|*"BleProtocol.kt:"*|*"PairingAckProtocol.kt:"*|*"PairingProtocol.kt:"*|*"BlePresenceAdvertiser.kt:"*|*"BleDirectLinkServer.kt:"*|*"BleEmployeeScanner.kt:"*|*"BleDirectLinkClient.kt:"*|*"PresenceService.kt:"*|*"ReportReceiverActivity.kt:"*|*"ReceiverReportService.kt:"*|*"ReceiverReportLanTransport.kt:"*|*"ReceiverReportBleTransport.kt:"*|*"StoreReceiverPermissionsActivity.kt:"*|*"ReportProtocol.kt:"*|*"ReceiverOfflineReportProtocol.kt:"*|*"ReceiverEmployeeAdminClient.kt:"*|*"CentralServerClient.kt:"*) echo "::notice::Pre-existing lint finding in immutable locked source: $line" ;;
+              *) echo "::error::V166 lint error outside immutable lock: $line"; BAD=1 ;;
+            esac
+          done < "$ERRORS"
+          test "$BAD" -eq 0
+
+      - name: Sign, verify and package V166
+        env:
+          ATTEND_PRO_KEYSTORE_B64: ${{ secrets.ATTEND_PRO_KEYSTORE_B64 }}
+          ATTEND_PRO_STORE_PASSWORD: ${{ secrets.ATTEND_PRO_STORE_PASSWORD }}
+          ATTEND_PRO_KEY_ALIAS: ${{ secrets.ATTEND_PRO_KEY_ALIAS }}
+          ATTEND_PRO_KEY_PASSWORD: ${{ secrets.ATTEND_PRO_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd "$V166_ROOT"
+          mkdir -p signed
+          printf '%s' "$ATTEND_PRO_KEYSTORE_B64" | base64 --decode >/tmp/a.jks
+          EXPECTED=2fc214199b0c6e86f9cdd9288419fc143a119258c34f6a0ff70eed6aecb6fe59
+          for APP in employee store; do
+            if [ "$APP" = employee ]; then MOD=employee-app; PKG=com.attendpro.employee; APK_OUT=ATTEND-PRO-Employee-V166.apk; AAB_OUT=ATTEND-PRO-Employee-V166-PLAY.aab; else MOD=store-app; PKG=com.attendpro.store; APK_OUT=ATTEND-PRO-Store-V166.apk; AAB_OUT=ATTEND-PRO-Store-V166-PLAY.aab; fi
+            U=$(find buildsrc/$MOD/build/outputs/apk/direct/release -name '*-unsigned.apk' -print -quit); test -n "$U"
+            "$ANDROID_HOME/build-tools/36.0.0/zipalign" -f -p 4 "$U" /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign --ks /tmp/a.jks --ks-key-alias "$ATTEND_PRO_KEY_ALIAS" --ks-pass env:ATTEND_PRO_STORE_PASSWORD --key-pass env:ATTEND_PRO_KEY_PASSWORD --v1-signing-enabled false --v2-signing-enabled true --v3-signing-enabled true --out signed/$APK_OUT /tmp/$APP.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs signed/$APK_OUT
+            CERT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs signed/$APK_OUT | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -1 | tr A-F a-f); test "$CERT" = "$EXPECTED"
+            "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging signed/$APK_OUT | grep -q "package: name='$PKG' versionCode='166' versionName='2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-CORE-SECURITY'"
+            BUNDLE=$(find buildsrc/$MOD/build/outputs/bundle/playRelease -name '*.aab' -print -quit); test -n "$BUNDLE"
+            jarsigner -keystore /tmp/a.jks -storepass:env ATTEND_PRO_STORE_PASSWORD -keypass:env ATTEND_PRO_KEY_PASSWORD -signedjar signed/$AAB_OUT "$BUNDLE" "$ATTEND_PRO_KEY_ALIAS"
+            jarsigner -verify signed/$AAB_OUT | grep -q 'jar verified'
+          done
+          cp RELEASE-NOTES-V166.md V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md V165-BRANDING-LOCK-AUDIT.md ALL-SECTIONS-FINAL-LOCK-V157.md BLUETOOTH-FINAL-LOCK-V157.md RECEIVER-FINAL-LOCK-V149.md CONNECTION_CORE_FINAL_LOCK_RC29.md signed/
+          zip -qr signed/ATTEND-PRO-V166-SOURCE.zip . -x 'signed/*' 'buildsrc/.gradle/*' 'buildsrc/*/build/*' 'buildsrc/*/*/build/*'
+          cat > signed/V166-AUTOMATED-QA.txt <<EOF
+          ATTEND-PRO V166 — AUTOMATED QA
+          Commit: $GITHUB_SHA
+          Version code: 166
+          Version name: 2.0.0-RC29-V166-EMPLOYEE-MANAGEMENT-CORE-SECURITY
+          V165 successful source baseline SHA-256: d3155cd12a2d9f9bc18a8d48291eb24248e80f6f6045e736644253897046e3a1
+          V157 Bluetooth: LOCKED / BYTE-IDENTICAL
+          V149 Receiver: LOCKED / BYTE-IDENTICAL
+          RC29 PairingProtocol: LOCKED / BYTE-IDENTICAL
+          Unit tests + Android lint + Direct APK + Play AAB: PASSED
+          Password/voice/face verification center tests are test-only and must not record attendance.
+          External fingerprint test verifies transport reachability; biometric matching is vendor-driver dependent.
+          FIELD DEVICE GATE REQUIRED before V166 becomes field baseline.
+          EOF
+          (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V166.md V166-EMPLOYEE-MANAGEMENT-SECURITY-AUDIT.md V166-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ATTEND-PRO-V166-EMPLOYEE-MANAGEMENT-CORE-SECURITY-SIGNED
+          path: ${{ env.V166_ROOT }}/signed/
+          retention-days: 90
