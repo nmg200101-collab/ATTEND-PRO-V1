@@ -1,0 +1,5 @@
+ATTEND-PRO V165 CI TRIGGER
+
+Branch: attend-pro-v165-store-branding-modes-designer
+Scope: branding modes, compact header, built-in designer, release metadata only.
+V164 remains the field-approved fallback until real-device approval.
