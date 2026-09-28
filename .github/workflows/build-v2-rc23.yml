@@ -322,7 +322,7 @@ jobs:
           grep -q 'REQUEST_STORE_LOGO_PICK_V163' "$SETTINGS"
           grep -q 'BitmapFactory.Options' "$SETTINGS"
           grep -q 'store_logo.png' "$SETTINGS"
-          grep -q 'addStoreIdentityToHeroV163' "$MAIN"
+          grep -q 'storeIdentityInlineV164' "$MAIN"
           grep -q 'storeBrandViewV163' "$MAIN"
           grep -q 'versionCode = 164' buildsrc/store-app/build.gradle.kts
           grep -q 'versionCode = 164' buildsrc/employee-app/build.gradle.kts
