@@ -942,7 +942,7 @@ jobs:
           test -f "$SECURITY"
           grep -q 'showEmployeeEditorAdvanced(draft, draftNew = existing == null)' "$MAIN"
           grep -q 'CredentialHash1980.hash(newPassword)' "$MAIN"
-          grep -q 'CredentialHash1980.verify(entered, employee.secretHash)' "$MAIN"
+          grep -q 'CredentialHash1980.verify(employee.passwordHash, entered)' "$MAIN"
           grep -q 'showEmployeeVerificationTestsV166' "$MAIN"
           grep -q 'completePendingVerificationTestV166' "$MAIN"
           grep -q 'pendingVerificationTestMethodV166 == AttendanceMethod.VOICE_PHRASE' "$MAIN"
