@@ -1151,6 +1151,12 @@ jobs:
           sort -u /tmp/v169-allowed.txt -o /tmp/v169-allowed.txt
           diff -u /tmp/v169-allowed.txt /tmp/v169-actual.txt
           patch -p1 --forward --batch < /tmp/v169-source.patch
+          FIX_B64=.source_patches/v169/compile-fix.patch.xz.b64
+          test -f "$FIX_B64"
+          test "$(sha256sum "$FIX_B64" | awk '{print $1}')" = "60951deee19689757cede1ee1e8bbc879b46ce86e36ffd50ce752a6e9e11ef91"
+          base64 -d "$FIX_B64" | xz -d > /tmp/v169-compile-fix.patch
+          test "$(sha256sum /tmp/v169-compile-fix.patch | awk '{print $1}')" = "12e967b99423962f6a5ac7058460be39b10be6fd6648d3daa4d62fae19417c15"
+          patch -p1 --forward --batch < /tmp/v169-compile-fix.patch
 
           grep -q 'versionCode = 169' buildsrc/store-app/build.gradle.kts
           grep -q 'versionName = "2.0.0-RC29-V169-FACE-VERIFICATION-HARDENING"' buildsrc/store-app/build.gradle.kts
