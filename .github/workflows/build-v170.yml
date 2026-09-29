@@ -1205,9 +1205,9 @@ jobs:
           set -euxo pipefail
           PATCH_B64=.source_patches/v170/source.patch.xz.b64
           test -f "$PATCH_B64"
-          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "2ff56b075457ed281fab54ef3f3bd0dcc0cd61a50f119b68e17c13380702c5b4"
+          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "343b1091b69f3f640c3d4f7600fcf00ab3c325c6f8582edfdfd6367f43e5e27e"
           base64 -d "$PATCH_B64" | xz -d > /tmp/v170-source.patch
-          test "$(sha256sum /tmp/v170-source.patch | awk '{print $1}')" = "b2aeb69b52a83d9c5e8b7e0502eef338113f6bc8eec6de045a53a47fa36eb1e5"
+          test "$(sha256sum /tmp/v170-source.patch | awk '{print $1}')" = "7768af1ee397a51440eb43be4c0a81d33f10ff3df83d0323fe49a27d2542ebea"
 
           cat > /tmp/v170-allowed.txt <<'EOF'
           RELEASE-NOTES-V170.md
@@ -1279,7 +1279,7 @@ jobs:
             :store-app:bundlePlayRelease \
             :employee-app:bundlePlayRelease \
             --stacktrace
-      - name: Enforce V169 lint gate
+      - name: Enforce V170 lint gate
         run: |
           set -euo pipefail
           ERRORS=/tmp/v169-lint-errors.txt
