@@ -1272,9 +1272,9 @@ jobs:
           set -euxo pipefail
           PATCH_B64=.source_patches/v171/source.patch.xz.b64
           test -f "$PATCH_B64"
-          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "7d2165dcddca8654da3319472b0c850b94d99717410f2d5dd2be2089c904090e"
+          test "$(sha256sum "$PATCH_B64" | awk '{print $1}')" = "ef13f7a732d8b7576ef5ed1688e2897a8fc6f56f964b39939031bf383c3a9c35"
           base64 -d "$PATCH_B64" | xz -d > /tmp/v171-source.patch
-          test "$(sha256sum /tmp/v171-source.patch | awk '{print $1}')" = "499079f4259965dac6a0e733a87dfe53fbfc677773cd747c49b7baac487df764"
+          test "$(sha256sum /tmp/v171-source.patch | awk '{print $1}')" = "ec34fad0542cd137cbd9b62525d1eddadb52149fa7385f1c0f85916ef0ecc923"
 
           cat > /tmp/v171-allowed.txt <<'EOF'
           RELEASE-NOTES-V171.md
