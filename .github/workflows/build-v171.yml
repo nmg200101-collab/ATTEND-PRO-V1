@@ -1273,9 +1273,9 @@ jobs:
           PATCH_B64=.source_patches/v171/source.patch.xz.b64
           test -f "$PATCH_B64"
           tr -d '\r\n\t ' < "$PATCH_B64" > /tmp/v171-source.patch.normalized.b64
-          test "$(sha256sum /tmp/v171-source.patch.normalized.b64 | awk '{print $1}')" = "bc5c19c6a51b235f5827f9c240440b8465af3b6a2e2863f59b181290fe933d13"
+          test "$(sha256sum /tmp/v171-source.patch.normalized.b64 | awk '{print $1}')" = "94c856c341c16318d4ffd0599a1a21be7f15ebc21d05544255d5185bb5d03bc2"
           base64 -d /tmp/v171-source.patch.normalized.b64 | xz -d > /tmp/v171-source.patch
-          test "$(sha256sum /tmp/v171-source.patch | awk '{print $1}')" = "ec34fad0542cd137cbd9b62525d1eddadb52149fa7385f1c0f85916ef0ecc923"
+          test "$(sha256sum /tmp/v171-source.patch | awk '{print $1}')" = "35ad706eaabd5aec303677f30514efc07606f6b1fca4e4626ee13526e2d9403a"
 
           cat > /tmp/v171-allowed.txt <<'EOF'
           RELEASE-NOTES-V171.md
@@ -1305,13 +1305,16 @@ jobs:
           test -f "$BIND"
           test -f "$SID"
           grep -q 'bindAfterProvision' "$BIND"
-          grep -q 'migrationAttempted' "$BIND"
+          ! grep -q 'migrateLegacyBindingIfNeeded' "$EMP"
+          ! grep -q 'migrationAttempted' "$BIND"
           grep -q 'DeviceIdentity(context).publicKeyB64()' "$BIND"
           grep -q 'SecureTokenVault(context)' "$BIND"
           grep -q 'requireDeviceBindingV171' "$EMP"
           grep -q 'EmployeeDeviceBindingV171.clear' "$EMP"
           grep -q 'QR الحضور' "$EMP"
           grep -q 'RELINK_AUTHORIZED' "$STORE"
+          grep -q 'PAIRING_SECRET_ROTATED' "$STORE"
+          grep -q 'SecretCodec.encode(SecretCodec.generate())' "$STORE"
           grep -q 'requireStoreOwner("إعادة ربط هاتف' "$STORE"
           grep -q 'EmployeeIdentitySecurityV171.recordAudit' "$STORE"
           test -f RELEASE-NOTES-V171.md
@@ -1430,7 +1433,7 @@ jobs:
           V171 patch exact-path allowlist: PASSED
           Unit tests and Android lint: PASSED before this file was generated
           Direct APK and Play AAB signature/package/version verification: PASSED
-          FIELD DEVICE GATE: upgrade a currently linked V170 phone and verify one-time V171 binding migration; test biometric, fingerprint, password and QR with valid binding; unlink/re-link; verify copied/restored ordinary preferences cannot use attendance proofs on another device; confirm re-link of an already-linked employee requires Store-owner authorization; regress V170 biometric, V169 face, V168 voice and all Bluetooth/Receiver/RC29 functions.
+          FIELD DEVICE GATE: an already-linked V170 phone must re-confirm pairing once from the Store; verify there is no silent V170-to-V171 migration; test biometric, fingerprint, password and QR with a valid V171 binding; verify copied/restored ordinary preferences cannot self-authorize on another device; confirm replacement re-link requires Store-owner authorization and rotates the old pairingSecret; regress V170 biometric, V169 face, V168 voice and all Bluetooth/Receiver/RC29 functions.
           EOF
           (cd signed && sha256sum *.apk *.aab *.zip RELEASE-NOTES-V171.md V171-EMPLOYEE-IDENTITY-DEVICE-BINDING-AUDIT.md V171-AUTOMATED-QA.txt > ALL-SHA256SUMS.txt)
           cat signed/ALL-SHA256SUMS.txt
