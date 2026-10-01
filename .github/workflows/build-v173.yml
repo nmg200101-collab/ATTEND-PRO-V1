@@ -1432,11 +1432,22 @@ jobs:
       - name: Apply and verify V173 Face Identity Liveness Stability patch
         run: |
           set -euxo pipefail
-          PATCH_B64=.source_patches/v173/source.patch.xz.b64
-          test -f "$PATCH_B64"
-          tr -d '\r\n\t ' < "$PATCH_B64" > /tmp/v173-source.patch.normalized.b64
-          test "$(sha256sum /tmp/v173-source.patch.normalized.b64 | awk '{print $1}')" = "fcfdce0a376f5502b523e2135a0f61ed1c080cec9534efcfb69709870cdae38c"
-          base64 -d /tmp/v173-source.patch.normalized.b64 | xz -d > /tmp/v173-source.patch
+          : > /tmp/v173-source.patch.xz.b64
+          V173_PART_SHA=(
+            631e9b50ff1ab3cde3a66a40216ac595adca15a67900733f10ec48fa5f970c99
+            bf56f2eb2c87904cf1508a632019df48cafbf706ba847b7b6e1507c457c7bd96
+            ddfa164576cb631660f54fa2ecd5cff36041e1f245bcfee523dc93fe9f63d679
+            11306b61feb7a36fdee9f1e98ba73a5e19d04ba44c279d6149b79630d12b28e5
+            aaab1773dfdd1dd8be009cf67fb26377687ae6066dbd8e920c82e55b43b32314
+          )
+          for i in $(seq 0 4); do
+            P=$(printf '.source_patches/v173/source.patch.xz.b64.part%02d' "$i")
+            test -f "$P"
+            test "$(sha256sum "$P" | awk '{print $1}')" = "${V173_PART_SHA[$i]}"
+            tr -d '\r\n\t ' < "$P" >> /tmp/v173-source.patch.xz.b64
+          done
+          test "$(sha256sum /tmp/v173-source.patch.xz.b64 | awk '{print $1}')" = "fcfdce0a376f5502b523e2135a0f61ed1c080cec9534efcfb69709870cdae38c"
+          base64 -d /tmp/v173-source.patch.xz.b64 | xz -d > /tmp/v173-source.patch
           test "$(sha256sum /tmp/v173-source.patch | awk '{print $1}')" = "a9904d109a69c3e67a6a33a6b31a64024c8ec5f7f5b5fb9035a460f99f318be8"
 
           cat > /tmp/v173-allowed.txt <<'EOF'
